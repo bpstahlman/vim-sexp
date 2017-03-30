@@ -1232,7 +1232,11 @@ endfunction
 " Set visual marks around current element and enter visual mode.
 function! sexp#select_current_element(mode, inner)
     call s:set_marks_around_current_element(a:mode, a:inner)
-    return s:select_current_marks(a:mode)
+    let ok = s:select_current_marks(a:mode)
+    if ok
+        call rgn#set(0, a:inner)
+    endif
+    return ok
 endfunction
 
 " Set visual marks around adjacent element and enter visual mode; 0 for
@@ -1242,6 +1246,30 @@ function! sexp#select_adjacent_element(mode, next)
     call s:set_marks_around_adjacent_element(a:mode, a:next)
     return s:select_current_marks(a:mode)
 endfunction
+
+""" REGION SPECIAL {{{1
+" TODO: Do we need to pass count?
+function! sexp#move_mark_forward()
+    echomsg "Got here!"
+    if rgn#is_special()
+        let ri = rgn#info()
+        " Move to ve and then select next
+        call s:setcursor(ri.ve)
+        let pos = s:move_to_adjacent_element(1, 0, 0)
+        if s:compare_pos(pos, ri.ve) > 0
+            " Move was possible
+            call s:set_marks_around_current_element('v', ri.inner)
+            call s:select_current_marks('v')
+            " TODO: How to test whether 'form' or 'element'?
+            call rgn#set(0, ri.inner)
+        endif
+    else
+        " Don't treat specially.
+        " TODO: Allow for user override.
+        normal! j
+        " TODO: Restore visual mode
+    endif
+endfu
 
 """ BUFFER MUTATION {{{1
 
@@ -2124,3 +2152,70 @@ function! sexp#backspace_insertion()
         return "\<BS>"
     endif
 endfunction
+
+" Inputs:
+" form:   0=el, 1=form, 2=any
+" inner:  0=inner, 1=outer, 2=any
+" count:  element index
+" Output: {region-handle} or {}
+" Format of region handle:
+" form:   (as above)
+" inner:  (as above)
+" si:     region start index (0-based)
+" ei:     region end index (0-based)
+function! sexp#obsolete_region_handle(form, inner, count)
+
+endfu
+
+" Output: {region-info} or {}
+" Format of region handle:
+" inner:  (as above)
+" si:     region start index (0-based)
+" spos:
+" ei:     region end index (0-based)
+" eipos:  end 'inner' pos
+" eapos:  end 'a' pos
+"         Note: Caller decides which one to use
+function! sexp#region_info(mode)
+    let cursor = getpos('.')
+    if a:mode == 'v'
+        let [vsp, vep] = [getpos("'<"), getpos("'>")]
+        " Determine region head.
+        call s:setcursor(vsp)
+        let ses = s:current_element_terminal(0)
+        if !ses[1]
+            " Not in element. Look forward.
+            let ses = s:nearest_element_terminal(1, 0)
+            if !neth
+                " Nothing forward at this level. Invalid region.
+                return {}
+            endif
+        endif
+        " Determine region tail
+        call s:setcursor(vep)
+        let eee = s:current_element_terminal(1)
+        if !eee[1]
+            " TODO: Should this clear 'inner' flag?
+            " Not in element, but we know there's at least one element before
+            " us; find its tail.
+            " Assumption: This call cannot fail.
+            let eee = s:nearest_element_terminal(0, 1)
+        endif
+        " Find any trailing whitespace.
+
+
+    else
+        " normal mode
+    endif
+endfu
+
+let Fn_current_element_terminal = function('s:current_element_terminal') "(end)
+let Fn_nearest_element_terminal = function('s:nearest_element_terminal') "(next, tail)
+let Fn_nearest_bracket = function('s:nearest_bracket') "(closing, ...)
+let Fn_current_top_list_bracket = function('s:current_top_list_bracket') "(closing)
+let Fn_current_string_terminal = function('s:current_string_terminal') "(end)
+let Fn_current_comment_terminal = function('s:current_comment_terminal') "(end)
+let Fn_current_atom_terminal = function('s:current_atom_terminal') "(end)
+let Fn_current_macro_character_terminal = function('s:current_macro_character_terminal') "(end)
+let Fn_terminals_with_whitespace = function('s:terminals_with_whitespace') "(start, end)
+let Fn_select_current_marks = function('s:select_current_marks')

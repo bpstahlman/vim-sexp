@@ -82,6 +82,8 @@ let s:sexp_mappings = {
     \ 'sexp_emit_tail_element':         '<M-S-k>',
     \ 'sexp_capture_prev_element':      '<M-S-h>',
     \ 'sexp_capture_next_element':      '<M-S-l>',
+    \ 'sexp_move_mark_forward':         'j',
+    \ 'sexp_move_mark_back':            'k'
     \ }
 
 if !empty(g:sexp_filetypes)
@@ -177,6 +179,13 @@ function! s:sexp_create_mappings()
         if !empty(lhs)
             execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
             execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+        endif
+    endfor
+
+    for plug in ['sexp_move_mark_forward', 'sexp_move_mark_back']
+        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(lhs)
+            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
         endif
     endfor
 
@@ -308,6 +317,10 @@ Defplug! onoremap sexp_select_prev_element sexp#docount(v:count, 'sexp#select_ad
 Defplug  nnoremap sexp_select_next_element sexp#docount(v:count, 'sexp#select_adjacent_element', 'n', 1)
 Defplug  xnoremap sexp_select_next_element sexp#docount(v:count, 'sexp#select_adjacent_element', 'v', 1)
 Defplug! onoremap sexp_select_next_element sexp#docount(v:count, 'sexp#select_adjacent_element', 'o', 1)
+
+""" Region Special {{{1
+DEFPLUG  xnoremap sexp_move_mark_forward :<C-u>call sexp#move_mark_forward()<CR>
+DEFPLUG  xnoremap sexp_move_mark_back :<C-u>call sexp#move_mark_back()<CR>
 
 """ Commands {{{1
 
