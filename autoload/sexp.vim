@@ -17,6 +17,10 @@ if exists('g:sexp_autoloaded')
 endif
 let g:sexp_autoloaded = 1
 
+" BPS TODO
+fu! sexp#force_load()
+endfu
+
 " TODO:
 "
 " * Don't ignore virtualedit mode?
@@ -1243,8 +1247,11 @@ endfunction
 " previous, 1 for next. If no such adjacent element exists, selects current
 " element.
 function! sexp#select_adjacent_element(mode, next)
+    call rgn#pre_op()
     call s:set_marks_around_adjacent_element(a:mode, a:next)
-    return s:select_current_marks(a:mode)
+    let ret = s:select_current_marks(a:mode)
+    call rgn#post_op(0, 1)
+    return ret
 endfunction
 
 """ REGION SPECIAL {{{1
@@ -2209,6 +2216,9 @@ function! sexp#region_info(mode)
     endif
 endfu
 
+map <LocalLeader>u :<C-u>call rgn#undo(v:count1)<CR>
+map <LocalLeader>r :<C-u>call rgn#undo(-v:count1)<CR>
+
 let Fn_current_element_terminal = function('s:current_element_terminal') "(end)
 let Fn_nearest_element_terminal = function('s:nearest_element_terminal') "(next, tail)
 let Fn_nearest_bracket = function('s:nearest_bracket') "(closing, ...)
@@ -2219,3 +2229,7 @@ let Fn_current_atom_terminal = function('s:current_atom_terminal') "(end)
 let Fn_current_macro_character_terminal = function('s:current_macro_character_terminal') "(end)
 let Fn_terminals_with_whitespace = function('s:terminals_with_whitespace') "(start, end)
 let Fn_select_current_marks = function('s:select_current_marks')
+
+" TODO: This is a temporary kludge for rgn autoload file...
+let Sexp_set_visual_marks = function('s:set_visual_marks')
+let Sexp_select_current_marks = function('s:select_current_marks')
