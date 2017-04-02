@@ -2230,6 +2230,156 @@ let Fn_current_macro_character_terminal = function('s:current_macro_character_te
 let Fn_terminals_with_whitespace = function('s:terminals_with_whitespace') "(start, end)
 let Fn_select_current_marks = function('s:select_current_marks')
 
-" TODO: This is a temporary kludge for rgn autoload file...
-let Sexp_set_visual_marks = function('s:set_visual_marks')
-let Sexp_select_current_marks = function('s:select_current_marks')
+let s:special = {}
+
+fu! s:special.enter_special() dict
+    let o = self.get_buf()
+    for [k, v] in items(s:sexp_special_mappings)
+        if v[1] =~ 'v'
+            " Save any existing mapping.
+            " TODO: Do we need the dict? Check to see whether the difference
+            " in the rhs in case of special chars.
+            let rhs = maparg(v[0], 'v')
+            " Note: rhs will be empty when no mapping.
+            let self.maps[v[0]] = rhs
+            exe 'xmap' v[0] '<Plug>(' k ')'
+        endif
+        " TODO: Add normal maps.
+    endfor
+endfu
+
+fu! s:special.exit_special() dict
+    for [k, v] in items(s:sexp_special_mappings)
+        if v[1] =~ 'v'
+            " Save any existing mapping.
+            " TODO: Do we need the dict? Check to see whether the difference
+            " in the rhs in case of special chars.
+            let rhs = maparg(v[0], 'v')
+            " Note: rhs will be empty when no mapping.
+            let self.maps[v[0]] = rhs
+            exe 'xmap' v[0] '<Plug>(' k ')'
+        endif
+        " TODO: Add normal maps.
+    endfor
+endfu
+
+fu! s:special.get_buf() dict
+    let bnr = bufnr(0)
+    if !has_key(self, bnr)
+        let self[bnr] = {'maps': {}, 'last': {}, 'cur': -1, 'els': []}
+    endif
+    return self[bnr]
+endfu
+
+" Note: Call from a BufDelete or somesuch...
+fu! s:special.put_buf() dict
+    let bnr = bufnr(0)
+    if has_key(self, bnr)
+        call remove(self, bnr)
+    endif
+endfu
+
+fu! s:special.housekeep(o) dict
+    if !empty(a:o.last)
+        if a:o.last.tick != b:changedtick
+            \ || a:o.last.vsel[0] != getpos("'<")
+            \ || a:o.last.vsel[1] != getpos("'>")
+            let [a:o.last, a:o.cur, a:o.els] = [{}, -1, []]
+        endif
+    endif
+endfu
+
+fu! s:special.add(o, ...) dict
+    let [tick, vsel] = [b:changedtick, [getpos("'<"), getpos("'>")]]
+    " TODO: Decide whether to store cursor pos (or selection side).
+    let a:o.last = {'tick': tick, 'vsel': vsel}
+    let el = {
+        \ 'tick': tick
+        \,'vsel': vsel
+        \,'seq_cur': undotree().seq_cur
+        \,'curpos': getpos('.')
+    \ }
+    " Merge any inputs
+    if a:0
+        for [k, v] in items(a:1)
+            let el[k] = v
+        endfor
+    endif
+    let a:o.cur += 1
+    call insert(a:o.els, el, a:o.cur)
+    " Remove anything beyond new top.
+    if len(a:o.els) > a:o.cur + 1
+        call remove(a:o.els, a:o.cur + 1, -1)
+    endif
+endfu
+
+fu! s:special.get_cur(o) dict
+    return a:o.cur >= 0 ? a:o.els[a:o.cur] : {}
+endfu
+
+fu! s:special.get_end(o) dict
+    return a:o.cur >= 0 ? a:o.els[-1] : {}
+endfu
+
+" Return:
+" 0 if no movement possible
+" signed value indicating how far we moved in stack.
+fu! s:special.undo(o, n) dict
+    if s:empty(a:o)
+        " Shouldn't get here.
+        return [{}, {}]
+    endif
+    let old = a:o.els[a:o.cur]
+    if !a:n
+        return [old, old]
+    endif
+    " positive n => undo
+    let cur = a:o.cur - a:n
+    if cur < 0
+        " Limit undo
+        let cur = 0
+    elseif cur >= len(a:o.els)
+        " Limit redo
+        let cur = len(a:o.els) - 1
+    endif
+    let a:o.cur = cur
+    return [old, a:o.els[cur]]
+endfu
+
+fu! s:special.empty(o) dict
+    return empty(a:o.last)
+endfu
+
+fu! s:special.pre_op(mode) dict
+    let o = self.get_buf()
+    call self.housekeep(o)
+    if self.empty(o)
+        " Go ahead and add original position, but without special info.
+        " TODO: Think on this...
+        call self.add(o, {'mode': a:mode})
+    endif
+endfu
+
+" TODO: Record desired mode.
+fu! s:special.post_op(mode, form, inner) dict
+    let o = self.get_buf()
+    call self.add(o, {'form': a:form, 'inner': a:inner, 'mode': a:mode})
+endfu
+
+" Note: n is signed value + for undo, - for redo
+fu! s:special.undo(n) dict
+    let [old, new] = self.undo(self.get_buf(), a:n)
+    if !empty(new) && old isnot new
+        if old.tick != new.tick
+            exe 'undo' new.seq_cur
+        endif
+        call s:set_visual_marks(new.vsel)
+        call s:select_current_marks(new.mode)
+    endif
+endfu
+
+" Return value indicating which side of region cursor is on: 0=left, 1=right
+fu! sexp#side()
+    "return getpos('.') == a:o.info.vs ? 0 : 1
+endfu
+

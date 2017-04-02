@@ -86,6 +86,14 @@ let s:sexp_mappings = {
     \ 'sexp_move_mark_back':            'k'
     \ }
 
+" TODO: Eventually, add support for overrides.
+let s:sexp_special_mappings = {
+    \ 'sexp_special_move_mark_forward': ['j', 'v']
+    \ 'sexp_special_move_mark_back':    ['k', 'v']
+    \ 'sexp_special_swap_forward':      ['s', 'v']
+    \ 'sexp_special_swap_back':         ['w', 'v']
+\ }
+
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
         autocmd!
@@ -412,6 +420,13 @@ inoremap <silent><expr> <Plug>(sexp_insert_double_quote) sexp#quote_insertion('"
 
 " Delete paired delimiters
 inoremap <silent><expr> <Plug>(sexp_insert_backspace) sexp#backspace_insertion()
+
+" Special maps
+" TODO: Add counts and other stuff...
+xnoremap <Plug>(sexp_special_move_mark_forward) :<C-u>call sexp#special_move_mark_forward('v')<CR>
+xnoremap <Plug>(sexp_special_move_mark_back) :<C-u>call sexp#special_move_mark_back('v')<CR>
+xnoremap <Plug>(sexp_special_swap_forward) :<C-u>call sexp#special_swap_forward('v')<CR>
+xnoremap <Plug>(sexp_special_swap_back) :<C-u>call sexp#special_swap_back('v')<CR>
 
 """ Cleanup {{{1
 
