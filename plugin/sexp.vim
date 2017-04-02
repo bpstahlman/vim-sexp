@@ -36,6 +36,7 @@ if !exists('g:sexp_mappings')
 endif
 
 let s:sexp_mappings = {
+    \ 'sexp_toggle_special':            '<C-k>',
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
     \ 'sexp_outer_top_list':            'aF',
@@ -52,6 +53,11 @@ let s:sexp_mappings = {
     \ 'sexp_move_to_next_element_tail': '<M-e>',
     \ 'sexp_move_to_prev_top_element':  '[[',
     \ 'sexp_move_to_next_top_element':  ']]',
+    \ 'sexp_move_to_next_ELEMENT_head': '<M-n>',
+    \ 'sexp_move_to_prev_ELEMENT_head': '<M-p>',
+    \ 'sexp_move_to_prev_ELEMENT_tail': 'g<M-p>',
+    \ 'sexp_move_to_next_LIST_head':    '<M-S-n>',
+    \ 'sexp_move_to_prev_LIST_tail':    '<M-S-p>',
     \ 'sexp_select_prev_element':       '[e',
     \ 'sexp_select_next_element':       ']e',
     \ 'sexp_indent':                    '==',
@@ -81,23 +87,21 @@ let s:sexp_mappings = {
     \ 'sexp_emit_head_element':         '<M-S-j>',
     \ 'sexp_emit_tail_element':         '<M-S-k>',
     \ 'sexp_capture_prev_element':      '<M-S-h>',
-    \ 'sexp_capture_next_element':      '<M-S-l>',
-    \ 'sexp_move_mark_forward':         'j',
-    \ 'sexp_move_mark_back':            'k'
+    \ 'sexp_capture_next_element':      '<M-S-l>'
     \ }
 
 " TODO: Eventually, add support for overrides.
 let s:sexp_special_mappings = {
-    \ 'sexp_special_move_mark_forward': ['j', 'v']
-    \ 'sexp_special_move_mark_back':    ['k', 'v']
-    \ 'sexp_special_swap_forward':      ['s', 'v']
+    \ 'sexp_special_move_mark_forward': ['j', 'v'],
+    \ 'sexp_special_move_mark_back':    ['k', 'v'],
+    \ 'sexp_special_swap_forward':      ['s', 'v'],
     \ 'sexp_special_swap_back':         ['w', 'v']
 \ }
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
         autocmd!
-        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:sexp_create_mappings()'
+        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:sexp_create_mappings(0)'
     augroup END
 endif
 
@@ -178,23 +182,29 @@ endfunction
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
-function! s:sexp_create_mappings()
+function! s:sexp_create_mappings(special)
+    if a:special
+        let b:sexp_map_save = {'n': {}, 'x': {}, 'o': {}}
+    endif
     for plug in ['sexp_outer_list',     'sexp_inner_list',
                \ 'sexp_outer_top_list', 'sexp_inner_top_list',
                \ 'sexp_outer_string',   'sexp_inner_string',
                \ 'sexp_outer_element',  'sexp_inner_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
+        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(v) && (!a:special || type(v) == 3)
+            if a:special
+                " TODO: The dict return gives more literal representation than
+                " non-dict version; decide which is better.
+                let lhs = v[1]
+                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
+                let b:sexp_map_save.o[lhs] = maparg(lhs, 'o', 0, 1)
+            else
+                let lhs = type(v) == 3 ? v[0] : v
+            endif
             execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
             execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
         endif
-    endfor
-
-    for plug in ['sexp_move_mark_forward', 'sexp_move_mark_back']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
+        unlet! v lhs
     endfor
 
     for plug in ['sexp_move_to_prev_bracket',      'sexp_move_to_next_bracket',
@@ -202,21 +212,37 @@ function! s:sexp_create_mappings()
                \ 'sexp_move_to_prev_element_tail', 'sexp_move_to_next_element_tail',
                \ 'sexp_move_to_prev_top_element',  'sexp_move_to_next_top_element',
                \ 'sexp_select_prev_element',       'sexp_select_next_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
+        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(v) && (!a:special || type(v) == 3)
+            if a:special
+                let lhs = v[1]
+                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
+                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
+                let b:sexp_map_save.o[lhs] = maparg(lhs, 'o', 0, 1)
+            else
+                let lhs = type(v) == 3 ? v[0] : v
+            endif
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
             execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
             execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
         endif
+        unlet! v lhs
     endfor
 
     for plug in ['sexp_indent',              'sexp_indent_top',
                \ 'sexp_insert_at_list_head', 'sexp_insert_at_list_tail',
 	       \ 'sexp_convolute',           'sexp_splice_list']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
+        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(v) && (!a:special || type(v) == 3)
+            if a:special
+                let lhs = v[1]
+                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
+            else
+                let lhs = type(v) == 3 ? v[0] : v
+            endif
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
         endif
+        unlet! v lhs
     endfor
 
     for plug in ['sexp_round_head_wrap_list',     'sexp_round_tail_wrap_list',
@@ -229,12 +255,21 @@ function! s:sexp_create_mappings()
                \ 'sexp_swap_list_backward',       'sexp_swap_list_forward',
                \ 'sexp_swap_element_backward',    'sexp_swap_element_forward',
                \ 'sexp_emit_head_element',        'sexp_emit_tail_element',
-               \ 'sexp_capture_prev_element',     'sexp_capture_next_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
+               \ 'sexp_capture_prev_element',     'sexp_capture_next_element',
+               \ 'sexp_toggle_special']
+        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(v) && (!a:special || type(v) == 3)
+            if a:special
+                let lhs = v[1]
+                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
+                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
+            else
+                let lhs = type(v) == 3 ? v[0] : v
+            endif
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
             execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
         endif
+        unlet! v lhs
     endfor
 
     if g:sexp_enable_insert_mode_mappings
@@ -248,6 +283,10 @@ function! s:sexp_create_mappings()
         imap <silent><buffer> <BS> <Plug>(sexp_insert_backspace)
     endif
 endfunction
+
+""" Entering Special {{{1
+DEFPLUG  nnoremap sexp_toggle_special :call sexp#toggle_special('n', function('<SID>sexp_create_mappings'))<CR>
+DEFPLUG  xnoremap sexp_toggle_special :<C-u>call sexp#toggle_special('v', function('<SID>sexp_create_mappings'))<CR>
 
 """ Text Object Selections {{{1
 

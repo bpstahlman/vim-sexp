@@ -1254,6 +1254,47 @@ function! sexp#select_adjacent_element(mode, next)
     return ret
 endfunction
 
+function! s:sexp_restore_non_special_mappings()
+    for [mode, maps] in items(b:sexp_map_save)
+        for [lhs, mapobj] in items(maps)
+            " Unmap our buffer-specific temporary map.
+            exe mode . 'unmap <buffer>' . lhs
+            " Did we override an existing map? If so, restore...
+            if !empty(mapobj)
+                " Remap original, taking into account its various modifiers.
+                let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
+                    \ . (mapobj.silent ? ' <silent>' : ' ')
+                    \ . (mapobj.expr ? ' <expr>' : ' ')
+                    \ . (mapobj.buffer ? ' <buffer>' : ' ')
+                    \ . (mapobj.nowait ? ' <nowait>' : ' ')
+                if mapobj.sid
+                    " Caveat: If the map was originally defined in a script
+                    " context, we need to replace <SID> in the map with the
+                    " proper script-specific identifier.
+                    " Note: Vim doesn't appear to support escaping <SID> in
+                    " rhs, so we don't either.
+                    let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
+                endif
+                exe mapcmd
+            endif
+        endfor
+    endfor
+    unlet b:sexp_map_save
+endfu
+
+fu! sexp#toggle_special(mode, create_maps_fn)
+    if exists('b:sexp_map_save')
+        " Toggle OFF
+        call s:sexp_restore_non_special_mappings()
+    else
+        " Toggle ON
+        call a:create_maps_fn(1)
+    endif
+    if a:mode == 'v'
+        call s:select_current_marks('v')
+    endif
+endfu
+
 """ REGION SPECIAL {{{1
 " TODO: Do we need to pass count?
 function! sexp#move_mark_forward()
@@ -2230,9 +2271,11 @@ let Fn_current_macro_character_terminal = function('s:current_macro_character_te
 let Fn_terminals_with_whitespace = function('s:terminals_with_whitespace') "(start, end)
 let Fn_select_current_marks = function('s:select_current_marks')
 
+
+" TODO: Perhaps keep separate from other "special".
 let s:special = {}
 
-fu! s:special.enter_special() dict
+fu! s:enter_special()
     let o = self.get_buf()
     for [k, v] in items(s:sexp_special_mappings)
         if v[1] =~ 'v'
@@ -2248,7 +2291,7 @@ fu! s:special.enter_special() dict
     endfor
 endfu
 
-fu! s:special.exit_special() dict
+fu! s:exit_special()
     for [k, v] in items(s:sexp_special_mappings)
         if v[1] =~ 'v'
             " Save any existing mapping.
