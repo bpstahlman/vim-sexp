@@ -1236,21 +1236,15 @@ endfunction
 " Set visual marks around current element and enter visual mode.
 function! sexp#select_current_element(mode, inner)
     call s:set_marks_around_current_element(a:mode, a:inner)
-    let ok = s:select_current_marks(a:mode)
-    if ok
-        call rgn#set(0, a:inner)
-    endif
-    return ok
+    return s:select_current_marks(a:mode)
 endfunction
 
 " Set visual marks around adjacent element and enter visual mode; 0 for
 " previous, 1 for next. If no such adjacent element exists, selects current
 " element.
 function! sexp#select_adjacent_element(mode, next)
-    call rgn#pre_op()
     call s:set_marks_around_adjacent_element(a:mode, a:next)
     let ret = s:select_current_marks(a:mode)
-    call rgn#post_op(0, 1)
     return ret
 endfunction
 
@@ -2257,8 +2251,9 @@ function! sexp#region_info(mode)
     endif
 endfu
 
-map <LocalLeader>u :<C-u>call rgn#undo(v:count1)<CR>
-map <LocalLeader>r :<C-u>call rgn#undo(-v:count1)<CR>
+" TODO: Flesh this out...
+map <LocalLeader>u :<C-u>call sexp#hist_undo(v:count1)<CR>
+map <LocalLeader>r :<C-u>call sexp#hist_undo(-v:count1)<CR>
 
 let Fn_current_element_terminal = function('s:current_element_terminal') "(end)
 let Fn_nearest_element_terminal = function('s:nearest_element_terminal') "(next, tail)
@@ -2273,7 +2268,7 @@ let Fn_select_current_marks = function('s:select_current_marks')
 
 
 " TODO: Perhaps keep separate from other "special".
-let s:special = {}
+let s:hist = {}
 
 fu! s:enter_special()
     let o = self.get_buf()
@@ -2306,7 +2301,7 @@ fu! s:exit_special()
     endfor
 endfu
 
-fu! s:special.get_buf() dict
+fu! s:hist.get_buf() dict
     let bnr = bufnr(0)
     if !has_key(self, bnr)
         let self[bnr] = {'maps': {}, 'last': {}, 'cur': -1, 'els': []}
@@ -2315,14 +2310,14 @@ fu! s:special.get_buf() dict
 endfu
 
 " Note: Call from a BufDelete or somesuch...
-fu! s:special.put_buf() dict
+fu! s:hist.put_buf() dict
     let bnr = bufnr(0)
     if has_key(self, bnr)
         call remove(self, bnr)
     endif
 endfu
 
-fu! s:special.housekeep(o) dict
+fu! s:hist.housekeep(o) dict
     if !empty(a:o.last)
         if a:o.last.tick != b:changedtick
             \ || a:o.last.vsel[0] != getpos("'<")
@@ -2332,7 +2327,7 @@ fu! s:special.housekeep(o) dict
     endif
 endfu
 
-fu! s:special.add(o, ...) dict
+fu! s:hist.add(o, ...) dict
     let [tick, vsel] = [b:changedtick, [getpos("'<"), getpos("'>")]]
     " TODO: Decide whether to store cursor pos (or selection side).
     let a:o.last = {'tick': tick, 'vsel': vsel}
@@ -2342,6 +2337,7 @@ fu! s:special.add(o, ...) dict
         \,'seq_cur': undotree().seq_cur
         \,'curpos': getpos('.')
     \ }
+    echomsg 'tick=' . tick . ' vsel=' . string(vsel)
     " Merge any inputs
     if a:0
         for [k, v] in items(a:1)
@@ -2356,19 +2352,19 @@ fu! s:special.add(o, ...) dict
     endif
 endfu
 
-fu! s:special.get_cur(o) dict
+fu! s:hist.get_cur(o) dict
     return a:o.cur >= 0 ? a:o.els[a:o.cur] : {}
 endfu
 
-fu! s:special.get_end(o) dict
+fu! s:hist.get_end(o) dict
     return a:o.cur >= 0 ? a:o.els[-1] : {}
 endfu
 
 " Return:
 " 0 if no movement possible
 " signed value indicating how far we moved in stack.
-fu! s:special.undo(o, n) dict
-    if s:empty(a:o)
+fu! s:hist.undo(o, n) dict
+    if self.empty(a:o)
         " Shouldn't get here.
         return [{}, {}]
     endif
@@ -2389,40 +2385,42 @@ fu! s:special.undo(o, n) dict
     return [old, a:o.els[cur]]
 endfu
 
-fu! s:special.empty(o) dict
+fu! s:hist.empty(o) dict
     return empty(a:o.last)
 endfu
 
-fu! s:special.pre_op(mode) dict
-    let o = self.get_buf()
-    call self.housekeep(o)
-    if self.empty(o)
-        " Go ahead and add original position, but without special info.
-        " TODO: Think on this...
-        call self.add(o, {'mode': a:mode})
+fu! sexp#hist_pre_op(mode)
+    let o = s:hist.get_buf()
+    call s:hist.housekeep(o)
+    if s:hist.empty(o)
+        " Go ahead and add original position, but without hist info.
+        call s:hist.add(o, {'mode': a:mode})
     endif
 endfu
 
 " TODO: Record desired mode.
-fu! s:special.post_op(mode, form, inner) dict
-    let o = self.get_buf()
-    call self.add(o, {'form': a:form, 'inner': a:inner, 'mode': a:mode})
+fu! sexp#hist_post_op(mode, form, inner)
+    echomsg 'hist_post_op: mode=' . a:mode
+    let o = s:hist.get_buf()
+    call s:hist.add(o, {'form': a:form, 'inner': a:inner, 'mode': a:mode})
 endfu
 
 " Note: n is signed value + for undo, - for redo
-fu! s:special.undo(n) dict
-    let [old, new] = self.undo(self.get_buf(), a:n)
+fu! sexp#hist_undo(n)
+    " TODO: Add logic to update g:repeat_tick if applicable.
+    let [old, new] = s:hist.undo(s:hist.get_buf(), a:n)
     if !empty(new) && old isnot new
+        echomsg "oldtick=" . old.tick . " newtick=" . new.tick . " seq_cur=" . new.seq_cur
         if old.tick != new.tick
             exe 'undo' new.seq_cur
         endif
         call s:set_visual_marks(new.vsel)
-        call s:select_current_marks(new.mode)
+        if new.mode == 'v'
+            call s:select_current_marks(new.mode)
+        else
+            call s:setcursor(new.curpos)
+        endif
     endif
 endfu
 
-" Return value indicating which side of region cursor is on: 0=left, 1=right
-fu! sexp#side()
-    "return getpos('.') == a:o.info.vs ? 0 : 1
-endfu
 
