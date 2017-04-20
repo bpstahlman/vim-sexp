@@ -1248,8 +1248,12 @@ function! sexp#select_adjacent_element(mode, next)
     return ret
 endfunction
 
+" Restore mappings that were overridden upon entry into 'special', using
+" information saved in a buf-local dictionary.
 function! s:sexp_restore_non_special_mappings()
+    " Loop over modes.
     for [mode, maps] in items(b:sexp_map_save)
+        " Loop over mappings for this mode.
         for [lhs, mapobj] in items(maps)
             " Unmap our buffer-specific temporary map.
             exe mode . 'unmap <buffer>' . lhs
@@ -1271,11 +1275,20 @@ function! s:sexp_restore_non_special_mappings()
                 endif
                 exe mapcmd
             endif
+            " TODO: Consider option to unmap/restore the non-special maps.
+            " Rationale: <nowait> only helps when ambiguous map is global;
+            " user might want special maps that are ambiguous with non-special
+            " (but buf-local) maps.
         endfor
     endfor
     unlet b:sexp_map_save
 endfu
 
+" Toggle between 'special' and non-special modes.
+" Note: sexp_create_mappings *must* be defined in the plugin script; as long
+" as this function and sexp_restore_non_special_mappings remain in the
+" autoload script, the function pointer argument will be required.
+" TODO: Consider moving the special functions to the plugin script.
 fu! sexp#toggle_special(mode, create_maps_fn)
     if exists('b:sexp_map_save')
         " Toggle OFF
@@ -1285,33 +1298,11 @@ fu! sexp#toggle_special(mode, create_maps_fn)
         call a:create_maps_fn(1)
     endif
     if a:mode == 'v'
+        " Don't let toggling special clobber selection.
         call s:select_current_marks('v')
     endif
 endfu
 
-""" REGION SPECIAL {{{1
-" TODO: Do we need to pass count?
-function! sexp#move_mark_forward()
-    echomsg "Got here!"
-    if rgn#is_special()
-        let ri = rgn#info()
-        " Move to ve and then select next
-        call s:setcursor(ri.ve)
-        let pos = s:move_to_adjacent_element(1, 0, 0)
-        if s:compare_pos(pos, ri.ve) > 0
-            " Move was possible
-            call s:set_marks_around_current_element('v', ri.inner)
-            call s:select_current_marks('v')
-            " TODO: How to test whether 'form' or 'element'?
-            call rgn#set(0, ri.inner)
-        endif
-    else
-        " Don't treat specially.
-        " TODO: Allow for user override.
-        normal! j
-        " TODO: Restore visual mode
-    endif
-endfu
 
 """ BUFFER MUTATION {{{1
 

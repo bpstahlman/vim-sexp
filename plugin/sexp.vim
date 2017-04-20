@@ -90,12 +90,58 @@ let s:sexp_mappings = {
     \ 'sexp_capture_next_element':      '<M-S-l>'
     \ }
 
-" TODO: Eventually, add support for overrides.
-let s:sexp_special_mappings = {
-    \ 'sexp_special_move_mark_forward': ['j', 'v'],
-    \ 'sexp_special_move_mark_back':    ['k', 'v'],
-    \ 'sexp_special_swap_forward':      ['s', 'v'],
-    \ 'sexp_special_swap_back':         ['w', 'v']
+" Define the (non-insert) modes in which each mapping should be created.
+" Note: Intentionally not comining this with s:sexp_mappings because user
+" might want to copy s:sexp_mappings into his vimrc for tweaking, and user has
+" no control over the modes.
+let s:plug_map_modes = {
+    \ 'sexp_outer_list':                'xo',
+    \ 'sexp_inner_list':                'xo',
+    \ 'sexp_outer_top_list':            'xo',
+    \ 'sexp_inner_top_list':            'xo',
+    \ 'sexp_outer_string':              'xo',
+    \ 'sexp_inner_string':              'xo',
+    \ 'sexp_outer_element':             'xo',
+    \ 'sexp_inner_element':             'xo',
+    \ 'sexp_move_to_prev_bracket':      'nxo',
+    \ 'sexp_move_to_next_bracket':      'nxo',
+    \ 'sexp_move_to_prev_element_head': 'nxo',
+    \ 'sexp_move_to_next_element_head': 'nxo',
+    \ 'sexp_move_to_prev_element_tail': 'nxo',
+    \ 'sexp_move_to_next_element_tail': 'nxo',
+    \ 'sexp_move_to_prev_top_element':  'nxo',
+    \ 'sexp_move_to_next_top_element':  'nxo',
+    \ 'sexp_select_prev_element':       'nxo',
+    \ 'sexp_select_next_element':       'nxo',
+    \ 'sexp_indent':                    'n',
+    \ 'sexp_indent_top':                'n',
+    \ 'sexp_insert_at_list_head':       'n',
+    \ 'sexp_insert_at_list_tail':       'n',
+    \ 'sexp_convolute':                 'n',
+    \ 'sexp_splice_list':               'n',
+    \ 'sexp_round_head_wrap_list':      'nx',
+    \ 'sexp_round_tail_wrap_list':      'nx',
+    \ 'sexp_square_head_wrap_list':     'nx',
+    \ 'sexp_square_tail_wrap_list':     'nx',
+    \ 'sexp_curly_head_wrap_list':      'nx',
+    \ 'sexp_curly_tail_wrap_list':      'nx',
+    \ 'sexp_round_head_wrap_element':   'nx',
+    \ 'sexp_round_tail_wrap_element':   'nx',
+    \ 'sexp_square_head_wrap_element':  'nx',
+    \ 'sexp_square_tail_wrap_element':  'nx',
+    \ 'sexp_curly_head_wrap_element':   'nx',
+    \ 'sexp_curly_tail_wrap_element':   'nx',
+    \ 'sexp_raise_list':                'nx',
+    \ 'sexp_raise_element':             'nx',
+    \ 'sexp_swap_list_backward':        'nx',
+    \ 'sexp_swap_list_forward':         'nx',
+    \ 'sexp_swap_element_backward':     'nx',
+    \ 'sexp_swap_element_forward':      'nx',
+    \ 'sexp_emit_head_element':         'nx',
+    \ 'sexp_emit_tail_element':         'nx',
+    \ 'sexp_capture_prev_element':      'nx',
+    \ 'sexp_capture_next_element':      'nx',
+    \ 'sexp_toggle_special':            'nx',
 \ }
 
 if !empty(g:sexp_filetypes)
@@ -199,98 +245,138 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
+" Return list of the following form.
+" [<non-special lhs>, <special lhs>]
+" Logic: Prefer g:sexp_mappings, but warn and fallback to s:sexp_mappings if
+" user has specified invalid entry.
+function! s:sexp_get_mapping(plug)
+    for map in [g:sexp_mappings, s:sexp_mappings]
+        if has_key(map, a:plug)
+            let m = map[a:plug]
+            " Use type/len of m to determine whether mapping should be created:
+            "   string:          "legacy_lhs"
+            "   1 element list:  [ "special_lhs" ]
+            "   2 element list:  [ "legacy_lhs", "special_lhs" ]
+            " First, validate the form of the sexp_mappings entry.
+            " Design Decision: Empty arrays and/or lhs strings will not be
+            " considered error: rather, they will be indication that user has
+            " chosen to disable the corresponding map. Note that, due to the way
+            " mappings are defined, an all whitespace lhs effectively empty.
+            if empty(m)
+                return ['', '']
+            endif
+            let mt = type(m)
+            if mt == 1
+                let ret = [m, '']
+            elseif mt == 3
+                if len(m) == 1
+                    let ret = ['', m[0]]
+                elseif len(m) == 2
+                    let ret = [m[0], m[1]]
+                endif
+            endif
+            if exists('ret')
+                " We have a valid entry.
+                break
+            endif
+            " Key exists but was invalid.
+            " Assumption: Must be g:sexp_mappings, since invalid entry in
+            " s:sexp_mappings would imply internal error.
+            echohl WarningMsg
+            echomsg "Skipping invalid entry in sexp_mappings list for " . a:plug
+            echohl None
+        endif
+    endfor
+    " Make sure all whitespace lhs is treated as empty.
+    call map(ret, 'substitute(v:val, ''^\s\+$'', "", "g"')
+    return ret
+endfunction
+
+" Return list of map save information.
+function! s:sexp_save_and_hide_conflicting_maps(lhs)
+    let ret = []
+    while 1
+        let rhs = mapcheck(lhs, mode)
+        if empty(rhs)
+            return ret
+        endif
+        " Ambiguity or conflict with something, but we need more
+        " information to know how to handle...
+        if has_key(b:sexp_map_save, rhs)
+            " vim-sexp non-special map.
+            if b:sexp_map_save[rhs]
+                " The non-special map's functionality is covered
+                " by a special map; delete it to remove
+                " ambiguity/conflict.
+                execute mode . 'unmap <buffer>' . rhs
+            endif
+        else
+            " Non-vim-sexp map. If it's buf-local, we need to save and restore
+            " on exit from special
+            " Note: <nowait> prevents conflict with global maps.
+            let ma = maparg(lhs, mode, 0, 1)
+            if ma.buffer
+                " Permit restoration when we exit special.
+                let b:sexp_map_save[mode][lhs] = maparg(lhs, mode, 0, 1)
+            else
+                " Since buf-local maps take priority, the fact that we've
+                " reached a global one implies there are no more buf-locals.
+                return ret
+            endif
+        endif
+    endwhile
+endfunction
+
+function! s:sexp_create_non_insert_mappings(special)
+    if a:special
+        " Entering special mode. The mappings we're about to create are
+        " transient and likely to override existing mappings. Create
+        " a buf-local var to hold the information we'll need to restore the
+        " original mappings upon exit from transitory special state.
+        let map_save = {'n': {}, 'x': {}, 'o': {}}
+    else
+        " For non-special, map plug to a flag indicating whether there's a
+        " corresponding special mapping.
+        let map_save = {}
+    endif
+    " TODO: Build map of non-special lhs as we go...
+    for [plug, modestr] in items(s:plug_map_modes)
+        let modes = split(modestr, '')
+        let lhs = sexp_get_mapping(a:special, plug)
+        if !a:special
+            " Record whether this plug has a special mapping.
+            " Note: This determination can be made w/out regard to mode.
+            let map_save[plug] = !empty(lhs[1])
+        endif
+        for mode in modes
+            if a:special
+                " Differentiate between override of non-special mapping (which
+                " can be restored naturally) and non-sexp mapping (which we'll
+                " need to save/restore).
+                " Issue: mapcheck returns only one of potentially many
+                " conflicts. Call iteratively, saving and removing conflicting
+                " maps, or is this even necessary? Should we just leave it up
+                " to user to pick lhs that don't conflict with non-sexp
+                " mappings?
+                " Ahhh!!!! Don't need to remove any global
+                " conflicts/ambiguities because of <nowait>, but do need to
+                " keep removing <buffer> maps till there are no more
+                " conflicts.
+                call extend(map_save,
+                    \ s:sexp_save_and_hide_conflicting_maps(lhs[1]))
+
+            endif
+            " Design Decision:
+            execute mode . 'map ' . (a:special ? '<nowait>' : '')
+                \ . '<silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+        endfor
+    endfor
+endfu
+
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings(special)
-    if a:special
-        let b:sexp_map_save = {'n': {}, 'x': {}, 'o': {}}
-    endif
-    for plug in ['sexp_outer_list',     'sexp_inner_list',
-               \ 'sexp_outer_top_list', 'sexp_inner_top_list',
-               \ 'sexp_outer_string',   'sexp_inner_string',
-               \ 'sexp_outer_element',  'sexp_inner_element']
-        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(v) && (!a:special || type(v) == 3)
-            if a:special
-                " TODO: The dict return gives more literal representation than
-                " non-dict version; decide which is better.
-                let lhs = v[1]
-                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
-                let b:sexp_map_save.o[lhs] = maparg(lhs, 'o', 0, 1)
-            else
-                let lhs = type(v) == 3 ? v[0] : v
-            endif
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-        unlet! v lhs
-    endfor
-
-    for plug in ['sexp_move_to_prev_bracket',      'sexp_move_to_next_bracket',
-               \ 'sexp_move_to_prev_element_head', 'sexp_move_to_next_element_head',
-               \ 'sexp_move_to_prev_element_tail', 'sexp_move_to_next_element_tail',
-               \ 'sexp_move_to_prev_top_element',  'sexp_move_to_next_top_element',
-               \ 'sexp_select_prev_element',       'sexp_select_next_element']
-        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(v) && (!a:special || type(v) == 3)
-            if a:special
-                let lhs = v[1]
-                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
-                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
-                let b:sexp_map_save.o[lhs] = maparg(lhs, 'o', 0, 1)
-            else
-                let lhs = type(v) == 3 ? v[0] : v
-            endif
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-        unlet! v lhs
-    endfor
-
-    for plug in ['sexp_indent',              'sexp_indent_top',
-               \ 'sexp_insert_at_list_head', 'sexp_insert_at_list_tail',
-	       \ 'sexp_convolute',           'sexp_splice_list']
-        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(v) && (!a:special || type(v) == 3)
-            if a:special
-                let lhs = v[1]
-                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
-            else
-                let lhs = type(v) == 3 ? v[0] : v
-            endif
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-        unlet! v lhs
-    endfor
-
-    for plug in ['sexp_round_head_wrap_list',     'sexp_round_tail_wrap_list',
-               \ 'sexp_square_head_wrap_list',    'sexp_square_tail_wrap_list',
-               \ 'sexp_curly_head_wrap_list',     'sexp_curly_tail_wrap_list',
-               \ 'sexp_round_head_wrap_element',  'sexp_round_tail_wrap_element',
-               \ 'sexp_square_head_wrap_element', 'sexp_square_tail_wrap_element',
-               \ 'sexp_curly_head_wrap_element',  'sexp_curly_tail_wrap_element',
-               \ 'sexp_raise_list',               'sexp_raise_element',
-               \ 'sexp_swap_list_backward',       'sexp_swap_list_forward',
-               \ 'sexp_swap_element_backward',    'sexp_swap_element_forward',
-               \ 'sexp_emit_head_element',        'sexp_emit_tail_element',
-               \ 'sexp_capture_prev_element',     'sexp_capture_next_element',
-               \ 'sexp_toggle_special']
-        let v = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(v) && (!a:special || type(v) == 3)
-            if a:special
-                let lhs = v[1]
-                let b:sexp_map_save.n[lhs] = maparg(lhs, 'n', 0, 1)
-                let b:sexp_map_save.x[lhs] = maparg(lhs, 'x', 0, 1)
-            else
-                let lhs = type(v) == 3 ? v[0] : v
-            endif
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-        unlet! v lhs
-    endfor
-
+    call s:sexp_create_non_insert_mappings(a:special)
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
         imap <silent><buffer> [    <Plug>(sexp_insert_opening_square)
