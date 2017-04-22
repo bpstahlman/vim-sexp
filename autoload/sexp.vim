@@ -1248,15 +1248,71 @@ function! sexp#select_adjacent_element(mode, next)
     return ret
 endfunction
 
+" Return list of map save dicts.
+" Note: Non-special b:sexp_map_save still valid at this point.
+function! sexp#shadow_conflicting_maps(lhs, mode, special_coverage, maps)
+    while 1
+        " Check for conflict/ambiguity for specified lhs in indicated mode.
+        let rhs = mapcheck(a:lhs, a:mode)
+        if empty(rhs)
+            " No more conflict/ambiguity
+            return
+        endif
+        let hide = 0
+        " Ambiguity or conflict exists, but we need more information to know
+        " how to handle...
+        if has_key(a:special_coverage, rhs)
+            " sexp non-special map
+            if a:special_coverage[rhs]
+                " The non-special map's functionality is covered by a special
+                " map; delete it to remove ambiguity/conflict.
+                let hide = 1
+                " Possible Alternative Approach: Re-run sexp_create_mappings
+                " upon exiting special; in that case, we wouldn't need to
+                " save/restore the sexp buf-local maps.
+            endif
+        else
+            " non-sexp map
+            let ma = maparg(a:lhs, a:mode, 0, 1)
+            if ma.buffer
+                " Permit restoration when we exit special.
+                let hide = 1
+            else
+                " Note: <nowait> prevents conflict with global maps.
+                " Since buf-local maps take priority, the fact that we've
+                " reached a global implies there are no more buf-locals.
+                return
+            endif
+        endif
+        " If hiding existing map, save info needed to restore upon exit from
+        " special and delete; empty object indicates nothing to restore.
+        if hide
+            let a:maps[a:mode][a:lhs] = maparg(a:lhs, a:mode, 0, 1)
+            execute a:mode . 'unmap <buffer>' . a:lhs
+        endif
+    endwhile
+endfunction
+
 " Restore mappings that were overridden upon entry into 'special', using
 " information saved in a buf-local dictionary.
-function! s:sexp_restore_non_special_mappings()
+" Note: Keeping this in autoload because it doesn't need to be in plugin.
+" Hmmm...: Would it be ok to move all the mapping functions to autoload? I was
+" thinking he wanted to allow the mappings to be created without loading all
+" the sexp functions, but is there really any reason for this? I mean, the
+" mappings aren't created till a sexp file is loaded. Hmm...
+" b:sexp_map_cfg: { plug: {modes: [], [normal-lhs, special-lhs]}}
+function! s:sexp_restore_non_special_mappings(maps)
+    " Delete the special maps.
+    for [plug, cfg] in items(b:sexp_map_cfg)
+        for mode in cfg.modes
+            " Unmap our buffer-specific temporary map.
+            exe mode . 'unmap <buffer>' . cfg.lhs
+        endfor
+    endfor
     " Loop over modes.
-    for [mode, maps] in items(b:sexp_map_save)
+    for [mode, maps] in items(a:maps)
         " Loop over mappings for this mode.
         for [lhs, mapobj] in items(maps)
-            " Unmap our buffer-specific temporary map.
-            exe mode . 'unmap <buffer>' . lhs
             " Did we override an existing map? If so, restore...
             if !empty(mapobj)
                 " Remap original, taking into account its various modifiers.
@@ -1275,13 +1331,8 @@ function! s:sexp_restore_non_special_mappings()
                 endif
                 exe mapcmd
             endif
-            " TODO: Consider option to unmap/restore the non-special maps.
-            " Rationale: <nowait> only helps when ambiguous map is global;
-            " user might want special maps that are ambiguous with non-special
-            " (but buf-local) maps.
         endfor
     endfor
-    unlet b:sexp_map_save
 endfu
 
 " Toggle between 'special' and non-special modes.
@@ -1290,9 +1341,13 @@ endfu
 " autoload script, the function pointer argument will be required.
 " TODO: Consider moving the special functions to the plugin script.
 fu! sexp#toggle_special(mode, create_maps_fn)
-    if exists('b:sexp_map_save')
+    if exists('b:sexp_map_save') && b:sexp_map_save.special
         " Toggle OFF
-        call s:sexp_restore_non_special_mappings()
+        call s:sexp_restore_non_special_mappings(b:sexp_map_save.maps)
+        " TODO: If we cache map config once at first load, we could avoid
+        " this. Time this call to see whether its cost outweighs advantage of
+        " being able to change map config and toggle to have it take effect.
+        call a:create_maps_fn(0)
     else
         " Toggle ON
         call a:create_maps_fn(1)
@@ -2328,7 +2383,7 @@ fu! s:hist.add(o, ...) dict
         \,'seq_cur': undotree().seq_cur
         \,'curpos': getpos('.')
     \ }
-    echomsg 'tick=' . tick . ' vsel=' . string(vsel)
+    "echomsg 'tick=' . tick . ' vsel=' . string(vsel)
     " Merge any inputs
     if a:0
         for [k, v] in items(a:1)
@@ -2391,7 +2446,7 @@ endfu
 
 " TODO: Record desired mode.
 fu! sexp#hist_post_op(mode, form, inner)
-    echomsg 'hist_post_op: mode=' . a:mode
+    "echomsg 'hist_post_op: mode=' . a:mode
     let o = s:hist.get_buf()
     call s:hist.add(o, {'form': a:form, 'inner': a:inner, 'mode': a:mode})
 endfu
@@ -2401,7 +2456,7 @@ fu! sexp#hist_undo(n)
     " TODO: Add logic to update g:repeat_tick if applicable.
     let [old, new] = s:hist.undo(s:hist.get_buf(), a:n)
     if !empty(new) && old isnot new
-        echomsg "oldtick=" . old.tick . " newtick=" . new.tick . " seq_cur=" . new.seq_cur
+        "echomsg "oldtick=" . old.tick . " newtick=" . new.tick . " seq_cur=" . new.seq_cur
         if old.tick != new.tick
             exe 'undo' new.seq_cur
         endif
