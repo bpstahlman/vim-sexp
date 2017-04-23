@@ -1248,9 +1248,9 @@ function! sexp#select_adjacent_element(mode, next)
     return ret
 endfunction
 
-" Return list of map save dicts.
-" Note: Non-special b:sexp_map_save still valid at this point.
-function! sexp#shadow_conflicting_maps(lhs, mode, special_coverage, maps)
+" TODO: Don't think normal_maps is needed any longer...
+function! sexp#shadow_conflicting_maps(lhs, mode, normal_maps, special_maps)
+    " Keep looping till there are no more buffer ambiguities/conflicts.
     while 1
         " Check for conflict/ambiguity for specified lhs in indicated mode.
         let rhs = mapcheck(a:lhs, a:mode)
@@ -1261,11 +1261,12 @@ function! sexp#shadow_conflicting_maps(lhs, mode, special_coverage, maps)
         let hide = 0
         " Ambiguity or conflict exists, but we need more information to know
         " how to handle...
-        if has_key(a:special_coverage, rhs)
+        if has_key(b:sexp_map_cfg, rhs)
+            let o = b:sexp_map_cfg[rhs]
             " sexp non-special map
-            if a:special_coverage[rhs]
+            if !empty(o.lhs[1]) && index(o.modes, a:mode) >= 0
                 " The non-special map's functionality is covered by a special
-                " map; delete it to remove ambiguity/conflict.
+                " map in this mode; delete it to remove ambiguity/conflict.
                 let hide = 1
                 " Possible Alternative Approach: Re-run sexp_create_mappings
                 " upon exiting special; in that case, we wouldn't need to
@@ -1285,9 +1286,9 @@ function! sexp#shadow_conflicting_maps(lhs, mode, special_coverage, maps)
             endif
         endif
         " If hiding existing map, save info needed to restore upon exit from
-        " special and delete; empty object indicates nothing to restore.
+        " special, then delete.
         if hide
-            let a:maps[a:mode][a:lhs] = maparg(a:lhs, a:mode, 0, 1)
+            let a:special_maps[a:mode][a:lhs] = maparg(a:lhs, a:mode, 0, 1)
             execute a:mode . 'unmap <buffer>' . a:lhs
         endif
     endwhile
@@ -1304,33 +1305,33 @@ endfunction
 function! s:sexp_restore_non_special_mappings(maps)
     " Delete the special maps.
     for [plug, cfg] in items(b:sexp_map_cfg)
-        for mode in cfg.modes
-            " Unmap our buffer-specific temporary map.
-            exe mode . 'unmap <buffer>' . cfg.lhs
-        endfor
+        if !empty(cfg.lhs[1])
+            for mode in cfg.modes
+                " Unmap our buffer-specific temporary map.
+                exe mode . 'unmap <buffer>' . cfg.lhs[1]
+            endfor
+        endif
     endfor
+    " Restore ambiguous/conflicting buf-local maps.
     " Loop over modes.
     for [mode, maps] in items(a:maps)
         " Loop over mappings for this mode.
         for [lhs, mapobj] in items(maps)
-            " Did we override an existing map? If so, restore...
-            if !empty(mapobj)
-                " Remap original, taking into account its various modifiers.
-                let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
-                    \ . (mapobj.silent ? ' <silent>' : ' ')
-                    \ . (mapobj.expr ? ' <expr>' : ' ')
-                    \ . (mapobj.buffer ? ' <buffer>' : ' ')
-                    \ . (mapobj.nowait ? ' <nowait>' : ' ')
-                if mapobj.sid
-                    " Caveat: If the map was originally defined in a script
-                    " context, we need to replace <SID> in the map with the
-                    " proper script-specific identifier.
-                    " Note: Vim doesn't appear to support escaping <SID> in
-                    " rhs, so we don't either.
-                    let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
-                endif
-                exe mapcmd
+            " Remap overridden map, taking into account its various modifiers.
+            let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
+                \ . (mapobj.silent ? ' <silent>' : ' ')
+                \ . (mapobj.expr ? ' <expr>' : ' ')
+                \ . (mapobj.buffer ? ' <buffer>' : ' ')
+                \ . (mapobj.nowait ? ' <nowait>' : ' ')
+            if mapobj.sid
+                " Caveat: If the map was originally defined in a script
+                " context, we need to replace <SID> in the map with the
+                " proper script-specific identifier.
+                " Note: Vim doesn't appear to support escaping <SID> in
+                " rhs, so we don't either.
+                let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
             endif
+            exe mapcmd
         endfor
     endfor
 endfu
@@ -1344,10 +1345,7 @@ fu! sexp#toggle_special(mode, create_maps_fn)
     if exists('b:sexp_map_save') && b:sexp_map_save.special
         " Toggle OFF
         call s:sexp_restore_non_special_mappings(b:sexp_map_save.maps)
-        " TODO: If we cache map config once at first load, we could avoid
-        " this. Time this call to see whether its cost outweighs advantage of
-        " being able to change map config and toggle to have it take effect.
-        call a:create_maps_fn(0)
+        let b:sexp_map_save = {}
     else
         " Toggle ON
         call a:create_maps_fn(1)

@@ -94,55 +94,56 @@ let s:sexp_mappings = {
 " Note: Intentionally not comining this with s:sexp_mappings because user
 " might want to copy s:sexp_mappings into his vimrc for tweaking, and user has
 " no control over the modes.
-let s:plug_map_modes = {
-    \ 'sexp_outer_list':                'xo',
-    \ 'sexp_inner_list':                'xo',
-    \ 'sexp_outer_top_list':            'xo',
-    \ 'sexp_inner_top_list':            'xo',
-    \ 'sexp_outer_string':              'xo',
-    \ 'sexp_inner_string':              'xo',
-    \ 'sexp_outer_element':             'xo',
-    \ 'sexp_inner_element':             'xo',
-    \ 'sexp_move_to_prev_bracket':      'nxo',
-    \ 'sexp_move_to_next_bracket':      'nxo',
-    \ 'sexp_move_to_prev_element_head': 'nxo',
-    \ 'sexp_move_to_next_element_head': 'nxo',
-    \ 'sexp_move_to_prev_element_tail': 'nxo',
-    \ 'sexp_move_to_next_element_tail': 'nxo',
-    \ 'sexp_move_to_prev_top_element':  'nxo',
-    \ 'sexp_move_to_next_top_element':  'nxo',
-    \ 'sexp_select_prev_element':       'nxo',
-    \ 'sexp_select_next_element':       'nxo',
-    \ 'sexp_indent':                    'n',
-    \ 'sexp_indent_top':                'n',
-    \ 'sexp_insert_at_list_head':       'n',
-    \ 'sexp_insert_at_list_tail':       'n',
-    \ 'sexp_convolute':                 'n',
-    \ 'sexp_splice_list':               'n',
-    \ 'sexp_round_head_wrap_list':      'nx',
-    \ 'sexp_round_tail_wrap_list':      'nx',
-    \ 'sexp_square_head_wrap_list':     'nx',
-    \ 'sexp_square_tail_wrap_list':     'nx',
-    \ 'sexp_curly_head_wrap_list':      'nx',
-    \ 'sexp_curly_tail_wrap_list':      'nx',
-    \ 'sexp_round_head_wrap_element':   'nx',
-    \ 'sexp_round_tail_wrap_element':   'nx',
-    \ 'sexp_square_head_wrap_element':  'nx',
-    \ 'sexp_square_tail_wrap_element':  'nx',
-    \ 'sexp_curly_head_wrap_element':   'nx',
-    \ 'sexp_curly_tail_wrap_element':   'nx',
-    \ 'sexp_raise_list':                'nx',
-    \ 'sexp_raise_element':             'nx',
-    \ 'sexp_swap_list_backward':        'nx',
-    \ 'sexp_swap_list_forward':         'nx',
-    \ 'sexp_swap_element_backward':     'nx',
-    \ 'sexp_swap_element_forward':      'nx',
-    \ 'sexp_emit_head_element':         'nx',
-    \ 'sexp_emit_tail_element':         'nx',
-    \ 'sexp_capture_prev_element':      'nx',
-    \ 'sexp_capture_next_element':      'nx',
-    \ 'sexp_toggle_special':            'nx',
-\ }
+" TODO: Align this list.
+let s:plug_map_modes = [
+    \ ['sexp_outer_list', 'xo'],
+    \ ['sexp_inner_list', 'xo'],
+    \ ['sexp_outer_top_list', 'xo'],
+    \ ['sexp_inner_top_list', 'xo'],
+    \ ['sexp_outer_string', 'xo'],
+    \ ['sexp_inner_string', 'xo'],
+    \ ['sexp_outer_element', 'xo'],
+    \ ['sexp_inner_element', 'xo'],
+    \ ['sexp_move_to_prev_bracket', 'nxo'],
+    \ ['sexp_move_to_next_bracket', 'nxo'],
+    \ ['sexp_move_to_prev_element_head', 'nxo'],
+    \ ['sexp_move_to_next_element_head', 'nxo'],
+    \ ['sexp_move_to_prev_element_tail', 'nxo'],
+    \ ['sexp_move_to_next_element_tail', 'nxo'],
+    \ ['sexp_move_to_prev_top_element', 'nxo'],
+    \ ['sexp_move_to_next_top_element', 'nxo'],
+    \ ['sexp_select_prev_element', 'nxo'],
+    \ ['sexp_select_next_element', 'nxo'],
+    \ ['sexp_indent', 'n'],
+    \ ['sexp_indent_top', 'n'],
+    \ ['sexp_insert_at_list_head', 'n'],
+    \ ['sexp_insert_at_list_tail', 'n'],
+    \ ['sexp_convolute', 'n'],
+    \ ['sexp_splice_list', 'n'],
+    \ ['sexp_round_head_wrap_list', 'nx'],
+    \ ['sexp_round_tail_wrap_list', 'nx'],
+    \ ['sexp_square_head_wrap_list', 'nx'],
+    \ ['sexp_square_tail_wrap_list', 'nx'],
+    \ ['sexp_curly_head_wrap_list', 'nx'],
+    \ ['sexp_curly_tail_wrap_list', 'nx'],
+    \ ['sexp_round_head_wrap_element', 'nx'],
+    \ ['sexp_round_tail_wrap_element', 'nx'],
+    \ ['sexp_square_head_wrap_element', 'nx'],
+    \ ['sexp_square_tail_wrap_element', 'nx'],
+    \ ['sexp_curly_head_wrap_element', 'nx'],
+    \ ['sexp_curly_tail_wrap_element', 'nx'],
+    \ ['sexp_raise_list', 'nx'],
+    \ ['sexp_raise_element', 'nx'],
+    \ ['sexp_swap_list_backward', 'nx'],
+    \ ['sexp_swap_list_forward', 'nx'],
+    \ ['sexp_swap_element_backward', 'nx'],
+    \ ['sexp_swap_element_forward', 'nx'],
+    \ ['sexp_emit_head_element', 'nx'],
+    \ ['sexp_emit_tail_element', 'nx'],
+    \ ['sexp_capture_prev_element', 'nx'],
+    \ ['sexp_capture_next_element', 'nx'],
+    \ ['sexp_toggle_special', 'nx']
+\ ]
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
@@ -298,14 +299,20 @@ function! s:sexp_get_map_cfg()
     if exists('b:sexp_map_cfg')
         return b:sexp_map_cfg
     endif
-    " Build the cache
+    " Build the cache, saving it once and for all on the buffer.
     let b:sexp_map_cfg = {}
-    for [plug, modestr] in items(s:plug_map_modes)
-        let b:sexp_map_cfg[plug] = {'modes': split(modestr, '\zs'), 'lhs': lhs}
+    for [plug, modestr] in s:plug_map_modes
+        let b:sexp_map_cfg[plug] = {
+            \ 'modes': split(modestr, '\zs'),
+            \ 'lhs': s:sexp_get_mapping(plug)
+        \ }
     endfor
+    return b:sexp_map_cfg
 endfunction
 
 function! s:sexp_create_non_insert_mappings(special)
+    " TODO: I'm thinking now that I have b:sexp_map_cfg, we may need maps only
+    " for special case.
     if a:special
         " The special mappings we're about to create are likely to override
         " existing mappings. Create a 2D hash to hold the information we'll
@@ -315,12 +322,14 @@ function! s:sexp_create_non_insert_mappings(special)
         " For non-special, map plug to a flag indicating whether there's a
         " corresponding special mapping.
         " Note: No need for mode keys, as flag is independent of mode.
+        " TODO: This could actually be in b:sexp_map_cfg.
         let maps = {}
     endif
-    " Loop over list of plugs paired with applicable modes.
-    let map_cfg = s:sexp_get_map_cfg()
-
-    for [plug, cfg] in items(map_cfg)
+    let mc = s:sexp_get_map_cfg()
+    " Loop over static list to for order, pulling the appropriate map config
+    " from mc by plug.
+    for [plug, _] in s:plug_map_modes
+        let cfg = mc[plug]
         " TODO: Perhaps record use of special lhs's: e.g., u, <C-R>, <C-O>, <C-I>
         if !a:special
             " Record whether this plug has a special mapping.
@@ -331,7 +340,7 @@ function! s:sexp_create_non_insert_mappings(special)
             " No mapping.
             continue
         endif
-        for mode in modes
+        for mode in cfg.modes
             if a:special
                 " Differentiate between override of non-special mapping (which
                 " can be restored naturally) and non-sexp mapping (which we'll
@@ -341,7 +350,7 @@ function! s:sexp_create_non_insert_mappings(special)
             endif
             " Design Decision: Did original use <nowait>?
             execute mode . 'map ' . (a:special ? '<nowait>' : '')
-                \ . '<silent><buffer> ' . lhs[!!a:special] . ' <Plug>(' . plug . ')'
+                \ . '<silent><buffer> ' . cfg.lhs[!!a:special] . ' <Plug>(' . plug . ')'
         endfor
     endfor
     " Switch to the maps we've just built.
@@ -351,6 +360,7 @@ endfu
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings(special)
+    let ts = reltime()
     call s:sexp_create_non_insert_mappings(a:special)
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
@@ -362,6 +372,7 @@ function! s:sexp_create_mappings(special)
         imap <silent><buffer> "    <Plug>(sexp_insert_double_quote)
         imap <silent><buffer> <BS> <Plug>(sexp_insert_backspace)
     endif
+    echomsg "sexp_create_mappings: " . reltimestr(reltime(ts))
 endfunction
 
 """ Entering Special {{{1
