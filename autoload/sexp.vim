@@ -1249,7 +1249,7 @@ function! sexp#select_adjacent_element(mode, next)
 endfunction
 
 " TODO: Don't think normal_maps is needed any longer...
-function! sexp#shadow_conflicting_maps(lhs, mode, normal_maps, special_maps)
+function! sexp#shadow_conflicting_maps(lhs, mode, special_maps)
     " Keep looping till there are no more buffer ambiguities/conflicts.
     while 1
         " Check for conflict/ambiguity for specified lhs in indicated mode.
@@ -1342,10 +1342,10 @@ endfu
 " autoload script, the function pointer argument will be required.
 " TODO: Consider moving the special functions to the plugin script.
 fu! sexp#toggle_special(mode, create_maps_fn)
-    if exists('b:sexp_map_save') && b:sexp_map_save.special
+    if exists('b:sexp_map_save')
         " Toggle OFF
-        call s:sexp_restore_non_special_mappings(b:sexp_map_save.maps)
-        let b:sexp_map_save = {}
+        call s:sexp_restore_non_special_mappings(b:sexp_map_save)
+        unlet! b:sexp_map_save
     else
         " Toggle ON
         call a:create_maps_fn(1)

@@ -311,19 +311,11 @@ function! s:sexp_get_map_cfg()
 endfunction
 
 function! s:sexp_create_non_insert_mappings(special)
-    " TODO: I'm thinking now that I have b:sexp_map_cfg, we may need maps only
-    " for special case.
     if a:special
         " The special mappings we're about to create are likely to override
         " existing mappings. Create a 2D hash to hold the information we'll
         " need to restore the original mappings upon exit from special state.
         let maps = {'n': {}, 'x': {}, 'o': {}}
-    else
-        " For non-special, map plug to a flag indicating whether there's a
-        " corresponding special mapping.
-        " Note: No need for mode keys, as flag is independent of mode.
-        " TODO: This could actually be in b:sexp_map_cfg.
-        let maps = {}
     endif
     let mc = s:sexp_get_map_cfg()
     " Loop over static list to for order, pulling the appropriate map config
@@ -331,11 +323,6 @@ function! s:sexp_create_non_insert_mappings(special)
     for [plug, _] in s:plug_map_modes
         let cfg = mc[plug]
         " TODO: Perhaps record use of special lhs's: e.g., u, <C-R>, <C-O>, <C-I>
-        if !a:special
-            " Record whether this plug has a special mapping.
-            " Note: This determination can be made w/out regard to mode.
-            let maps[plug] = !empty(cfg.lhs[1])
-        endif
         if empty(cfg.lhs[!!a:special])
             " No mapping.
             continue
@@ -345,8 +332,7 @@ function! s:sexp_create_non_insert_mappings(special)
                 " Differentiate between override of non-special mapping (which
                 " can be restored naturally) and non-sexp mapping (which we'll
                 " need to save/restore).
-                call sexp#shadow_conflicting_maps(
-                    \ cfg.lhs[1], mode, b:sexp_map_save.maps, maps)
+                call sexp#shadow_conflicting_maps(cfg.lhs[1], mode, maps)
             endif
             " Design Decision: Did original use <nowait>?
             execute mode . 'map ' . (a:special ? '<nowait>' : '')
@@ -354,7 +340,9 @@ function! s:sexp_create_non_insert_mappings(special)
         endfor
     endfor
     " Switch to the maps we've just built.
-    let b:sexp_map_save = {'special': a:special, 'maps': maps}
+    if a:special
+        let b:sexp_map_save = maps
+    endif
 endfu
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
