@@ -293,13 +293,17 @@ function! s:sexp_get_mapping(plug)
     return ret
 endfunction
 
-" TODO: Cache return on buffer.
+" Process raw map configuration (spanning both script-local and global config
+" vars), and cache in a more convenient format on the following buf-local var:
+" b:sexp_map_cfg:
+"     { plug: {modes: ['n|x|o', ...], ['normal-lhs', 'special-lhs']}}
+" Return: The built cache, as convenience to caller.
 function! s:sexp_get_map_cfg()
     " Try cache first.
     if exists('b:sexp_map_cfg')
         return b:sexp_map_cfg
     endif
-    " Build the cache, saving it once and for all on the buffer.
+    " Build the cache.
     let b:sexp_map_cfg = {}
     for [plug, modestr] in s:plug_map_modes
         let b:sexp_map_cfg[plug] = {
@@ -310,18 +314,97 @@ function! s:sexp_get_map_cfg()
     return b:sexp_map_cfg
 endfunction
 
+function! s:shadow_conflicting_maps(lhs, mode, maps)
+    " Keep looping till there are no more buffer ambiguities/conflicts.
+    while 1
+        " Check for conflict/ambiguity for specified lhs in indicated mode.
+        let rhs = mapcheck(a:lhs, a:mode)
+        if empty(rhs)
+            " No more conflict/ambiguity
+            return
+        endif
+        let hide = 0
+        " Ambiguity or conflict exists, but we need more information to know
+        " how to handle...
+        if has_key(b:sexp_map_cfg, rhs)
+            let o = b:sexp_map_cfg[rhs]
+            " sexp non-special map
+            if !empty(o.lhs[1]) && index(o.modes, a:mode) >= 0
+                " The non-special map's functionality is covered by a special
+                " map in this mode; delete it to remove ambiguity/conflict.
+                let hide = 1
+                " Possible Alternative Approach: Re-run sexp_create_mappings
+                " upon exiting special; in that case, we wouldn't need to
+                " save/restore the sexp buf-local maps.
+            endif
+        else
+            " non-sexp map
+            let ma = maparg(a:lhs, a:mode, 0, 1)
+            if ma.buffer
+                " Permit restoration when we exit special.
+                let hide = 1
+            else
+                " Note: <nowait> prevents conflict with global maps.
+                " Since buf-local maps take priority, the fact that we've
+                " reached a global implies there are no more buf-locals.
+                return
+            endif
+        endif
+        " If hiding existing map, save info needed to restore upon exit from
+        " special, then delete.
+        if hide
+            let a:maps[a:mode][a:lhs] = maparg(a:lhs, a:mode, 0, 1)
+            execute a:mode . 'unmap <buffer>' . a:lhs
+        endif
+    endwhile
+endfunction
+
+" Restore mappings that were overridden upon entry into 'special', using
+" information saved in a buf-local dictionary.
+" b:sexp_map_cfg: { plug: {modes: [], [normal-lhs, special-lhs]}}
+function! s:sexp_restore_non_special_mappings(maps)
+    " Delete the special maps.
+    for [plug, cfg] in items(b:sexp_map_cfg)
+        if !empty(cfg.lhs[1])
+            for mode in cfg.modes
+                " Unmap our buffer-specific temporary map.
+                exe mode . 'unmap <buffer>' . cfg.lhs[1]
+            endfor
+        endif
+    endfor
+    " Restore ambiguous/conflicting buf-local maps.
+    " Loop over modes.
+    for [mode, maps] in items(a:maps)
+        " Loop over mappings for this mode.
+        for [lhs, mapobj] in items(maps)
+            " Remap overridden map, taking into account its various modifiers.
+            let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
+                \ . (mapobj.silent ? ' <silent>' : ' ')
+                \ . (mapobj.expr ? ' <expr>' : ' ')
+                \ . (mapobj.buffer ? ' <buffer>' : ' ')
+                \ . (mapobj.nowait ? ' <nowait>' : ' ')
+            if mapobj.sid
+                " Caveat: If the map was originally defined in a script
+                " context, we need to replace <SID> in the map with the
+                " proper script-specific identifier.
+                " Note: Vim doesn't appear to support escaping <SID> in
+                " rhs, so we don't either.
+                let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
+            endif
+            exe mapcmd
+        endfor
+    endfor
+endfu
+
 function! s:sexp_create_non_insert_mappings(special)
     if a:special
         " The special mappings we're about to create are likely to override
         " existing mappings. Create a 2D hash to hold the information we'll
         " need to restore the original mappings upon exit from special state.
-        let maps = {'n': {}, 'x': {}, 'o': {}}
+        " Note: Existence of this map implies special.
+        let b:sexp_map_save = {'n': {}, 'x': {}, 'o': {}}
     endif
-    let mc = s:sexp_get_map_cfg()
-    " Loop over static list to for order, pulling the appropriate map config
-    " from mc by plug.
-    for [plug, _] in s:plug_map_modes
-        let cfg = mc[plug]
+    for [plug, cfg] in items(s:sexp_get_map_cfg())
         " TODO: Perhaps record use of special lhs's: e.g., u, <C-R>, <C-O>, <C-I>
         if empty(cfg.lhs[!!a:special])
             " No mapping.
@@ -329,21 +412,34 @@ function! s:sexp_create_non_insert_mappings(special)
         endif
         for mode in cfg.modes
             if a:special
-                " Differentiate between override of non-special mapping (which
-                " can be restored naturally) and non-sexp mapping (which we'll
-                " need to save/restore).
-                call sexp#shadow_conflicting_maps(cfg.lhs[1], mode, maps)
+                " Cause ambiguous/conflicting maps to be shadowed, saving the
+                " information needed to restore them upon exit from special.
+                call s:shadow_conflicting_maps(cfg.lhs[1], mode, b:sexp_map_save)
             endif
             " Design Decision: Did original use <nowait>?
             execute mode . 'map ' . (a:special ? '<nowait>' : '')
                 \ . '<silent><buffer> ' . cfg.lhs[!!a:special] . ' <Plug>(' . plug . ')'
         endfor
     endfor
-    " Switch to the maps we've just built.
-    if a:special
-        let b:sexp_map_save = maps
+endfu
+
+" Toggle between 'special' and non-special modes.
+fu! s:toggle_special(mode)
+    " Are we in special or not?
+    if exists('b:sexp_map_save')
+        " Toggle OFF
+        call s:sexp_restore_non_special_mappings(b:sexp_map_save)
+        unlet! b:sexp_map_save
+    else
+        " Toggle ON
+        call s:sexp_create_mappings(1)
+    endif
+    if a:mode == 'v'
+        " Don't let toggling special clobber current selection.
+        call sexp#select_current_marks('v')
     endif
 endfu
+
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
@@ -364,8 +460,8 @@ function! s:sexp_create_mappings(special)
 endfunction
 
 """ Entering Special {{{1
-DEFPLUG  nnoremap sexp_toggle_special :call sexp#toggle_special('n', function('<SID>sexp_create_mappings'))<CR>
-DEFPLUG  xnoremap sexp_toggle_special :<C-u>call sexp#toggle_special('v', function('<SID>sexp_create_mappings'))<CR>
+DEFPLUG  nnoremap sexp_toggle_special :call <SID>toggle_special('n')<CR>
+DEFPLUG  xnoremap sexp_toggle_special :<C-u>call <SID>toggle_special('v')<CR>
 
 """ Text Object Selections {{{1
 
