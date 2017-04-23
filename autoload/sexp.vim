@@ -2192,10 +2192,6 @@ function! sexp#region_info(mode)
     endif
 endfu
 
-" TODO: Flesh this out...
-map <LocalLeader>u :<C-u>call sexp#hist_undo(v:count1)<CR>
-map <LocalLeader>r :<C-u>call sexp#hist_undo(-v:count1)<CR>
-
 let Fn_current_element_terminal = function('s:current_element_terminal') "(end)
 let Fn_nearest_element_terminal = function('s:nearest_element_terminal') "(next, tail)
 let Fn_nearest_bracket = function('s:nearest_bracket') "(closing, ...)
@@ -2208,44 +2204,13 @@ let Fn_terminals_with_whitespace = function('s:terminals_with_whitespace') "(sta
 let Fn_select_current_marks = function('s:select_current_marks')
 
 
-" TODO: Perhaps keep separate from other "special".
 let s:hist = {}
-
-fu! s:enter_special()
-    let o = self.get_buf()
-    for [k, v] in items(s:sexp_special_mappings)
-        if v[1] =~ 'v'
-            " Save any existing mapping.
-            " TODO: Do we need the dict? Check to see whether the difference
-            " in the rhs in case of special chars.
-            let rhs = maparg(v[0], 'v')
-            " Note: rhs will be empty when no mapping.
-            let self.maps[v[0]] = rhs
-            exe 'xmap' v[0] '<Plug>(' k ')'
-        endif
-        " TODO: Add normal maps.
-    endfor
-endfu
-
-fu! s:exit_special()
-    for [k, v] in items(s:sexp_special_mappings)
-        if v[1] =~ 'v'
-            " Save any existing mapping.
-            " TODO: Do we need the dict? Check to see whether the difference
-            " in the rhs in case of special chars.
-            let rhs = maparg(v[0], 'v')
-            " Note: rhs will be empty when no mapping.
-            let self.maps[v[0]] = rhs
-            exe 'xmap' v[0] '<Plug>(' k ')'
-        endif
-        " TODO: Add normal maps.
-    endfor
-endfu
 
 fu! s:hist.get_buf() dict
     let bnr = bufnr(0)
     if !has_key(self, bnr)
-        let self[bnr] = {'maps': {}, 'last': {}, 'cur': -1, 'els': []}
+        let self[bnr] = {}
+        call s:hist.clear(self[bnr])
     endif
     return self[bnr]
 endfu
@@ -2258,27 +2223,31 @@ fu! s:hist.put_buf() dict
     endif
 endfu
 
+fu! s:hist.clear(o) dict
+    let [a:o.tick, a:o.cur, a:o.els] = [-1, -1, []]
+endfu
+
+" Clear history if no longer valid due to non-sexp activity.
 fu! s:hist.housekeep(o) dict
-    if !empty(a:o.last)
-        if a:o.last.tick != b:changedtick
-            \ || a:o.last.vsel[0] != getpos("'<")
-            \ || a:o.last.vsel[1] != getpos("'>")
-            let [a:o.last, a:o.cur, a:o.els] = [{}, -1, []]
+    if !s:hist.empty(a:o)
+        let el = s:hist.get_cur(a:o)
+        if a:o.tick != b:changedtick
+            \ || el.vsel[0] != getpos("'<")
+            \ || el.vsel[1] != getpos("'>")
+            call s:hist.clear(a:o)
         endif
     endif
 endfu
 
 fu! s:hist.add(o, ...) dict
-    let [tick, vsel] = [b:changedtick, [getpos("'<"), getpos("'>")]]
+    let [a:o.tick, vsel] = [b:changedtick, [getpos("'<"), getpos("'>")]]
     " TODO: Decide whether to store cursor pos (or selection side).
-    let a:o.last = {'tick': tick, 'vsel': vsel}
     let el = {
-        \ 'tick': tick
+        \ 'tick': a:o.tick
         \,'vsel': vsel
         \,'seq_cur': undotree().seq_cur
         \,'curpos': getpos('.')
     \ }
-    "echomsg 'tick=' . tick . ' vsel=' . string(vsel)
     " Merge any inputs
     if a:0
         for [k, v] in items(a:1)
@@ -2327,8 +2296,28 @@ fu! s:hist.undo(o, n) dict
 endfu
 
 fu! s:hist.empty(o) dict
-    return empty(a:o.last)
+    return a:o.cur < 0
 endfu
+
+" Determine whether to invalidate special history
+function! sexp#on_cursor_moved()
+    if exists('b:sexp_in_op')
+        if b:sexp_in_op < 0
+            " Undo has set to -1 to inhibit clear.
+            let b:sexp_in_op = 0
+        elseif !b:sexp_in_op
+            " Not inside sexp command. Clear only if line has changed.
+            let o = s:hist.get_buf()
+            if !s:hist.empty(o)
+                let el = s:hist.get_cur(o)
+                if getpos('.')[1] != el.curpos[1]
+                    " Line has changed
+                    call s:hist.clear(o)
+                endif
+            endif
+        endif
+    endif
+endfunction
 
 fu! sexp#hist_pre_op(mode)
     let o = s:hist.get_buf()
@@ -2337,21 +2326,23 @@ fu! sexp#hist_pre_op(mode)
         " Go ahead and add original position, but without hist info.
         call s:hist.add(o, {'mode': a:mode})
     endif
+    let b:sexp_in_op = 1
 endfu
 
 " TODO: Record desired mode.
 fu! sexp#hist_post_op(mode, form, inner)
-    "echomsg 'hist_post_op: mode=' . a:mode
+    let b:sexp_in_op = 0
     let o = s:hist.get_buf()
     call s:hist.add(o, {'form': a:form, 'inner': a:inner, 'mode': a:mode})
 endfu
 
 " Note: n is signed value + for undo, - for redo
 fu! sexp#hist_undo(n)
+    let curpos = getpos('.')
     " TODO: Add logic to update g:repeat_tick if applicable.
-    let [old, new] = s:hist.undo(s:hist.get_buf(), a:n)
+    let o = s:hist.get_buf()
+    let [old, new] = s:hist.undo(o, a:n)
     if !empty(new) && old isnot new
-        "echomsg "oldtick=" . old.tick . " newtick=" . new.tick . " seq_cur=" . new.seq_cur
         if old.tick != new.tick
             exe 'undo' new.seq_cur
         endif
@@ -2361,6 +2352,12 @@ fu! sexp#hist_undo(n)
         else
             call s:setcursor(new.curpos)
         endif
+    endif
+    let o.tick = b:changedtick
+    if getpos('.')[1] != curpos[1]
+        " Line was changed by this undo. Make sure CursorMoved handler knows
+        " not to reset history.
+        let b:sexp_in_op = -1
     endif
 endfu
 

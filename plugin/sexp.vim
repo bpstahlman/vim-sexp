@@ -148,7 +148,7 @@ let s:plug_map_modes = [
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
         autocmd!
-        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:sexp_create_mappings(0)'
+        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:sexp_setup_buffer()'
     augroup END
 endif
 
@@ -440,6 +440,11 @@ fu! s:toggle_special(mode)
     endif
 endfu
 
+function! s:sexp_setup_buffer()
+    call s:sexp_create_mappings(0)
+    au CursorMoved <buffer> call sexp#on_cursor_moved()
+    au CursorMovedI <buffer> call sexp#on_cursor_moved()
+endfunction
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
@@ -457,6 +462,9 @@ function! s:sexp_create_mappings(special)
         imap <silent><buffer> <BS> <Plug>(sexp_insert_backspace)
     endif
     echomsg "sexp_create_mappings: " . reltimestr(reltime(ts))
+    " TODO: Move this into config.
+    map <LocalLeader>u :<C-u>call sexp#hist_undo(v:count1)<CR>
+    map <LocalLeader>r :<C-u>call sexp#hist_undo(-v:count1)<CR>
 endfunction
 
 """ Entering Special {{{1
