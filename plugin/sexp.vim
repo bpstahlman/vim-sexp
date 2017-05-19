@@ -36,6 +36,7 @@ if !exists('g:sexp_mappings')
 endif
 
 let s:sexp_mappings = {
+    \ 'sexp_toggle_special':            '<C-k>',
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
     \ 'sexp_outer_top_list':            'aF',
@@ -91,6 +92,61 @@ let s:sexp_mappings = {
     \ 'sexp_capture_prev_element':      '<M-S-h>',
     \ 'sexp_capture_next_element':      '<M-S-l>',
     \ }
+
+" Define the (non-insert) modes in which each mapping should be created.
+" Note: Intentionally keeping this separate from s:sexp_mappings because user
+" might want to copy s:sexp_mappings into his vimrc for tweaking, and user has
+" no control over the modes in which mappings apply.
+" TODO: Align this list.
+let s:plug_map_modes = [
+    \ ['sexp_outer_list',                'xo'],
+    \ ['sexp_inner_list',                'xo'],
+    \ ['sexp_outer_top_list',            'xo'],
+    \ ['sexp_inner_top_list',            'xo'],
+    \ ['sexp_outer_string',              'xo'],
+    \ ['sexp_inner_string',              'xo'],
+    \ ['sexp_outer_element',             'xo'],
+    \ ['sexp_inner_element',             'xo'],
+    \ ['sexp_move_to_prev_bracket',      'nxo'],
+    \ ['sexp_move_to_next_bracket',      'nxo'],
+    \ ['sexp_move_to_prev_element_head', 'nxo'],
+    \ ['sexp_move_to_next_element_head', 'nxo'],
+    \ ['sexp_move_to_prev_element_tail', 'nxo'],
+    \ ['sexp_move_to_next_element_tail', 'nxo'],
+    \ ['sexp_move_to_prev_top_element',  'nxo'],
+    \ ['sexp_move_to_next_top_element',  'nxo'],
+    \ ['sexp_select_prev_element',       'nxo'],
+    \ ['sexp_select_next_element',       'nxo'],
+    \ ['sexp_indent',                    'n'],
+    \ ['sexp_indent_top',                'n'],
+    \ ['sexp_insert_at_list_head',       'n'],
+    \ ['sexp_insert_at_list_tail',       'n'],
+    \ ['sexp_convolute',                 'n'],
+    \ ['sexp_splice_list',               'n'],
+    \ ['sexp_round_head_wrap_list',      'nx'],
+    \ ['sexp_round_tail_wrap_list',      'nx'],
+    \ ['sexp_square_head_wrap_list',     'nx'],
+    \ ['sexp_square_tail_wrap_list',     'nx'],
+    \ ['sexp_curly_head_wrap_list',      'nx'],
+    \ ['sexp_curly_tail_wrap_list',      'nx'],
+    \ ['sexp_round_head_wrap_element',   'nx'],
+    \ ['sexp_round_tail_wrap_element',   'nx'],
+    \ ['sexp_square_head_wrap_element',  'nx'],
+    \ ['sexp_square_tail_wrap_element',  'nx'],
+    \ ['sexp_curly_head_wrap_element',   'nx'],
+    \ ['sexp_curly_tail_wrap_element',   'nx'],
+    \ ['sexp_raise_list',                'nx'],
+    \ ['sexp_raise_element',             'nx'],
+    \ ['sexp_swap_list_backward',        'nx'],
+    \ ['sexp_swap_list_forward',         'nx'],
+    \ ['sexp_swap_element_backward',     'nx'],
+    \ ['sexp_swap_element_forward',      'nx'],
+    \ ['sexp_emit_head_element',         'nx'],
+    \ ['sexp_emit_tail_element',         'nx'],
+    \ ['sexp_capture_prev_element',      'nx'],
+    \ ['sexp_capture_next_element',      'nx'],
+    \ ['sexp_toggle_sexp_mode',          'nx']
+\ ]
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
@@ -175,64 +231,239 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
+" Return pair of lhs corresponding to input 'plug' string:
+" [<lhs>, <sexp-mode-lhs>]
+" Logic: Prefer user overrides in g:sexp_mappings, but fallback to default in
+" s:sexp_mappings if user has not overridden, or override is invalid. Warn if
+" override is invalid.
+function! s:sexp_get_mapping(plug)
+    for map in [g:sexp_mappings, s:sexp_mappings]
+        if has_key(map, a:plug)
+            let m = map[a:plug]
+            " Use type/len of m to determine what's been overridden.
+            "   string:            "lhs"
+            "   1 element list:  [ "sexp_mode_lhs" ]
+            "   2 element list:  [ "lhs", "sexp_mode_lhs" ]
+            " First, validate the form of the sexp_mappings entry.
+            " Design Decision: Empty arrays and/or lhs strings will not be
+            " considered error: rather, they will be indication that user has
+            " chosen to disable the corresponding map. Note that, due to the way
+            " mappings are defined, an all whitespace lhs is effectively empty.
+            if empty(m)
+                " Mapping completely disabled.
+                return ['', '']
+            endif
+            let mt = type(m)
+            if mt == 1 " string
+                " Legacy format: i.e., no sexp-mode mapping
+                let ret = [m, '']
+            elseif mt == 3 " list
+                if len(m) == 1
+                    " sexp-mode map only
+                    " Rationale: If user plans to use a map *only* in
+                    " sexp-mode, he free up the lhs defined in
+                    " s:sexp_mappings. Note that the following 2 forms are
+                    " equivalent: ['lhs'], ['', 'lhs']
+                    let ret = ['', m[0]]
+                elseif len(m) == 2
+                    " both normal and sexp-mode maps
+                    let ret = [m[0], m[1]]
+                endif
+            endif
+            if exists('ret')
+                " We have a valid entry.
+                break
+            endif
+            " Key exists but was invalid.
+            " Assumption: Must be g:sexp_mappings, since invalid entry in
+            " s:sexp_mappings would imply internal error.
+            echohl WarningMsg
+            echomsg "Skipping invalid entry in sexp_mappings list for " . a:plug
+            echohl None
+        endif
+    endfor
+    " Make sure all whitespace lhs is treated as empty.
+    call map(ret, 'substitute(v:val, ''^\s\+$'', "", "g")')
+    return ret
+endfunction
+
+" Combine raw map configuration represented in both sexp_mappings and
+" s:plug_map_modes into a convenient form and cache the resulting dictionary
+" in buf-local b:sexp_map_cfg.
+" Cache Format: { plug: {modes: ['n|x|o', ...], ['lhs', 'sexp-mode-lhs']}}
+" Return: The built cache, as convenience to caller.
+" Note: The configuration information is cached only once, when mappings are
+" first created for a buffer. Subsequent changes to g:sexp_mappings will have
+" no effect until the buffer has been deleted.
+function! s:sexp_get_map_cfg()
+    " Try cache first.
+    if exists('b:sexp_map_cfg')
+        return b:sexp_map_cfg
+    endif
+    " Build the cache.
+    let b:sexp_map_cfg = {}
+    for [plug, modestr] in s:plug_map_modes
+        let b:sexp_map_cfg[plug] = {
+            \ 'modes': split(modestr, '\zs'),
+            \ 'lhs': s:sexp_get_mapping(plug)
+        \ }
+    endfor
+    " Return the cache as convenience to caller.
+    return b:sexp_map_cfg
+endfunction
+
+" Delete any maps (global or buf-local) that are ambiguous or conflicting with
+" the input lhs in the input mode, saving the information needed to restore
+" the deleted map(s) in the input dictionary under a key determined by lhs:
+" i.e.,
+"   'lhs' => maparg('lhs', mode, 0, 1),
+function! s:shadow_conflicting_maps(lhs, mode, maps)
+    " Keep looping till there are no more ambiguities/conflicts.
+    while 1
+        " Check for conflict/ambiguity for specified lhs in indicated mode.
+        let rhs = mapcheck(a:lhs, a:mode)
+        if empty(rhs)
+            " No more conflict/ambiguity
+            return
+        endif
+        let hide = 0
+        " Ambiguity or conflict exists, but we need more information to know
+        " how to handle...
+        if has_key(b:sexp_map_cfg, rhs)
+            " sexp map (presumably a non-special one)
+            let o = b:sexp_map_cfg[rhs]
+            if !empty(o.lhs[1]) && index(o.modes, a:mode) >= 0
+                " The non-special map's functionality is covered by a special
+                " map in this mode; delete the non-special map to remove
+                " ambiguity/conflict.
+                " Possible Alternative Approach: Re-run sexp_create_mappings
+                " upon exiting special; in that case, we wouldn't need to
+                " save/restore the sexp buf-local maps.
+                let hide = 1
+            endif
+        else
+            " non-sexp map
+            let ma = maparg(a:lhs, a:mode, 0, 1)
+            if ma.buffer
+                " Permit restoration when we exit special.
+                let hide = 1
+            else
+                " No need to hide, since <buffer> and <nowait> effectively
+                " prevent conflict with global maps, and since buf-local maps
+                " take priority, the fact that we've reached a global implies
+                " there are no more buf-locals.
+                return
+            endif
+        endif
+        " If hiding existing map, save info needed to restore it upon exit
+        " from special, then delete.
+        if hide
+            let a:maps[a:lhs] = maparg(a:lhs, a:mode, 0, 1)
+            execute a:mode . 'unmap <buffer>' . a:lhs
+        endif
+    endwhile
+endfunction
+
+" Restore mappings that were overridden upon entry into sexp mode, using
+" information saved in the input dictionary, whose format is as follows:
+" { plug: {modes: [], [lhs, sexp-mode-lhs]}}
+function! s:sexp_restore_non_special_mappings(maps)
+    " Delete the special maps.
+    for [plug, cfg] in items(b:sexp_map_cfg)
+        if !empty(cfg.lhs[1])
+            for mode in cfg.modes
+                " Unmap our buffer-specific temporary map.
+                exe mode . 'unmap <buffer>' . cfg.lhs[1]
+            endfor
+        endif
+    endfor
+    " Restore ambiguous/conflicting buf-local maps.
+    " Loop over modes.
+    for [mode, maps] in items(a:maps)
+        " Loop over mappings for this mode.
+        for [lhs, mapobj] in items(maps)
+            " Remap overridden map, taking into account its various modifiers.
+            let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
+                \ . (mapobj.silent ? ' <silent>' : '')
+                \ . (mapobj.expr ? ' <expr>' : '')
+                \ . (mapobj.buffer ? ' <buffer>' : '')
+                \ . (mapobj.nowait ? ' <nowait>' : '')
+                \ . ' ' . lhs . ' ' . mapobj.rhs
+            if mapobj.sid
+                " Caveat: If the map was originally defined in a script
+                " context, we need to replace <SID> in the map with the
+                " proper script-specific identifier.
+                " Note: Vim doesn't appear to support escaping <SID> in
+                " rhs, so we don't either.
+                let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
+            endif
+            exe mapcmd
+        endfor
+    endfor
+endfu
+
+" Create all non-insert mode mappings applicable to the input plugin mode
+" (special or non-special). If entering special mode (special=1), shadow any
+" ambiguous/conflicting maps, saving the information needed to restore them in
+" a buf-local map of the following form:
+" {'n': {'lhs1': maparg('lhs1', 'n', 0, 1)}, ...,
+"  'x': {'lhs1': maparg('lhs1', 'x', 0, 1)}, ...,
+"  'o': {'lhs1': maparg('lhs1', 'o', 0, 1)}, ... }
+function! s:sexp_create_non_insert_mappings(sexp_mode)
+    if a:sexp_mode
+        " The sexp mode mappings we're about to create are likely to override
+        " existing mappings. Create a 2D hash (keyed by mode,lhs) to hold the
+        " information we'll need to restore the original mappings upon exit
+        " from sexp mode.
+        " Note: Existence of this map implies we're in sexp mode.
+        let b:sexp_map_save = {'n': {}, 'x': {}, 'o': {}}
+    endif
+    " Loop over configuration.
+    for [plug, cfg] in items(s:sexp_get_map_cfg())
+        if empty(cfg.lhs[!!a:sexp_mode])
+            " No mapping in the current plugin mode.
+            continue
+        endif
+        " Loop over Vim modes in which the plug is mapped.
+        " Note: If deterministic order is desired, could use s:plug_map_modes
+        " to define order.
+        for mode in cfg.modes
+            if a:sexp_mode
+                " Hide (delete) ambiguous/conflicting maps, in such a way as
+                " to permit restoration upon exit from special.
+                call s:shadow_conflicting_maps(cfg.lhs[1], mode, b:sexp_map_save[mode])
+            endif
+            execute mode . 'map ' . (a:sexp_mode ? '<nowait>' : '')
+                \ . '<silent><buffer> ' . cfg.lhs[!!a:sexp_mode] . ' <Plug>(' . plug . ')'
+        endfor
+    endfor
+endfu
+
+" Toggle between 'special' and non-special modes.
+fu! s:toggle_sexp_mode(mode)
+    " Are we in sexp mode or not?
+    if exists('b:sexp_map_save')
+        " Toggle OFF
+        call s:sexp_restore_non_special_mappings(b:sexp_map_save)
+        unlet! b:sexp_map_save
+    else
+        " Toggle ON
+        call s:sexp_create_non_insert_mappings(1)
+    endif
+    if a:mode == 'v'
+        " Don't let toggling sexp-mode clobber current selection.
+        " TODO: Need a way to call this. Needs to be exported as it is now,
+        " but see whether refactoring is in order...
+        call sexp#select_current_marks('v')
+    endif
+endfu
+
+
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-    for plug in ['sexp_outer_list',     'sexp_inner_list',
-               \ 'sexp_outer_top_list', 'sexp_inner_top_list',
-               \ 'sexp_outer_string',   'sexp_inner_string',
-               \ 'sexp_outer_element',  'sexp_inner_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_move_to_prev_bracket',      'sexp_move_to_next_bracket',
-               \ 'sexp_move_to_prev_element_head', 'sexp_move_to_next_element_head',
-               \ 'sexp_move_to_prev_element_tail', 'sexp_move_to_next_element_tail',
-               \ 'sexp_move_to_prev_top_element',  'sexp_move_to_next_top_element',
-               \ 'sexp_select_prev_element',       'sexp_select_next_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_indent',              'sexp_indent_top',
-               \ 'sexp_insert_at_list_head', 'sexp_insert_at_list_tail',
-	       \ 'sexp_convolute',           'sexp_splice_list']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_round_head_wrap_list',     'sexp_round_tail_wrap_list',
-               \ 'sexp_square_head_wrap_list',    'sexp_square_tail_wrap_list',
-               \ 'sexp_curly_head_wrap_list',     'sexp_curly_tail_wrap_list',
-               \ 'sexp_round_head_wrap_element',  'sexp_round_tail_wrap_element',
-               \ 'sexp_square_head_wrap_element', 'sexp_square_tail_wrap_element',
-               \ 'sexp_curly_head_wrap_element',  'sexp_curly_tail_wrap_element',
-               \ 'sexp_raise_list',               'sexp_raise_element',
-               \ 'sexp_swap_list_backward',       'sexp_swap_list_forward',
-               \ 'sexp_swap_element_backward',    'sexp_swap_element_forward',
-               \ 'sexp_emit_head_element',        'sexp_emit_tail_element',
-               \ 'sexp_capture_prev_element',     'sexp_capture_next_element',
-               \ 'sexp_flow_to_prev_close',       'sexp_flow_to_next_open',
-               \ 'sexp_flow_to_prev_open',        'sexp_flow_to_next_close',
-               \ 'sexp_flow_to_prev_leaf_head',   'sexp_flow_to_next_leaf_head',
-               \ 'sexp_flow_to_prev_leaf_tail',   'sexp_flow_to_next_leaf_tail']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
+    call s:sexp_create_non_insert_mappings(0)
+    " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
         imap <silent><buffer> [    <Plug>(sexp_insert_opening_square)
@@ -244,6 +475,10 @@ function! s:sexp_create_mappings()
         imap <silent><buffer> <BS> <Plug>(sexp_insert_backspace)
     endif
 endfunction
+
+""" Toggle Sexp-Mode {{{1
+DEFPLUG  nnoremap sexp_toggle_sexp_mode :call <SID>toggle_sexp_mode('n')<CR>
+DEFPLUG  xnoremap sexp_toggle_sexp_mode <Esc>:<C-u>call <SID>toggle_sexp_mode('v')<CR>
 
 """ Text Object Selections {{{1
 
