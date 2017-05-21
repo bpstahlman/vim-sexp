@@ -113,6 +113,14 @@ let s:plug_map_modes = [
     \ ['sexp_move_to_next_element_head', 'nxo'],
     \ ['sexp_move_to_prev_element_tail', 'nxo'],
     \ ['sexp_move_to_next_element_tail', 'nxo'],
+    \ ['sexp_flow_to_prev_close',        'nx'],
+    \ ['sexp_flow_to_next_open',         'nx'],
+    \ ['sexp_flow_to_prev_open',         'nx'],
+    \ ['sexp_flow_to_next_close',        'nx'],
+    \ ['sexp_flow_to_prev_leaf_head',    'nx'],
+    \ ['sexp_flow_to_next_leaf_head',    'nx'],
+    \ ['sexp_flow_to_prev_leaf_tail',    'nx'],
+    \ ['sexp_flow_to_next_leaf_tail',    'nx'],
     \ ['sexp_move_to_prev_top_element',  'nxo'],
     \ ['sexp_move_to_next_top_element',  'nxo'],
     \ ['sexp_select_prev_element',       'nxo'],
@@ -191,6 +199,7 @@ function! s:defplug(flags, mapmode, name, ...)
         return 1
     endif
 
+    let postfix = ' \| call <SID>after_map_executed("' . a:name . '")<CR>'
     " Common mapping prefix
     " RE: vv
     "   Due to a ?bug? in vim, we need to set curwin->w_curswant to the
@@ -204,7 +213,7 @@ function! s:defplug(flags, mapmode, name, ...)
 
     " Expression, non-repeating
     if !repeat || (repeat && !s:have_repeat_set)
-        execute prefix . '<CR>'
+        execute prefix . postfix
     " Expression, repeating, operator-pending mode
     elseif opmode
         execute prefix . ' \| '
@@ -212,10 +221,10 @@ function! s:defplug(flags, mapmode, name, ...)
                 \ . '  call <SID>repeat_set(v:operator . "\<Plug>(' . a:name . ')\<lt>C-r>.\<lt>C-Bslash>\<lt>C-n>", b:sexp_count) \| '
                 \ . 'else \| '
                 \ . '  call <SID>repeat_set(v:operator . "\<Plug>(' . a:name . ')", b:sexp_count) \| '
-                \ . 'endif<CR>'
+                \ . 'endif' . postfix
     " Expression, repeating, non-operator-pending mode
     else
-        execute prefix . ' \| call <SID>repeat_set("\<Plug>(' . a:name . ')", b:sexp_count)<CR>'
+        execute prefix . ' \| call <SID>repeat_set("\<Plug>(' . a:name . ')", b:sexp_count)' . postfix
     endif
 endfunction
 
@@ -231,8 +240,8 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
-" Return pair of lhs corresponding to input 'plug' string:
-" [<lhs>, <sexp-mode-lhs>]
+" Return object corresponding to input 'plug' string:
+" {'lhs': [<lhs>, <sexp-state-lhs>], 'flags': 'map-flags'}
 " Logic: Prefer user overrides in g:sexp_mappings, but fallback to default in
 " s:sexp_mappings if user has not overridden, or override is invalid. Warn if
 " override is invalid.
@@ -242,8 +251,9 @@ function! s:sexp_get_mapping(plug)
             let m = map[a:plug]
             " Use type/len of m to determine what's been overridden.
             "   string:            "lhs"
-            "   1 element list:  [ "sexp_mode_lhs" ]
-            "   2 element list:  [ "lhs", "sexp_mode_lhs" ]
+            "   1 element list:  [ "sexp_state_lhs" ]
+            "   2 element list:  [ "lhs", "sexp_state_lhs" ]
+            "   2 element list:  [ "lhs", "sexp_state_lhs", "flags" ]
             " First, validate the form of the sexp_mappings entry.
             " Design Decision: Empty arrays and/or lhs strings will not be
             " considered error: rather, they will be indication that user has
@@ -251,27 +261,34 @@ function! s:sexp_get_mapping(plug)
             " mappings are defined, an all whitespace lhs is effectively empty.
             if empty(m)
                 " Mapping completely disabled.
-                return ['', '']
+                return ret
             endif
             let mt = type(m)
+            let flags = '' " flags default to clear
             if mt == 1 " string
                 " Legacy format: i.e., no sexp-mode mapping
-                let ret = [m, '']
+                let lhs = [m, '']
             elseif mt == 3 " list
-                if len(m) == 1
+                let mlen = len(m)
+                if mlen == 1
                     " sexp-mode map only
                     " Rationale: If user plans to use a map *only* in
-                    " sexp-mode, he free up the lhs defined in
+                    " sexp-mode, he can free up the lhs defined in
                     " s:sexp_mappings. Note that the following 2 forms are
                     " equivalent: ['lhs'], ['', 'lhs']
-                    let ret = ['', m[0]]
-                elseif len(m) == 2
-                    " both normal and sexp-mode maps
-                    let ret = [m[0], m[1]]
+                    " Caveat: If flags are specified, non-sexp-state lhs must
+                    " be specified explicitly, even if empty.
+                    let lhs = ['', m[0]]
+                elseif mlen >= 2 && mlen <= 3
+                    " both normal and sexp-mode maps (and possibly flags)
+                    let lhs = m[:1]
+                    if mlen == 3
+                        let flags = m[2]
+                    endif
                 endif
             endif
-            if exists('ret')
-                " We have a valid entry.
+            if exists('lhs')
+                " We have a valid entry; no need to look further.
                 break
             endif
             " Key exists but was invalid.
@@ -282,15 +299,19 @@ function! s:sexp_get_mapping(plug)
             echohl None
         endif
     endfor
-    " Make sure all whitespace lhs is treated as empty.
-    call map(ret, 'substitute(v:val, ''^\s\+$'', "", "g")')
-    return ret
+    " Make sure an all whitespace lhs is treated as empty.
+    call map(lhs, 'substitute(v:val, ''^\s\+$'', "", "g")')
+    return {'lhs': lhs, 'flags': flags}
 endfunction
 
 " Combine raw map configuration represented in both sexp_mappings and
 " s:plug_map_modes into a convenient form and cache the resulting dictionary
 " in buf-local b:sexp_map_cfg.
-" Cache Format: { plug: {modes: ['n|x|o', ...], ['lhs', 'sexp-mode-lhs']}}
+" Cache Format:
+" {plug: {'modes': ['n|x|o', ...],
+"         'lhs': ['lhs', 'sexp-state-lhs'],
+"         'flags': "map-flags"},
+"  ...}
 " Return: The built cache, as convenience to caller.
 " Note: The configuration information is cached only once, when mappings are
 " first created for a buffer. Subsequent changes to g:sexp_mappings will have
@@ -303,13 +324,39 @@ function! s:sexp_get_map_cfg()
     " Build the cache.
     let b:sexp_map_cfg = {}
     for [plug, modestr] in s:plug_map_modes
+        " Get canonical form lhs/flags for this plug, and cache it along with
+        " the mode info.
+        let m = s:sexp_get_mapping(plug)
         let b:sexp_map_cfg[plug] = {
             \ 'modes': split(modestr, '\zs'),
-            \ 'lhs': s:sexp_get_mapping(plug)
+            \ 'lhs': m.lhs,
+            \ 'flags': m.flags
         \ }
     endfor
     " Return the cache as convenience to caller.
     return b:sexp_map_cfg
+endfunction
+
+" Return list of lhs that could be ambiguous/conflicting with the input lhs.
+" Note: Vim should provide an easier to get the *lhs* of ambiguous/conflicting
+" maps, but since it doesn't, we need this.
+function! s:has_map_to(mode, lhs)
+    let ret = []
+    redir => maps
+    silent exe a:mode . 'map ' . a:lhs
+    redir END
+    " TODO: I've noticed that cpo 'B' flag affects how backslash works in lhs
+    " of maparg(), but it doesn't seem to affect how it's displayed by map.
+    " This is significant. Figure it out...
+    for map in split(maps, '\n')
+        " Extract just the lhs.
+        " Assumptions: (from map.txt)
+        " -First 2 columns dedicated to mode flags
+        " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
+        let lhs = substitute(map, '.\{-}\%>2c\(\S\+\).*', '\1', '')
+        call add(ret, maparg(lhs, a:mode, 0, 1))
+    endfor
+    return ret
 endfunction
 
 " Delete any maps (global or buf-local) that are ambiguous or conflicting with
@@ -343,7 +390,8 @@ function! s:shadow_conflicting_maps(lhs, mode, maps)
             endif
         else
             " non-sexp map
-            let ma = maparg(a:lhs, a:mode, 0, 1)
+            let lhs = s:rhs_to_lhs(rhs)
+            let ma = maparg(lhs, a:mode, 0, 1)
             if ma.buffer
                 " Permit restoration when we exit special.
                 let hide = 1
@@ -451,12 +499,19 @@ fu! s:toggle_sexp_mode(mode)
         call s:sexp_create_non_insert_mappings(1)
     endif
     if a:mode == 'v'
-        " Don't let toggling sexp-mode clobber current selection.
-        " TODO: Need a way to call this. Needs to be exported as it is now,
-        " but see whether refactoring is in order...
-        call sexp#select_current_marks('v')
+        normal! gv
     endif
 endfu
+
+" Callback called just after any map has been executed.
+function! s:after_map_executed(plug)
+    " If we're not currently in sexp-state, and the map just executed is
+    " marked as auto-enabling sexp-state...
+    if !exists('b:sexp_map_save') && b:sexp_map_cfg[a:plug].flags =~ '>'
+        " Toggle sexp-state ON
+        call s:toggle_sexp_mode('')
+    endif
+endfunction
 
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
