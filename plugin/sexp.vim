@@ -36,7 +36,7 @@ if !exists('g:sexp_mappings')
 endif
 
 let s:sexp_mappings = {
-    \ 'sexp_toggle_special':            '<C-k>',
+    \ 'sexp_toggle_sexp_state':         '<C-k>',
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
     \ 'sexp_outer_top_list':            'aF',
@@ -99,6 +99,7 @@ let s:sexp_mappings = {
 " no control over the modes in which mappings apply.
 " TODO: Align this list.
 let s:plug_map_modes = [
+    \ ['sexp_toggle_sexp_state',         'nx'],
     \ ['sexp_outer_list',                'xo'],
     \ ['sexp_inner_list',                'xo'],
     \ ['sexp_outer_top_list',            'xo'],
@@ -153,7 +154,6 @@ let s:plug_map_modes = [
     \ ['sexp_emit_tail_element',         'nx'],
     \ ['sexp_capture_prev_element',      'nx'],
     \ ['sexp_capture_next_element',      'nx'],
-    \ ['sexp_toggle_sexp_mode',          'nx']
 \ ]
 
 if !empty(g:sexp_filetypes)
@@ -337,179 +337,141 @@ function! s:sexp_get_map_cfg()
     return b:sexp_map_cfg
 endfunction
 
-" Return list of lhs that could be ambiguous/conflicting with the input lhs.
-" Note: Vim should provide an easier to get the *lhs* of ambiguous/conflicting
-" maps, but since it doesn't, we need this.
-function! s:has_map_to(mode, lhs)
-    let ret = []
-    redir => maps
-    silent exe a:mode . 'map ' . a:lhs
-    redir END
-    " TODO: I've noticed that cpo 'B' flag affects how backslash works in lhs
-    " of maparg(), but it doesn't seem to affect how it's displayed by map.
-    " This is significant. Figure it out...
-    for map in split(maps, '\n')
-        " Extract just the lhs.
-        " Assumptions: (from map.txt)
-        " -First 2 columns dedicated to mode flags
-        " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
-        let lhs = substitute(map, '.\{-}\%>2c\(\S\+\).*', '\1', '')
-        call add(ret, maparg(lhs, a:mode, 0, 1))
+function! s:destroy_map(lhs, modes)
+    " Caveat: In some cases, map may have been removed already.
+    for mode in a:modes
+        silent! execute mode . 'unmap <buffer>' . a:lhs
     endfor
-    return ret
 endfunction
 
-" Delete any maps (global or buf-local) that are ambiguous or conflicting with
-" the input lhs in the input mode, saving the information needed to restore
-" the deleted map(s) in the input dictionary under a key determined by lhs:
-" i.e.,
-"   'lhs' => maparg('lhs', mode, 0, 1),
-function! s:shadow_conflicting_maps(lhs, mode, maps)
-    " Keep looping till there are no more ambiguities/conflicts.
-    while 1
-        " Check for conflict/ambiguity for specified lhs in indicated mode.
-        let rhs = mapcheck(a:lhs, a:mode)
-        if empty(rhs)
-            " No more conflict/ambiguity
-            return
-        endif
-        let hide = 0
-        " Ambiguity or conflict exists, but we need more information to know
-        " how to handle...
-        if has_key(b:sexp_map_cfg, rhs)
-            " sexp map (presumably a non-special one)
-            let o = b:sexp_map_cfg[rhs]
-            if !empty(o.lhs[1]) && index(o.modes, a:mode) >= 0
-                " The non-special map's functionality is covered by a special
-                " map in this mode; delete the non-special map to remove
-                " ambiguity/conflict.
-                " Possible Alternative Approach: Re-run sexp_create_mappings
-                " upon exiting special; in that case, we wouldn't need to
-                " save/restore the sexp buf-local maps.
-                let hide = 1
-            endif
-        else
-            " non-sexp map
-            let lhs = s:rhs_to_lhs(rhs)
-            let ma = maparg(lhs, a:mode, 0, 1)
-            if ma.buffer
-                " Permit restoration when we exit special.
-                let hide = 1
-            else
-                " No need to hide, since <buffer> and <nowait> effectively
-                " prevent conflict with global maps, and since buf-local maps
-                " take priority, the fact that we've reached a global implies
-                " there are no more buf-locals.
-                return
-            endif
-        endif
-        " If hiding existing map, save info needed to restore it upon exit
-        " from special, then delete.
-        if hide
-            let a:maps[a:lhs] = maparg(a:lhs, a:mode, 0, 1)
-            execute a:mode . 'unmap <buffer>' . a:lhs
-        endif
-    endwhile
+function! s:create_map(lhs, plug, modes, nowait)
+    for mode in a:modes
+        execute mode . 'map ' . (a:nowait ? '<nowait>' : '')
+            \ . '<silent><buffer> ' . a:lhs . ' <Plug>(' . a:plug . ')'
+    endfor
 endfunction
 
-" Restore mappings that were overridden upon entry into sexp mode, using
-" information saved in the input dictionary, whose format is as follows:
-" { plug: {modes: [], [lhs, sexp-mode-lhs]}}
-function! s:sexp_restore_non_special_mappings(maps)
-    " Delete the special maps.
-    for [plug, cfg] in items(b:sexp_map_cfg)
-        if !empty(cfg.lhs[1])
-            for mode in cfg.modes
-                " Unmap our buffer-specific temporary map.
-                exe mode . 'unmap <buffer>' . cfg.lhs[1]
-            endfor
-        endif
-    endfor
-    " Restore ambiguous/conflicting buf-local maps.
-    " Loop over modes.
-    for [mode, maps] in items(a:maps)
-        " Loop over mappings for this mode.
-        for [lhs, mapobj] in items(maps)
-            " Remap overridden map, taking into account its various modifiers.
-            let mapcmd = mode . (mapobj.noremap ? 'noremap' : 'map')
-                \ . (mapobj.silent ? ' <silent>' : '')
-                \ . (mapobj.expr ? ' <expr>' : '')
-                \ . (mapobj.buffer ? ' <buffer>' : '')
-                \ . (mapobj.nowait ? ' <nowait>' : '')
-                \ . ' ' . lhs . ' ' . mapobj.rhs
-            if mapobj.sid
-                " Caveat: If the map was originally defined in a script
-                " context, we need to replace <SID> in the map with the
-                " proper script-specific identifier.
-                " Note: Vim doesn't appear to support escaping <SID> in
-                " rhs, so we don't either.
-                let mapcmd = substitute(mapcmd, '<SID>', '<SNR>' . mapobj.sid . '_', 'g')
-            endif
-            exe mapcmd
-        endfor
-    endfor
-endfu
-
+" TODO: Rewrite comment...
 " Create all non-insert mode mappings applicable to the input plugin mode
-" (special or non-special). If entering special mode (special=1), shadow any
-" ambiguous/conflicting maps, saving the information needed to restore them in
-" a buf-local map of the following form:
-" {'n': {'lhs1': maparg('lhs1', 'n', 0, 1)}, ...,
-"  'x': {'lhs1': maparg('lhs1', 'x', 0, 1)}, ...,
-"  'o': {'lhs1': maparg('lhs1', 'o', 0, 1)}, ... }
-function! s:sexp_create_non_insert_mappings(sexp_mode)
-    if a:sexp_mode
-        " The sexp mode mappings we're about to create are likely to override
-        " existing mappings. Create a 2D hash (keyed by mode,lhs) to hold the
-        " information we'll need to restore the original mappings upon exit
-        " from sexp mode.
-        " Note: Existence of this map implies we're in sexp mode.
-        let b:sexp_map_save = {'n': {}, 'x': {}, 'o': {}}
+" (special or non-special). If entering special mode (sexp_state=1), shadow
+" any ambiguous/conflicting maps, saving the information needed to restore
+" them in a buf-local structure of the following form:
+" {state: <sexp-state>,
+"  maps: [{plug1: modes1, plug2: modes2}, [plug1, plug2, ...]]}
+" Note: Create both the first time we enter sexp-state.
+function! s:sexp_create_non_insert_mappings()
+    if !exists('b:sexp_map_cache')
+        " Initialize data structure used to short-circuit processing after
+        " the first full cycle of sexp-state toggles.
+        let b:sexp_map_cache = {'state': 0}
     endif
-    " Loop over configuration.
-    for [plug, cfg] in items(s:sexp_get_map_cfg())
-        if empty(cfg.lhs[!!a:sexp_mode])
-            " No mapping in the current plugin mode.
-            continue
+    let smc = b:sexp_map_cache
+    " Get configuration.
+    let cfgs = s:sexp_get_map_cfg()
+    if !has_key(smc, 'maps')
+        " First or second half of first cycle
+        if smc.state
+            " Initialize data structure used to short-circuit processing
+            " required for creating/destroying maps when toggling between sexp
+            " and non-sexp states.
+            " Note: We build the data structures on the second half of first
+            " cycle, and simply re-use it thereafter.
+            let smc.maps = [{}, []]
         endif
-        " Loop over Vim modes in which the plug is mapped.
+        " Loop over configuration.
         " Note: If deterministic order is desired, could use s:plug_map_modes
         " to define order.
-        for mode in cfg.modes
-            if a:sexp_mode
-                " Hide (delete) ambiguous/conflicting maps, in such a way as
-                " to permit restoration upon exit from special.
-                call s:shadow_conflicting_maps(cfg.lhs[1], mode, b:sexp_map_save[mode])
+        for [plug, cfg] in items(cfgs)
+            let lhs = cfg.lhs[!!smc.state]
+            if empty(lhs)
+                " No mapping in the current plugin state.
+                continue
             endif
-            execute mode . 'map ' . (a:sexp_mode ? '<nowait>' : '')
-                \ . '<silent><buffer> ' . cfg.lhs[!!a:sexp_mode] . ' <Plug>(' . plug . ')'
+            let modes = cfg.modes
+            if smc.state
+                " Entering sexp-state; check for conflicting non-sexp state
+                " maps.
+                for [plug_, cfg_] in items(cfgs)
+                    let re_modes = '[' . join(cfg_.modes, '') . ']'
+                    " Determine common modes.
+                    let cmodes = filter(copy(modes), 'v:val =~ re_modes')
+                    if !empty(cmodes) &&
+                        \ stridx(cfg_.lhs[0], lhs) == 0 ||
+                        \ stridx(lhs, cfg_.lhs[0]) == 0
+                        " Record conflicting non-sexp-state map.
+                        if has_key(smc.maps[0], plug_)
+                            let smc.maps[0][plug_] =
+                                \ uniq(extend(smc.maps[0][plug_], cmodes))
+                        else
+                            let smc.maps[0][plug_] = cmodes
+                        endif
+                        " Shadow (remove) the conflicting non-sexp-state map.
+                        call s:destroy_map(lhs, cmodes)
+                    endif
+                endfor
+                " Record sexp-state map.
+                call add(smc.maps[1], plug)
+            endif
+            " Create the map in the indicated modes.
+            " TODO: Consider making create/destroy_map take a cfg entry; would
+            " permit create/destroy to be parameterized.
+            call s:create_map(lhs, plug, modes, !!smc.state)
         endfor
-    endfor
-endfu
+    else
+        " At least 1 toggle cycle complete.
+        " Create or remove sexp-state maps
+        for plug in smc.maps[1]
+            let cfg = cfgs[plug]
+            if smc.state
+                call s:create_map(cfg.lhs[1], plug, cfg.modes, 1)
+            else
+                call s:destroy_map(cfg.lhs[1], cfg.modes)
+            endif
+        endfor
+        " Restore or shadow non-sexp-state maps
+        for [plug, modes] in items(smc.maps[0])
+            let cfg = cfgs[plug]
+            if smc.state
+                " Shadow.
+                call s:destroy_map(cfg.lhs[0], cfg.modes)
+            else
+                " Restore shadowed.
+                call s:create_map(cfg.lhs[0], plug, cfg.modes, 0)
+            endif
+        endfor
+    endif
+endfunction
 
 " Toggle between 'special' and non-special modes.
-fu! s:toggle_sexp_mode(mode)
-    " Are we in sexp mode or not?
-    if exists('b:sexp_map_save')
-        " Toggle OFF
-        call s:sexp_restore_non_special_mappings(b:sexp_map_save)
-        unlet! b:sexp_map_save
-    else
-        " Toggle ON
-        call s:sexp_create_non_insert_mappings(1)
-    endif
-    if a:mode == 'v'
+function! s:toggle_sexp_state(...)
+    let mode = a:0 ? a:1 : ''
+    " Could pass toggle arg to sexp_create_non_insert_mappings to obviate need
+    " for setting toggle here.
+    let b:sexp_map_cache.state = !b:sexp_map_cache.state
+    " TODO: Perhaps change name of this, now that it does more...
+    call s:sexp_create_non_insert_mappings()
+    if mode == 'v'
         normal! gv
     endif
-endfu
+endfunction
+
+function! s:in_sexp_state()
+    return !!b:sexp_map_cache.state
+endfunction
+
+function! s:is_flag_set(plug, flag)
+    " TODO: Maybe use a different method to search for literal chars only, and
+    " possibly allow multiple flags?
+    return b:sexp_map_cfg[a:plug].flags =~ a:flag
+endfunction
 
 " Callback called just after any map has been executed.
 function! s:after_map_executed(plug)
     " If we're not currently in sexp-state, and the map just executed is
     " marked as auto-enabling sexp-state...
-    if !exists('b:sexp_map_save') && b:sexp_map_cfg[a:plug].flags =~ '>'
+    if !s:in_sexp_state() && s:is_flag_set(a:plug, '>')
         " Toggle sexp-state ON
-        call s:toggle_sexp_mode('')
+        call s:toggle_sexp_state()
     endif
 endfunction
 
@@ -517,7 +479,7 @@ endfunction
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-    call s:sexp_create_non_insert_mappings(0)
+    call s:sexp_create_non_insert_mappings()
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
@@ -532,8 +494,8 @@ function! s:sexp_create_mappings()
 endfunction
 
 """ Toggle Sexp-Mode {{{1
-DEFPLUG  nnoremap sexp_toggle_sexp_mode :call <SID>toggle_sexp_mode('n')<CR>
-DEFPLUG  xnoremap sexp_toggle_sexp_mode <Esc>:<C-u>call <SID>toggle_sexp_mode('v')<CR>
+DEFPLUG  nnoremap sexp_toggle_sexp_state :call <SID>toggle_sexp_state('n')<CR>
+DEFPLUG  xnoremap sexp_toggle_sexp_state <Esc>:<C-u>call <SID>toggle_sexp_state('v')<CR>
 
 """ Text Object Selections {{{1
 
