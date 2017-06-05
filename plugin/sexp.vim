@@ -156,10 +156,204 @@ let s:plug_map_modes = [
     \ ['sexp_capture_next_element',      'nx'],
 \ ]
 
+let s:builtins = {
+    \ 'n': [
+        \ '<C-A>',
+        \ '<C-B>',
+        \ '<C-C>',
+        \ '<C-D>',
+        \ '<C-E>',
+        \ '<C-F>',
+        \ '<C-G>',
+        \ '<BS>',
+        \ '<C-H>',
+        \ '<Tab>',
+        \ '<C-I>',
+        \ '<NL>',
+        \ '<C-J>',
+        \ '<C-L>',
+        \ '<CR>',
+        \ '<C-M>',
+        \ '<C-N>',
+        \ '<C-O>',
+        \ '<C-P>',
+        \ '<C-Q>',
+        \ '<C-R>',
+        \ '<C-S>',
+        \ '<C-T>',
+        \ '<C-U>',
+        \ '<C-V>',
+        \ {
+            \ 'key': '<C-W>',
+            \ 'children': [
+                \ '<C-B>',
+                \ '<C-C>',
+                \ '<C-D>',
+                \ '<C-F>',
+                \ '<C-G>',
+                \ '<C-H>',
+                \ '<C-H>',
+                \ '<C-I>',
+                \ '<C-J>',
+                \ '<C-K>',
+                \ '<C-L>',
+                \ '<C-N>',
+                \ '<C-O>',
+                \ '<C-P>',
+                \ '<C-Q>',
+                \ '<C-R>',
+                \ '<C-S>',
+                \ '<C-T>',
+                \ '<C-V>',
+                \ '<C-W>',
+                \ '<C-X>',
+                \ '<C-Z>',
+                \ '<C-]>',
+                \ '<C-^>',
+                \ '<C-_>',
+                \ '+',
+                \ '-',
+                \ '<',
+                \ '=',
+                \ '>',
+                \ 'H',
+                \ 'J',
+                \ 'K',
+                \ 'L',
+                \ 'P',
+                \ 'R',
+                \ 'S',
+                \ 'T',
+                \ 'W',
+                \ ']',
+                \ '^',
+                \ '_',
+                \ 'b',
+                \ 'c',
+                \ 'd',
+                \ 'f',
+                \ 'F',
+                \ {
+                    \ 'key': 'g',
+                    \ 'children': [
+                        \ '<C-]>', ']', '}', 'f', 'F'
+                    \ ]
+                \ },
+                \ 'h',
+                \ 'i',
+                \ 'j',
+                \ 'k',
+                \ 'l',
+                \ 'n',
+                \ 'o',
+                \ 'p',
+                \ 'q',
+                \ 'r',
+                \ 's',
+                \ 't',
+                \ 'v',
+                \ 'w',
+                \ 'x',
+                \ 'z',
+                \ '<Bar>',
+                \ '}',
+                \ '<Down>',
+                \ '<Up>',
+                \ '<Left>',
+                \ '<Right>',
+            \ ]
+        \ },
+        \ '<C-X>',
+        \ '<C-Y>',
+        \ '<C-Z>',
+        \ {
+            \ 'key': '<C-\>',
+            \ 'children': [
+                \ '<C-N>', '<C-G>',
+                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'
+            \ ]
+        \ },
+    \ ],
+    \ 'v': [
+        \ {
+            \ 'key': '<C-\>',
+            \ 'children': [
+                \ '<C-N>', '<C-G>'
+            \ ]
+        \ },
+        \ '<C-C>',
+        \ '<C-G>',
+        \ '<BS>',
+        \ '<C-H>',
+        \ '<C-O>',
+        \ '<C-V>',
+        \ '<Esc>',
+        \ '<C-]>',
+        \ '!',
+        \ ':',
+        \ '<lt>',
+        \ '=',
+        \ 'C',
+        \ 'D',
+        \ 'J',
+        \ 'K',
+        \ 'O',
+        \ 'R',
+        \ 'S',
+        \ 'U',
+        \ 'V',
+        \ 'X',
+        \ 'Y',
+        \ {
+            \ 'key': 'a',
+            \ 'children': [
+                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
+                \ 'b', 'p', 's', 't', 'w', '{', '}'
+            \ ]
+        \ },
+        \ 'c',
+        \ 'd',
+        \ {
+            \ 'key': 'g',
+            \ 'children': [
+                \ 'J', 'q', 'v'
+            \ ]
+        \ },
+        \ {
+            \ 'key': 'i',
+            \ 'children': [
+                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
+                \ 'b', 'p', 's', 't', 'w', '{', '}'
+            \ ]
+        \ },
+        \ 'o',
+        \ 'r',
+        \ 's',
+        \ 'u',
+        \ 'v',
+        \ 'x',
+        \ 'y',
+        \ '~',
+    \ ]
+\ }
+echo "Just created s:builtins"
+echo s:builtins
+
+let s:re_key_notation = '\c\v^\<'
+    \ . '%(t_)@!'
+    \ . '%([SCMAD]-)*'
+    \ . '%('
+    \ . 'nul|bs|tab|nl|ff|cr|return|enter|esc|space|lt|bslash|bar|del|x?csi'
+    \ . '|eol|up|down|left|right|f%(10|11|12|[1-9])|help|undo|insert'
+    \ . '|home|end|pageup|pagedown|k%(home|end|page%(up|down)|plus|minus'
+    \ . '|multiply|divide|enter|point|[0-9])'
+    \ . '|[[:print:]])\>$'
+
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
         autocmd!
-        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:sexp_create_mappings()'
+        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:on_buf_load()'
     augroup END
 endif
 
@@ -199,7 +393,6 @@ function! s:defplug(flags, mapmode, name, ...)
         return 1
     endif
 
-    let postfix = ' \| call <SID>after_map_executed("' . a:name . '")<CR>'
     " Common mapping prefix
     " RE: vv
     "   Due to a ?bug? in vim, we need to set curwin->w_curswant to the
@@ -213,7 +406,7 @@ function! s:defplug(flags, mapmode, name, ...)
 
     " Expression, non-repeating
     if !repeat || (repeat && !s:have_repeat_set)
-        execute prefix . postfix
+        execute prefix . '<CR>'
     " Expression, repeating, operator-pending mode
     elseif opmode
         execute prefix . ' \| '
@@ -221,10 +414,10 @@ function! s:defplug(flags, mapmode, name, ...)
                 \ . '  call <SID>repeat_set(v:operator . "\<Plug>(' . a:name . ')\<lt>C-r>.\<lt>C-Bslash>\<lt>C-n>", b:sexp_count) \| '
                 \ . 'else \| '
                 \ . '  call <SID>repeat_set(v:operator . "\<Plug>(' . a:name . ')", b:sexp_count) \| '
-                \ . 'endif' . postfix
+                \ . 'endif<CR>'
     " Expression, repeating, non-operator-pending mode
     else
-        execute prefix . ' \| call <SID>repeat_set("\<Plug>(' . a:name . ')", b:sexp_count)' . postfix
+        execute prefix . ' \| call <SID>repeat_set("\<Plug>(' . a:name . ')", b:sexp_count)<CR>'
     endif
 endfunction
 
@@ -240,246 +433,264 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
-" Return object corresponding to input 'plug' string:
-" {'lhs': [<lhs>, <sexp-state-lhs>], 'flags': 'map-flags'}
-" Logic: Prefer user overrides in g:sexp_mappings, but fallback to default in
-" s:sexp_mappings if user has not overridden, or override is invalid. Warn if
-" override is invalid.
-function! s:sexp_get_mapping(plug)
-    for map in [g:sexp_mappings, s:sexp_mappings]
-        if has_key(map, a:plug)
-            let m = map[a:plug]
-            " Use type/len of m to determine what's been overridden.
-            "   string:            "lhs"
-            "   1 element list:  [ "sexp_state_lhs" ]
-            "   2 element list:  [ "lhs", "sexp_state_lhs" ]
-            "   2 element list:  [ "lhs", "sexp_state_lhs", "flags" ]
-            " First, validate the form of the sexp_mappings entry.
-            " Design Decision: Empty arrays and/or lhs strings will not be
-            " considered error: rather, they will be indication that user has
-            " chosen to disable the corresponding map. Note that, due to the way
-            " mappings are defined, an all whitespace lhs is effectively empty.
-            if empty(m)
-                " Mapping completely disabled.
-                return ret
+function! s:create_sexp_state_toggle()
+    for mode in ['n', 'x']
+        execute mode . 'noremap <buffer><nowait> '
+            \ . g:sexp_toggle_map
+            \ . '<Esc>:<C-u>call <SID>toggle_sexp_state(mode == "n" ? "n" : "v")'
+    endfor
+endfunction
+
+" Split a somewhat canonicalized lhs string into a list of even more
+" canonicalized pieces: e.g.,
+"   "<foo>" => ["<lt>", "f", "o", "o", ">"]
+"   BUT
+"   "<C-A>" => ["<C-A>"]
+function! s:split_and_canonicalize_lhs(lhs)
+    let ret = []
+    " User's been instructed not to use literal whitespace in string.
+    let s = substitute(a:lhs, '^\s*\|\s*$', '', 'g')
+    if empty(s)
+        return ret
+    endif
+    let [i, len] = [0, len(s)]
+    while i < len
+        let ie = matchend(s, '^\c<[-[:alnum:]]\+>', i)
+        if ie >= 0
+            let c = s[i:ie-1]
+            " Check for something that *could* be special key notation.
+            " TODO: Consider canonicalizing by using the "\<...>" notation in
+            " a string expression to produce an actual key sequence (or
+            " something beginning with '<' if it's not a valid key sequence).
+            " Note: This strategy could be used to perform more reliable
+            " validation than what's provided by s:re_key_notation.
+            if c !~ s:re_key_notation
+                let c = '<lt>'
+                " Let the rest be handled on subsequent iterations.
+                let ie = i + 1
             endif
-            let mt = type(m)
-            let flags = '' " flags default to clear
-            if mt == 1 " string
-                " Legacy format: i.e., no sexp-mode mapping
-                let lhs = [m, '']
-            elseif mt == 3 " list
-                let mlen = len(m)
-                if mlen == 1
-                    " sexp-mode map only
-                    " Rationale: If user plans to use a map *only* in
-                    " sexp-mode, he can free up the lhs defined in
-                    " s:sexp_mappings. Note that the following 2 forms are
-                    " equivalent: ['lhs'], ['', 'lhs']
-                    " Caveat: If flags are specified, non-sexp-state lhs must
-                    " be specified explicitly, even if empty.
-                    let lhs = ['', m[0]]
-                elseif mlen >= 2 && mlen <= 3
-                    " both normal and sexp-mode maps (and possibly flags)
-                    let lhs = m[:1]
-                    if mlen == 3
-                        let flags = m[2]
+        else
+            " This match is guaranteed to succeed.
+            let ie = matchend(s, '.', i)
+            let c = s[i:ie-1]
+        endif
+        call add(ret, c)
+        let i = ie
+    endwhile
+    return ret
+endfunction
+
+" Recursively build a tree-like builtins data structure optimized for search.
+" mode    applicable mode
+" keylist list of keys in canonical form at current level, with lower levels
+"         represented by maps: e.g.,
+"         <key1>, <key2>, {'key': <key3>, 'children': [...]}, ...
+" Output: Builtins represented as search-optimized tree structure, of the
+" following form:
+" {<key1>: {'modes', '[nv]', 'dmodes': '[nv]', 'children': {...}},
+"  <key2>: ...}
+" Note: Although represented as separate hierarchies in the non-optimized
+" builtins structure, the modes are merged into a common tree structure here,
+" with the "modes" key indicating the modes for which element is a leaf, and
+" the "dmodes" key indicating which modes are represented at deeper levels (to
+" permit search short-circuit).
+function! s:add_builtin_r(mode, keylist, map)
+    for key in a:keylist
+        let [k, descend] = type(key) == 4 ? [key.key, 1] : [key, 0]
+        if !has_key(a:map, k)
+            let a:map[k] = {'modes': '', 'dmodes': '', 'children': {}}
+        endif
+        let map = a:map[k]
+        if descend
+            if map.dmodes !~ a:mode
+                " Allow search to short-circuit if mode not represented below
+                " this level.
+                let map.dmodes .= a:mode
+            endif
+            call s:add_builtin_r(a:mode, key.children, map.children)
+        else
+            let map.modes .= a:mode
+        endif
+    endfor
+endfunction
+
+" Return a cached map of builtins, optimized for recursive search.
+" Note: Generate the map on initial call.
+" TODO: Perhaps hide the actual s:builtins data structure in here, and the
+" function itself at the bottom of the file...
+function! s:get_builtins()
+    if exists('s:builtins_optimized')
+        return s:builtins
+    endif
+    let keymap = {}
+    " Need to do the first-time only conversion.
+    for [mode, keylist] in items(s:builtins)
+        call s:add_builtin_r(mode, keylist, keymap)
+    endfor
+    " Replace the original with one optimized for search.
+    let s:builtins = keymap
+    let s:builtins_optimized = 1
+    let g:builtins = keymap
+    return s:builtins
+endfunction
+
+" Process the "builtins" tree structure recursively, recording in a escs map
+" all those builtins whose ambiguity/conflict with a sexp-state map
+" necessitates an escape map.
+" bs      current location in builtins tree structure (implemented as map).
+" blhs    cumulative builtin lhs
+" lhs_lst list of unprocessed lhs canonicalized key components
+" modes   modes in which the sexp-state map being checked is active.
+" escs    detected conflicts (key=lhs, val=modes)
+function! s:get_conflicting_builtins_r(bs, blhs, lhs_lst, modes, escs)
+    if empty(a:lhs_lst)
+        " Note: Can't get here on first recursive call.
+        " Process all leaves, which are assumed to be descended from a
+        " conflicting sexp map.
+        let lhs = ''
+        let bs_map = a:bs
+    else
+        " Process only conflicting key and any of its descendants.
+        let [lhs, lhs_lst] = [a:lhs_lst[0], a:lhs_lst[1:]]
+        " Note: Stuffing into a single key hash permits common logic below.
+        let bs_map = has_key(a:bs, lhs) ? {lhs: a:bs[lhs]} : {}
+    endif
+    " Process leaf(s)
+    for [k, o] in items(bs_map)
+        let blhs = a:blhs . k
+        " Loop over leaf builtins (if any)
+        for m in split(o.modes, '\zs')
+            " Do any of the leaf's modes interest us?
+            if a:modes =~ m
+                " Note: Possible to reach the same builtin multiple times.
+                if has_key(a:escs, blhs)
+                    if a:escs[blhs] !~ m
+                        let a:escs[blhs] .= m
                     endif
+                else
+                    let a:escs[blhs] = m
                 endif
             endif
-            if exists('lhs')
-                " We have a valid entry; no need to look further.
-                break
+        endfor
+        " Descend if there are builtin children *and* the modes we're
+        " interested in are represented at lower levels (dmodes).
+        " Possible TODO: There are other short-circuit possibilities: e.g.,
+        " could modify dmodes to reflect current state of conflict detection,
+        " but this is probably not justified, given that the fraction of
+        " traversals ending in short-circuit would be extremely small.
+        if !empty(o.children) && o.dmodes =~ '[' . a:modes . ']'
+            call s:get_conflicting_builtins_r(o, blhs, lhs_lst, a:modes, a:escs)
+        endif
+    endfor
+endfunction
+
+" Build a dict (key=lhs, val=modes) of all builtins that conflict with the
+" specified lhs in the specified modes.
+function! s:get_conflicting_builtins(modes, lhs, escs)
+    let bs = s:get_builtins()
+    let lhs_lst = s:split_and_canonicalize_lhs(a:lhs)
+    if !empty(lhs_lst)
+        " Recurse...
+        call s:get_conflicting_builtins_r(bs, '', lhs_lst, a:modes, a:escs)
+    endif
+endfunction
+
+" Create "escape maps" for each builtin represented in escs, using leader key
+" esc_key, skipping any that would conflict with one of the sexp-state maps
+" represented by lhs_map. Record escape maps created in undo list.
+function! s:create_escape_maps(esc_key, escs, lhs_map, undo)
+    for [lhs, modes] in items(a:escs)
+        for mode in split(modes, '\zs')
+            " Make sure this won't conflict with a sexp map (unlikely).
+            if !has_key(a:lhs_map, lhs) || a:lhs_map[lhs] =~ mode
+                " Create the escape map and the corresponding unmap.
+                execute mode . 'noremap <buffer><nowait> '
+                    \ . a:esc_key . lhs . ' ' . lhs
+                " Record for subsequent removal.
+                call add(a:undo, mode . 'unmap <buffer> ' . a:esc_key . lhs)
             endif
-            " Key exists but was invalid.
-            " Assumption: Must be g:sexp_mappings, since invalid entry in
-            " s:sexp_mappings would imply internal error.
-            echohl WarningMsg
-            echomsg "Skipping invalid entry in sexp_mappings list for " . a:plug
-            echohl None
+        endfor
+    endfor
+endfunction
+
+function! s:sexp_toggle_non_insert_mappings()
+    " TODO: Store the unmap commands in buf-local data structures.
+    let create = !exists('b:sexp_unmap_commands')
+    if create
+        let b:sexp_unmap_commands = []
+
+        if exists('g:sexp_escape_key') && !empty(g:sexp_escape_key)
+            " TODO: Perhaps some validation: e.g., single key.
+            " TODO: Also, don't create escapes if not in expert mode.
+            let [esc_key, escs, lhs_map] = [g:sexp_escape_key, {}, {}]
         endif
-    endfor
-    " Make sure an all whitespace lhs is treated as empty.
-    call map(lhs, 'substitute(v:val, ''^\s\+$'', "", "g")')
-    return {'lhs': lhs, 'flags': flags}
-endfunction
 
-" Combine raw map configuration represented in both sexp_mappings and
-" s:plug_map_modes into a convenient form and cache the resulting dictionary
-" in buf-local b:sexp_map_cfg.
-" Cache Format:
-" {plug: {'modes': ['n|x|o', ...],
-"         'lhs': ['lhs', 'sexp-state-lhs'],
-"         'flags': "map-flags"},
-"  ...}
-" Return: The built cache, as convenience to caller.
-" Note: The configuration information is cached only once, when mappings are
-" first created for a buffer. Subsequent changes to g:sexp_mappings will have
-" no effect until the buffer has been deleted.
-function! s:sexp_get_map_cfg()
-    " Try cache first.
-    if exists('b:sexp_map_cfg')
-        return b:sexp_map_cfg
-    endif
-    " Build the cache.
-    let b:sexp_map_cfg = {}
-    for [plug, modestr] in s:plug_map_modes
-        " Get canonical form lhs/flags for this plug, and cache it along with
-        " the mode info.
-        let m = s:sexp_get_mapping(plug)
-        let b:sexp_map_cfg[plug] = {
-            \ 'modes': split(modestr, '\zs'),
-            \ 'lhs': m.lhs,
-            \ 'flags': m.flags
-        \ }
-    endfor
-    " Return the cache as convenience to caller.
-    return b:sexp_map_cfg
-endfunction
-
-function! s:destroy_map(lhs, modes)
-    " Caveat: In some cases, map may have been removed already.
-    for mode in a:modes
-        silent! execute mode . 'unmap <buffer>' . a:lhs
-    endfor
-endfunction
-
-function! s:create_map(lhs, plug, modes, nowait)
-    for mode in a:modes
-        execute mode . 'map ' . (a:nowait ? '<nowait>' : '')
-            \ . '<silent><buffer> ' . a:lhs . ' <Plug>(' . a:plug . ')'
-    endfor
-endfunction
-
-" TODO: Rewrite comment...
-" Create all non-insert mode mappings applicable to the input plugin mode
-" (special or non-special). If entering special mode (sexp_state=1), shadow
-" any ambiguous/conflicting maps, saving the information needed to restore
-" them in a buf-local structure of the following form:
-" {state: <sexp-state>,
-"  maps: [{plug1: modes1, plug2: modes2}, [plug1, plug2, ...]]}
-" Note: Create both the first time we enter sexp-state.
-function! s:sexp_create_non_insert_mappings()
-    if !exists('b:sexp_map_cache')
-        " Initialize data structure used to short-circuit processing after
-        " the first full cycle of sexp-state toggles.
-        let b:sexp_map_cache = {'state': 0}
-    endif
-    let smc = b:sexp_map_cache
-    " Get configuration.
-    let cfgs = s:sexp_get_map_cfg()
-    if !has_key(smc, 'maps')
-        " First or second half of first cycle
-        if smc.state
-            " Initialize data structure used to short-circuit processing
-            " required for creating/destroying maps when toggling between sexp
-            " and non-sexp states.
-            " Note: We build the data structures on the second half of first
-            " cycle, and simply re-use it thereafter.
-            let smc.maps = [{}, []]
-        endif
-        " Loop over configuration.
-        " Note: If deterministic order is desired, could use s:plug_map_modes
-        " to define order.
-        for [plug, cfg] in items(cfgs)
-            let lhs = cfg.lhs[!!smc.state]
-            if empty(lhs)
-                " No mapping in the current plugin state.
+        for [plug, modestr] in s:plug_map_modes
+            let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+            if lhs =~ '^\s*$'
+                " lhs can't be empty or all whitespace
                 continue
             endif
-            let modes = cfg.modes
-            if smc.state
-                " Entering sexp-state; check for conflicting non-sexp state
-                " maps.
-                for [plug_, cfg_] in items(cfgs)
-                    let re_modes = '[' . join(cfg_.modes, '') . ']'
-                    " Determine common modes.
-                    let cmodes = filter(copy(modes), 'v:val =~ re_modes')
-                    if !empty(cmodes) &&
-                        \ stridx(cfg_.lhs[0], lhs) == 0 ||
-                        \ stridx(lhs, cfg_.lhs[0]) == 0
-                        " Record conflicting non-sexp-state map.
-                        if has_key(smc.maps[0], plug_)
-                            let smc.maps[0][plug_] =
-                                \ uniq(extend(smc.maps[0][plug_], cmodes))
-                        else
-                            let smc.maps[0][plug_] = cmodes
-                        endif
-                        " Shadow (remove) the conflicting non-sexp-state map.
-                        call s:destroy_map(lhs, cmodes)
-                    endif
-                endfor
-                " Record sexp-state map.
-                call add(smc.maps[1], plug)
+            let modes = split(modestr, '\zs')
+            if exists('esc_key')
+                " Record in existence map (for unlikely event in which user
+                " creates sexp maps beginning with esc key).
+                let lhs_map[lhs] = modestr
+                " Accumulate conflict info to escs map.
+                call s:get_conflicting_builtins(modestr, lhs, escs)
             endif
-            " Create the map in the indicated modes.
-            " TODO: Consider making create/destroy_map take a cfg entry; would
-            " permit create/destroy to be parameterized.
-            call s:create_map(lhs, plug, modes, !!smc.state)
+            for mode in modes
+                if create
+                    execute mode . 'map <nowait><silent><buffer>'
+                        \ . lhs . ' <Plug>(' . plug . ')'
+                else
+                    silent! execute mode . 'unmap <buffer>' . lhs
+                endif
+            endfor
         endfor
+        if exists('esc_key') && !empty(escs)
+            call s:create_escape_maps(esk_key, escs, lhs_map, b:sexp_unmap_commands)
+        endif
     else
-        " At least 1 toggle cycle complete.
-        " Create or remove sexp-state maps
-        for plug in smc.maps[1]
-            let cfg = cfgs[plug]
-            if smc.state
-                call s:create_map(cfg.lhs[1], plug, cfg.modes, 1)
-            else
-                call s:destroy_map(cfg.lhs[1], cfg.modes)
-            endif
+        " Simply unmap...
+        for cmd in b:sexp_unmap_commands
+            execute cmd
         endfor
-        " Restore or shadow non-sexp-state maps
-        for [plug, modes] in items(smc.maps[0])
-            let cfg = cfgs[plug]
-            if smc.state
-                " Shadow.
-                call s:destroy_map(cfg.lhs[0], cfg.modes)
-            else
-                " Restore shadowed.
-                call s:create_map(cfg.lhs[0], plug, cfg.modes, 0)
-            endif
-        endfor
+        " TODO: Probably don't remove, but cache everything...
+        unlet! b:sexp_unmap_commands
     endif
+
+    " Just in case user does something silly with his customizations.
+    call s:create_sexp_state_toggle()
 endfunction
 
 " Toggle between 'special' and non-special modes.
 function! s:toggle_sexp_state(...)
     let mode = a:0 ? a:1 : ''
-    " Could pass toggle arg to sexp_create_non_insert_mappings to obviate need
-    " for setting toggle here.
-    let b:sexp_map_cache.state = !b:sexp_map_cache.state
-    " TODO: Perhaps change name of this, now that it does more...
-    call s:sexp_create_non_insert_mappings()
+    call s:sexp_toggle_non_insert_mappings()
     if mode == 'v'
         normal! gv
     endif
 endfunction
 
-function! s:in_sexp_state()
-    return !!b:sexp_map_cache.state
-endfunction
-
-function! s:is_flag_set(plug, flag)
-    " TODO: Maybe use a different method to search for literal chars only, and
-    " possibly allow multiple flags?
-    return b:sexp_map_cfg[a:plug].flags =~ a:flag
-endfunction
-
-" Callback called just after any map has been executed.
-function! s:after_map_executed(plug)
-    " If we're not currently in sexp-state, and the map just executed is
-    " marked as auto-enabling sexp-state...
-    if !s:in_sexp_state() && s:is_flag_set(a:plug, '>')
-        " Toggle sexp-state ON
-        call s:toggle_sexp_state()
+function! s:on_buf_load()
+    " TEMP SOLUTION
+    if !exists('b:vim_sexp_loaded')
+        let b:vim_sexp_loaded = 1
+        if (!exists('g:sexp_toggle_map') || empty(g:sexp_toggle_map))
+            call s:sexp_create_mappings()
+        else
+            call s:create_sexp_state_toggle()
+        endif
     endif
 endfunction
-
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-    call s:sexp_create_non_insert_mappings()
+    " TODO: Does this need to be refactored? Ok to treat the initial
+    " activation as toggle when sexp-state disabled?
+    call s:sexp_toggle_non_insert_mappings()
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
