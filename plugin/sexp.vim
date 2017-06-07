@@ -274,6 +274,132 @@ let s:builtins = {
                 \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'
             \ ]
         \ },
+        \ '<Space>',
+        \ {
+            \ 'key': '!',
+            \ 'children': [
+                \ '!'
+            \ ]
+        \ },
+        \ '#',
+        \ '$',
+        \ '%',
+        \ '&',
+        \ {
+            \ 'key': '''',
+            \ 'children': [
+                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+            \ ]
+        \ },
+        \ '(',
+        \ ')',
+        \ '*',
+        \ '+',
+        \ ',',
+        \ '-',
+        \ '.',
+        \ '/',
+        \ '<CR>',
+        \ '0',
+        \ ':',
+        \ ';',
+        \ '<',
+        \ '=',
+        \ '>',
+        \ '?',
+        \ '@',
+        \ 'A',
+        \ 'B',
+        \ 'C',
+        \ 'D',
+        \ 'E',
+        \ 'F',
+        \ 'G',
+        \ 'H',
+        \ 'I',
+        \ 'J',
+        \ 'K',
+        \ 'L',
+        \ 'M',
+        \ 'N',
+        \ 'O',
+        \ 'P',
+        \ 'Q',
+        \ 'R',
+        \ 'S',
+        \ 'T',
+        \ 'U',
+        \ 'V',
+        \ 'W',
+        \ 'X',
+        \ 'Y',
+        \ {
+            \ 'key': 'Z',
+            \ 'children': [
+                \ 'Z', 'Q'
+            \ ]
+        \ },
+        \ {
+            \ 'key': '[',
+            \ 'children': [ ]
+        \ },
+        \ {
+            \ 'key': ']',
+            \ 'children': [ ]
+        \ },
+        \ '^',
+        \ '_',
+        \ {
+            \ 'key': '`',
+            \ 'children': [
+                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                \ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+                \ 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+                \ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                \ '(', ')', '<', '>', '[', ']', '`', '{', '}'
+            \ ]
+        \ },
+        \ 'a',
+        \ 'b',
+        \ 'c',
+        \ 'd',
+        \ 'e',
+        \ 'f',
+        \ 'g',
+        \ 'h',
+        \ 'i',
+        \ 'j',
+        \ 'k',
+        \ 'l',
+        \ 'm',
+        \ 'n',
+        \ 'o',
+        \ 'p',
+        \ {
+            \ 'key': 'q',
+            \ 'children': [
+                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                \ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+                \ 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+                \ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                \ '"', ':', '/', '?'
+            \ ]
+        \ },
+        \ 'r',
+        \ 's',
+        \ 't',
+        \ 'u',
+        \ 'v',
+        \ 'w',
+        \ 'x',
+        \ 'y',
+        \ 'z',
+        \ '{',
+        \ '<Bar>',
+        \ '}',
+        \ '~',
     \ ],
     \ 'v': [
         \ {
@@ -337,8 +463,6 @@ let s:builtins = {
         \ '~',
     \ ]
 \ }
-echo "Just created s:builtins"
-echo s:builtins
 
 let s:re_key_notation = '\c\v^\<'
     \ . '%(t_)@!'
@@ -437,7 +561,9 @@ function! s:create_sexp_state_toggle()
     for mode in ['n', 'x']
         execute mode . 'noremap <buffer><nowait> '
             \ . g:sexp_toggle_map
-            \ . '<Esc>:<C-u>call <SID>toggle_sexp_state(mode == "n" ? "n" : "v")'
+            \ . ' <Esc>:<C-u>call <SID>toggle_sexp_state('
+            \ . (mode == "n" ? "'n'" : "'v'")
+            \ . ')<CR>'
     endfor
 endfunction
 
@@ -643,13 +769,13 @@ function! s:sexp_toggle_non_insert_mappings()
                 if create
                     execute mode . 'map <nowait><silent><buffer>'
                         \ . lhs . ' <Plug>(' . plug . ')'
-                else
-                    silent! execute mode . 'unmap <buffer>' . lhs
+                    call add(b:sexp_unmap_commands,
+                        \ 'silent! execute ' . mode . 'unmap <buffer>' . lhs)
                 endif
             endfor
         endfor
-        if exists('esc_key') && !empty(escs)
-            call s:create_escape_maps(esk_key, escs, lhs_map, b:sexp_unmap_commands)
+        if exists('l:esc_key') && !empty(l:escs)
+            call s:create_escape_maps(esc_key, escs, lhs_map, b:sexp_unmap_commands)
         endif
     else
         " Simply unmap...
