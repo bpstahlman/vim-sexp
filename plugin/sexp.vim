@@ -599,6 +599,12 @@ function! s:split_and_canonicalize_lhs(lhs)
             " This match is guaranteed to succeed.
             let ie = matchend(s, '.', i)
             let c = s[i:ie-1]
+            " With default 'cpo' (which we're assuming), bslash is not
+            " special in mappings, but canonical form requires it to be
+            " expressed in key-notation.
+            if c == '\'
+                let c = '<Bslash>'
+            endif
         endif
         call add(ret, c)
         let i = ie
@@ -739,6 +745,40 @@ function! s:create_escape_maps(esc_key, escs, lhs_map, undo)
     endfor
 endfunction
 
+function! s:get_user_maps(map_args)
+    let map_args = a:0 ? a:1 : ''
+    let ret = {}
+    redir => maps
+    " Note: Get nvo maps.
+    silent exe 'map ' . map_args
+    redir END
+    for map in split(maps, '\n')
+        " Extract just the lhs.
+        " Assumptions: (from map.txt)
+        " -First 2 columns dedicated to mode flags
+        " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
+        " Mode flags: The following are significant to us:
+        " <Space> (i.e., nvo, created with :map), n, x, o
+        let [_, modes, lhs; rest] = matchlist(map, '\(.\{-}\)\%>2c\(\S\+\).*')
+        " Is this map relevant? We care only about <Space> (nvso) and nvxo.
+        if modes[0] == ' ' || modes =~ '[xvno]'
+            " Canonicalize the lhs
+            let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
+            if !empty(lhs)
+                " Check nvo maps.
+                let ma = maparg(lhs, '', 0, 1)
+                " Make sure our canonicalization succeeded.
+                " Note: This should work for 99+% of use cases, but :map output is
+                " not deterministic, so there are some pathological corner cases.
+                if !empty(ma)
+                    let ret[lhs] = ma
+                endif
+            endif
+        endif
+    endfor
+    return ret
+endfunction
+
 function! s:sexp_toggle_non_insert_mappings()
     " TODO: Store the unmap commands in buf-local data structures.
     let create = !exists('b:sexp_unmap_commands')
@@ -751,6 +791,10 @@ function! s:sexp_toggle_non_insert_mappings()
             let [esc_key, escs, lhs_map] = [g:sexp_escape_key, {}, {}]
         endif
 
+        if exists('l:esc_key')
+            let user_maps = s:get_user_maps('<buffer>')
+            echomsg "user_maps: " . string(user_maps)
+        endif
         for [plug, modestr] in s:plug_map_modes
             let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
             if lhs =~ '^\s*$'
