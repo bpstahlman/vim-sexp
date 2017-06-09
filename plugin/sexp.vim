@@ -745,23 +745,33 @@ function! s:create_escape_maps(esc_key, escs, lhs_map, undo)
     endfor
 endfunction
 
+" Parse output of :map to obtain a hash of maps.
+" TODO: Augment maparg() dict with scriptlocal tag.
 function! s:get_user_maps(map_args)
     let map_args = a:0 ? a:1 : ''
     let ret = {}
     redir => maps
     " Note: Get nvo maps.
+    " TODO: Just get the maps that begin with esc leader!
     silent exe 'map ' . map_args
     redir END
     for map in split(maps, '\n')
         " Extract just the lhs.
         " Assumptions: (from map.txt)
-        " -First 2 columns dedicated to mode flags
+        " -First 2 columns dedicated to mode flags (typically only <Space> or
+        "  single mode flag, but with :map followed by ounmap, you can get
+        "  'nv'.
         " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
         " Mode flags: The following are significant to us:
         " <Space> (i.e., nvo, created with :map), n, x, o
+        " TODO: Extract <buffer><script> (&) and augment dict.
         let [_, modes, lhs; rest] = matchlist(map, '\(.\{-}\)\%>2c\(\S\+\).*')
+        if modes[0] == ' '
+            " TODO: Would it be better to set to '<Space>'?
+            let modes = 'nvo'
+        endif
         " Is this map relevant? We care only about <Space> (nvso) and nvxo.
-        if modes[0] == ' ' || modes =~ '[xvno]'
+        if modes =~ '[xvno]'
             " Canonicalize the lhs
             let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
             if !empty(lhs)
@@ -770,13 +780,55 @@ function! s:get_user_maps(map_args)
                 " Make sure our canonicalization succeeded.
                 " Note: This should work for 99+% of use cases, but :map output is
                 " not deterministic, so there are some pathological corner cases.
+                " TODO: Consider converting the map to just plain list, since
+                " I have to process as list anyways...
                 if !empty(ma)
-                    let ret[lhs] = ma
+                    if has_key(ret, lhs)
+                        call add(ret[lhs], ma)
+                    else
+                        let ret[lhs] = [ma]
+                    endif
                 endif
             endif
         endif
     endfor
     return ret
+endfunction
+
+" Accept hash of user maps (lhs => maparg()) and hash of sexp maps (lhs =>
+" modes) and return list of user maps requiring save/restore.
+function! s:get_conflicting_usermaps(user_maps, sexp_maps, esc_key)
+    " Note: Use hash instead of list because we need set behavior.
+    " TODO: If I'm going to keep user_maps as map, I'll need an extra key
+    " level for buffer/global distinction, but I'm thinking I don't really
+    " need map lookup (since I can't really use it).
+    " TODO: maparg() doesn't give <script> information, but I can get it from
+    " output of :map (&) and augment the data structure.
+    let cs = {}
+    let umls = sort(keys(a:user_maps))
+    let smls = sort(keys(a:sexp_maps))
+    for slhs in smls
+        let slen = len(slhs)
+        let smodes = '[' . a:sexp_maps[slhs] . ']'
+        for ulhs in umls
+            let ulhs = ulhs[:slen-1]
+            if ulhs == slhs
+                " Do we have a mode match?
+                if a:user_maps[ulhs].modes =~ smodes
+                    if has_key(cs, ulhs)
+                endif
+            elseif ulhs > slhs
+                break
+            endif
+        endfor
+    endfor
+
+    for [lhs, modes] in items(a:sexp_maps)
+        " Look for user map that matches all of the sexp map with esc leader
+        " prepended.
+        let lhs = a:esc_key . lhs
+        
+    endfor
 endfunction
 
 function! s:sexp_toggle_non_insert_mappings()
@@ -788,7 +840,7 @@ function! s:sexp_toggle_non_insert_mappings()
         if exists('g:sexp_escape_key') && !empty(g:sexp_escape_key)
             " TODO: Perhaps some validation: e.g., single key.
             " TODO: Also, don't create escapes if not in expert mode.
-            let [esc_key, escs, lhs_map] = [g:sexp_escape_key, {}, {}]
+            let [esc_key, escs, sexp_maps] = [g:sexp_escape_key, {}, {}]
         endif
 
         if exists('l:esc_key')
@@ -805,22 +857,30 @@ function! s:sexp_toggle_non_insert_mappings()
             if exists('esc_key')
                 " Record in existence map (for unlikely event in which user
                 " creates sexp maps beginning with esc key).
-                let lhs_map[lhs] = modestr
+                let sexp_maps[lhs] = modestr
                 " Accumulate conflict info to escs map.
                 call s:get_conflicting_builtins(modestr, lhs, escs)
             endif
             for mode in modes
-                if create
-                    execute mode . 'map <nowait><silent><buffer>'
-                        \ . lhs . ' <Plug>(' . plug . ')'
-                    call add(b:sexp_unmap_commands,
-                        \ 'silent! execute ' . mode . 'unmap <buffer>' . lhs)
-                endif
+                "execute mode . 'map <nowait><silent><buffer>'
+                "    \ . lhs . ' <Plug>(' . plug . ')'
+                call add(b:sexp_map_commands,
+                    \ mode . 'map <nowait><silent><buffer>'
+                    \ . lhs . ' <Plug>(' . plug . ')')
+                call add(b:sexp_unmap_commands,
+                    \ 'silent! execute ' . mode . 'unmap <buffer>' . lhs)
             endfor
         endfor
         if exists('l:esc_key') && !empty(l:escs)
-            call s:create_escape_maps(esc_key, escs, lhs_map, b:sexp_unmap_commands)
+            " Save any conflicting user maps
+            let b:save_restore_user_maps = s:get_conflicting_usermaps(user_maps, sexp_maps)
+
+            call s:create_escape_maps(esc_key, escs, sexp_maps, b:sexp_unmap_commands)
         endif
+        " Now it's safe to create sexp-state maps
+        for cmd in b:sexp_map_commands
+            execute cmd
+        endfor
     else
         " Simply unmap...
         for cmd in b:sexp_unmap_commands
