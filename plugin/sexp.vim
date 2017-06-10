@@ -572,6 +572,12 @@ endfunction
 "   "<foo>" => ["<lt>", "f", "o", "o", ">"]
 "   BUT
 "   "<C-A>" => ["<C-A>"]
+" TODO: Because we're doing string comparisons on canonicalized forms (and
+" case is generally sensitive in maps), we need either to canonicalize case
+" here or use "\<...>" to convert to actual byte sequence: e.g.,
+" "\<F7>" => <80>k7
+" I don't see this causing problems, since these canonical forms would be used
+" only for in memory comparisons.
 function! s:split_and_canonicalize_lhs(lhs)
     let ret = []
     " User's been instructed not to use literal whitespace in string.
@@ -745,54 +751,89 @@ function! s:create_escape_maps(esc_key, escs, lhs_map, undo)
     endfor
 endfunction
 
-" Parse output of :map to obtain a hash of maps.
-" TODO: Augment maparg() dict with scriptlocal tag.
-function! s:get_user_maps(map_args)
-    let map_args = a:0 ? a:1 : ''
-    let ret = {}
-    redir => maps
-    " Note: Get nvo maps.
-    " TODO: Just get the maps that begin with esc leader!
-    silent exe 'map ' . map_args
-    redir END
-    for map in split(maps, '\n')
-        " Extract just the lhs.
-        " Assumptions: (from map.txt)
-        " -First 2 columns dedicated to mode flags (typically only <Space> or
-        "  single mode flag, but with :map followed by ounmap, you can get
-        "  'nv'.
-        " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
-        " Mode flags: The following are significant to us:
-        " <Space> (i.e., nvo, created with :map), n, x, o
-        " TODO: Extract <buffer><script> (&) and augment dict.
-        let [_, modes, lhs; rest] = matchlist(map, '\(.\{-}\)\%>2c\(\S\+\).*')
-        if modes[0] == ' '
-            " TODO: Would it be better to set to '<Space>'?
-            let modes = 'nvo'
-        endif
-        " Is this map relevant? We care only about <Space> (nvso) and nvxo.
-        if modes =~ '[xvno]'
-            " Canonicalize the lhs
-            let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
-            if !empty(lhs)
-                " Check nvo maps.
-                let ma = maparg(lhs, '', 0, 1)
-                " Make sure our canonicalization succeeded.
-                " Note: This should work for 99+% of use cases, but :map output is
-                " not deterministic, so there are some pathological corner cases.
-                " TODO: Consider converting the map to just plain list, since
-                " I have to process as list anyways...
-                if !empty(ma)
-                    if has_key(ret, lhs)
-                        call add(ret[lhs], ma)
-                    else
-                        let ret[lhs] = [ma]
+function! s:usermap_sort_fn(a, b)
+    let [ama, bma] = [a:a.maparg, a:b.maparg]
+    " Note: Comparison must be case-sensitive.
+    return ama.lhs < bma.lhs ? -1 : ama.lhs > bma.lhs
+        \ ? 1 : ama.buffer ? -1 : bma.buffer ? 1 : 0
+endfunction
+
+" Parse output of :map and return relevant results:
+" Format: [{'script': 0|1, 'maparg': maparg()}, ...]
+" Order: Buffer maps before global, then ordered by lhs (case-sensitive)
+" TODO: Could simply augment maparg() dict itself with 'script' flag.
+function! s:get_user_maps(esc_key)
+    let lsts = [[], []]
+    for i in range(2)
+        let buffer = i == 0
+        redir => maps
+        " Note: Get nvo maps.
+        silent exe 'map ' . (buffer ? '<buffer>' : '') . ' ' . a:esc_key
+        redir END
+        for map in split(maps, '\n')
+            " Extract lhs and everything else (which may be needed later).
+            " Assumptions: (from map.txt)
+            " -First 2 columns dedicated to mode flags (typically only <Space> or
+            "  single mode flag, but with :map followed by ounmap, you can get
+            "  'nv'.
+            " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
+            " Mode Flags: The following are significant to us:
+            "   <Space> (i.e., nvo, created with :map), n, v, x, o
+            " Scope Flag Ambiguity: The scope flag field is...
+            "   global: [&*]\?
+            "   buffer: [&*]\?@
+            " The problem is that any of those characters can also appear
+            " unescaped at start of rhs: hence, we have ambiguity that needs
+            " to be resolved by considering both the presence/absence of
+            " <buffer> arg to :map command and the "noremap" flag in the
+            " maparg() dict returned by maparg() for extracted lhs.
+            " Note: Though doc doesn't make it clear, maparg() dict can also
+            " contain 2-char string 'nv'.
+            let [_, modes, lhs, scope_and_rhs; rest] = matchlist(map,
+                \ '\(.\{-}\)\%>2c\s\+\(\S\+\)\s\+\(.*\)')
+            " Is this map relevant? We care only about <Space> (nvo) and nvxo.
+            " Note: maparg() accepts empty string for nvo, but returns ' ' in
+            " its dict for the same. Let's just use the latter, as it seems to
+            " be more common, and will work the same when prepended to "map".
+            " Alternative: Could also convert to 'nvo'
+            if modes == ' ' || modes =~ '[xvno]'
+                " Canonicalize the lhs
+                let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
+                if !empty(lhs)
+                    " Get map info required for save/restore.
+                    let ma = maparg(lhs, '', 0, 1)
+                    " Make sure our canonicalization succeeded.
+                    " Note: This should work for 99+% of use cases, but :map output is
+                    " not deterministic, so there could be some pathological
+                    " corner cases.
+                    if !empty(ma)
+                        " Now use "noremap" key to disambiguate scope field in
+                        " :map output.
+                        " Assumption: rhs cannot begin with whitespace.
+                        if lhs =~ 'gsnore' && !buffer
+                            let g:scope_and_rhs = scope_and_rhs
+                            echomsg "Parsing " . scope_and_rhs . '(' . lhs . ')'
+                        endif
+                        let [_, scope, _, rhs; rest] = matchlist(scope_and_rhs,
+                            \ (ma.noremap ? '\([&*]\)' : '\(\)')
+                            \.(buffer ? '\(@\)' : '\(\)')
+                            \.'\s*\(.*\)')
+                        " Determine <script> was used. If so, noremap is
+                        " implied.
+                        let script = scope == '&'
+                        " Add to buffer/global-specific list.
+                        call add(lsts[i], { 'maparg': ma, 'script': script})
                     endif
                 endif
             endif
-        endif
+        endfor
     endfor
-    return ret
+    " Sort and combine.
+    for lst in lsts
+        call sort(lst, "s:usermap_sort_fn")
+    endfor
+    " Combine sorted buffer/global lists.
+    return lsts[0] + lsts[1]
 endfunction
 
 " Accept hash of user maps (lhs => maparg()) and hash of sexp maps (lhs =>
@@ -873,7 +914,8 @@ function! s:sexp_toggle_non_insert_mappings()
         endfor
         if exists('l:esc_key') && !empty(l:escs)
             " Save any conflicting user maps
-            let b:save_restore_user_maps = s:get_conflicting_usermaps(user_maps, sexp_maps)
+            let b:save_restore_user_maps =
+                \ s:get_conflicting_usermaps(user_maps, sexp_maps)
 
             call s:create_escape_maps(esc_key, escs, sexp_maps, b:sexp_unmap_commands)
         endif
