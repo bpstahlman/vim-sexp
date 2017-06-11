@@ -859,7 +859,38 @@ endfunction
 " Input: mapinfo is basically a maparg() dict, but with a 'script' flag
 " indicating whether the <script> tag was used to define.
 function! s:build_delete_restore_pair(mapinfo)
-    " TODO!!!!!!!!
+    let ret = ['', '']
+    " TODO: Need to pick map command based on modes: e.g., could be nv or ' '
+    " or something...
+    " Important TODO: It's possible to have any combination of nvo (because of
+    " :map command). :unmap will remove all of [nvo] (even if some have been
+    " removed already), but to recreate, we'll have to use :map, followed by
+    " a delete.
+    " TODO: Actually, let's just figure out the modes we need to delete, and
+    " somehow send that along, so we can delete only those... Currently, I'm
+    " not saving the modes for which it conflicts, but I need to -- unless I
+    " decide simply to delete it fully and restore fully. Hmm... Design
+    " Decision Needed...'
+    " IOW... This needs to be more complicated.
+    let ret[0] = a:mode . 'unmap '
+        \ . (a:mapinfo.buffer ? <buffer> : '') . a:mapinfo.lhs
+
+    " <<< UNDER CONSTRUCTION >>>
+    " Remap overridden map, taking into account its various modifiers.
+    let ret[1] = mode . (a:mapinfo.noremap ? 'noremap' : 'map')
+        \ . (a:mapinfo.silent ? ' <silent>' : '')
+        \ . (a:mapinfo.expr ? ' <expr>' : '')
+        \ . (a:mapinfo.buffer ? ' <buffer>' : '')
+        \ . (a:mapinfo.nowait ? ' <nowait>' : '')
+        \ . ' ' . lhs . ' ' . a:mapinfo.rhs
+    if a:mapinfo.sid
+        " Caveat: If the map was originally defined in a script
+        " context, we need to replace <SID> in the map with the
+        " proper script-specific identifier.
+        " Note: Vim doesn't appear to support escaping <SID> in
+        " rhs, so we don't either.
+        let ret[1] = substitute(ret[1], '<SID>', '<SNR>' . a:mapinfo.sid . '_', 'g')
+    endif
 endfunction
 
 " Accept hash of user maps (lhs => maparg()) and hash of sexp maps (lhs =>
@@ -884,17 +915,22 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
                 let ulhs = ulhs[:slen-1]
                 if ulhs == slhs
                     " Do we have a mode match?
+                    " TODO: Figure out exactly which modes conflict and pass
+                    " that information to build_delete_restore_pair.
+                    " Note: No probably putting multiple commands in a single
+                    " element of the pair (separated by bar).
                     if umodes =~ smodes
-                        " This call is safe because buf maps are processed
-                        " before globals.
+                        " Caveat: This call is safe only because buffer maps
+                        " are processed before globals.
                         let umap = maparg(ulhs, umodes, 0, 1)
                         let umap.script = script
                         " TODO: Consider monkey-patching maparg() return with
                         " script flag.
                         let pair = s:build_delete_restore_pair(umap)
-                        exe pair[0]
                         " Add to list for subsequent save/restore.
                         call add(ret, pair)
+                        " Perform the delete now.
+                        exe pair[0]
                     endif
                 elseif ulhs > slhs
                     " Both inner and outer lists are sorted by lhs, so we can
