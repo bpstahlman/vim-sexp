@@ -665,10 +665,12 @@ function! s:usermap_sort_fn(a, b)
     endif
 endfunction
 
-function! s:expand_modes(modes)
-    " Design Decision: Vim uses both '' and ' ' in different contexts for nvo.
-    " Handle either...
-    return a:modes == '' || a:modes == ' '
+function! s:expand_modes(modes, ...)
+    " Optional a:1 indicates what (if anything) expands to 'nvo':
+    "   0 = no special expansion (default)
+    "   1 = space only
+    "   2 = empty string or space
+    return a:0 && a:modes == ' ' && a:1 > 0 || a:modes == '' && a:1 > 1
         \ ? 'nvo'
         \ : substitute(a:modes, 'v', 'sx', 'g')
 endfunction
@@ -679,13 +681,22 @@ function! s:compare_shared_prefix(a, b)
     return a < b ? -1 : a > b : 1 : 0
 endfunction
 
+" TODO: Currently unused.
 function! s:or_modes(a, b)
     " TODO: Implement - handle ' ' and ''?
+    return uniq(sort(split(a:a, '\zs') + split(a:b, '\zs')))
+endfunction
+
+" Return intersection of input mode strings.
+function! s:and_modes(a, b)
+    let a = substitute(a:a, '[^' . a:b . ']', '', 'g')
+    let b = substitute(a:b, '[^' . a   . ']', '', 'g')
+    " No need to sort.
+    return a . b
 endfunction
 
 function! s:subtract_modes(minuend, subtrahend)
-    let [lhs, rhs] = [s:expand_modes(a:minuend), s:expand_modes(a:subtrahend)]
-    return substitute(lhs, '[' . rhs . ']', '', 'g')
+    return substitute(a:minuend, '[' . a:subtrahend . ']', '', 'g')
 endfunction
 
 " Input: mapinfo is basically a maparg() dict, but with a 'script' flag
@@ -880,87 +891,84 @@ function! s:get_escape_maps(esc_key, sexp_maps)
     return ret
 endfunction
 
-" Parse output of :map and return relevant results in 2 lists (buffer, global)
-" with the each list having the following format:
-" [{'lhs': <lhs>, 'modes': <modes>, 'script': 0|1}, ...]
+" Parse output of :map command (using <buffer> arg if and only if buffer arg
+" is nonzero), and return relevant results in a list whose elements have the
+" following format:
+"   {'lhs': <lhs>, 'modes': <modes>, 'script': 0|1}
 " Note: Deferring running maparg() till we know it's needed.
-" Order: Buffer maps before global, then ordered by lhs (case-sensitive)
+" Order: by lhs (case-sensitive)
 " TODO: Could simply augment maparg() dict itself with 'script' flag.
-function! s:get_user_maps(esc_key)
-    " List of lists: [buffer-user-maps, global-user-maps]
-    let lsts = [[], []]
-    for i in range(2)
-        let buffer = i == 0
-        redir => maps
-        " Note: Get nvo maps.
-        silent exe 'map ' . (buffer ? '<buffer>' : '') . ' ' . a:esc_key
-        redir END
-        for map in split(maps, '\n')
-            " Extract lhs and everything else (which may be needed later).
-            " Assumptions: (from map.txt)
-            " -First 2 columns dedicated to mode flags (typically only <Space> or
-            "  single mode flag, but with :map followed by ounmap, you can get
-            "  'nv'.
-            " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
-            " Mode Flags: The following are significant to us:
-            "   <Space> (i.e., nvo, created with :map), n, v, x, o
-            " Scope Flag Ambiguity: The scope flag field is...
-            "   global: [&*]\?
-            "   buffer: [&*]\?@
-            " The problem is that any of those characters can also appear
-            " unescaped at start of rhs: hence, we have ambiguity that needs
-            " to be resolved by considering both the presence/absence of
-            " <buffer> arg to :map command and the "noremap" flag in the
-            " maparg() dict returned by maparg() for extracted lhs.
-            " Note: Though doc doesn't make it clear, maparg() dict can also
-            " contain 2-char string 'nv'.
-            let [_, modes, lhs, scope_and_rhs; rest] = matchlist(map,
-                \ '\(.\{-}\)\%>2c\s\+\(\S\+\)\s\+\(.*\)')
-            " Is this map relevant? We care only about <Space> (nvo) and nvxo.
-            " Note: maparg() accepts empty string for nvo, but returns ' ' in
-            " its dict for the same. Let's just use the latter, as it seems to
-            " be more common, and will work the same when prepended to "map".
-            " Alternative: Could also convert to 'nvo'
-            if modes == ' ' || modes =~ '[xvno]'
-                " Canonicalize the lhs
-                let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
-                if !empty(lhs)
-                    " Get map info required for save/restore.
-                    let ma = maparg(lhs, '', 0, 1)
-                    " Make sure our canonicalization succeeded.
-                    " Note: This should work for 99+% of use cases, but :map output is
-                    " not deterministic, so there could be some pathological
-                    " corner cases.
-                    if !empty(ma)
-                        " Now use "noremap" key to disambiguate scope field in
-                        " :map output.
-                        " Assumption: rhs cannot begin with whitespace.
-                        let [_, scope, _, rhs; rest] = matchlist(scope_and_rhs,
-                            \ (ma.noremap ? '\([&*]\)' : '\(\)')
-                            \.(buffer ? '\(@\)' : '\(\)')
-                            \.'\s*\(.*\)')
-                        " Determine <script> was used. If so, noremap is
-                        " implied.
-                        let script = scope == '&'
-                        " Add to buffer/global-specific list.
-                        " Note: Save just what we need till we're sure it's
-                        " safe to call maparg (which for globals, will be
-                        " after unmapping any identical buf-locals)
-                        call add(lsts[i],
-                            \ {'lhs': lhs, 'modes': modes, 'script': script})
-                    endif
+function! s:get_user_maps(esc_key, buffer)
+    let ret = []
+    redir => maps
+    " Note: Get nvo maps.
+    silent exe 'map ' . (a:buffer ? '<buffer>' : '') . ' ' . a:esc_key
+    redir END
+    for map in split(maps, '\n')
+        " Extract lhs and everything else (which may be needed later).
+        " Assumptions: (from map.txt)
+        " -First 2 columns dedicated to mode flags (typically only <Space> or
+        "  single mode flag, but with :map followed by ounmap, you can get
+        "  'nv'.
+        " -Whitespace ends lhs (spaces, etc. will be encoded with <...>)
+        " Mode Flags: The following are significant to us:
+        "   <Space> (i.e., nvo, created with :map), n, v, x, o
+        " Scope Flag Ambiguity: The scope flag field is...
+        "   global: [&*]\?
+        "   buffer: [&*]\?@
+        " The problem is that any of those characters can also appear
+        " unescaped at start of rhs: hence, we have ambiguity that needs
+        " to be resolved by considering both the presence/absence of
+        " <buffer> arg to :map command and the "noremap" flag in the
+        " maparg() dict returned by maparg() for extracted lhs.
+        " Note: Though doc doesn't make it clear, maparg() dict can also
+        " contain 2-char string 'nv'.
+        let [_, modes, lhs, scope_and_rhs; rest] = matchlist(map,
+            \ '\(.\{-}\)\%>2c\s\+\(\S\+\)\s\+\(.*\)')
+        " Is this map relevant? We care only about <Space> (nvo) and nvxo.
+        " Note: maparg() accepts empty string for nvo, but returns ' ' in
+        " its dict for the same. Let's just use the latter, as it seems to
+        " be more common, and will work the same when prepended to "map".
+        " Alternative: Could also convert to 'nvo'
+        if modes == ' ' || modes =~ '[xvno]'
+            " Canonicalize the lhs
+            let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
+            if !empty(lhs)
+                " Get map info needed to disambiguate <script>
+                " TODO: Given that we have to run this to disambiguate
+                " <script>, perhaps we should go ahead and save.
+                " OTOH, we have no idea whether this one will be needed yet.
+                let ma = maparg(lhs, modes, 0, 1)
+                " Make sure our canonicalization succeeded.
+                " Note: This should work for 99+% of use cases, but :map output is
+                " not deterministic, so there could be some pathological
+                " corner cases.
+                if !empty(ma)
+                    " Now use "noremap" key to disambiguate scope field in
+                    " :map output.
+                    " Assumption: rhs cannot begin with whitespace.
+                    let [_, scope, _, rhs; rest] = matchlist(scope_and_rhs,
+                        \ (ma.noremap ? '\([&*]\)' : '\(\)')
+                        \.(buffer ? '\(@\)' : '\(\)')
+                        \.'\s*\(.*\)')
+                    " Determine <script> was used. If so, noremap is
+                    " implied.
+                    let script = scope == '&'
+                    " Add to buffer/global-specific list.
+                    " Note: Save just what we need till we're sure it's
+                    " safe to call maparg (which for globals, will be
+                    " after unmapping any identical buf-locals)
+                    call add(ret,
+                        \ {'lhs': lhs,
+                        \  'modes': s:expand_modes(modes, 1),
+                        \  'script': script})
                 endif
             endif
-        endfor
+        endif
     endfor
     " Sort and combine.
-    for lst in lsts
-        call sort(lst, "s:usermap_sort_fn")
-    endfor
-    " Caveat: Don't combine the lists, as we need to process buf-local maps
-    " before globals (since maparg() won't return a global when there's a
-    " buf-local shadowing).
-    return lsts
+    call sort(lst, "s:usermap_sort_fn")
+    return ret
 endfunction
 
 " Accept esc_key and any number of lists of hash (keys: lhs, modes), and
@@ -983,8 +991,13 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
     " Assumption: Lists can be processed independently because we've already
     " precluded possibility of ambiguous lhs's.
     for maps in a:000
-        " Loop over list of lists: [buffer-list, global-list].
-        for umap_lst in s:get_user_maps(a:esc_key)
+        " Loop over buffer, global, calling s:get_user_maps for each.
+        " Caveat: s:get_user_maps won't work properly for globals if we
+        " haven't already removed the conflicting buf-locals.
+        " Assumption: Caller has ensured orthogonality of the input lists, so
+        " we're save to process them independently as outermost loop.
+        for buffer in range(2)
+            let umap_lst = s:get_user_maps(a:esc_key, buffer)
             " Loop over user maps.
             let prev_ulhs = ''
             " Optimization: Resetting i only here because both maps and
@@ -1001,7 +1014,8 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
                     " using :map wherever it appears user did (i.e., to avoid
                     " splitting a multiple mode map into multiple single mode
                     " maps with identical rhs.
-                    let need_maybes = umodes =~ '^\s*$' || len(umodes) > 1
+                    " Assumption: mode string has been expanded.
+                    let need_maybes = len(umodes) > 1
                 endif
                 " Start with first map that *could* conflict with current user
                 " map, short-circuiting when we pass the last one that could.
@@ -1012,18 +1026,18 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
                     " Compare just the common prefix.
                     let cmp = s:compare_shared_prefix(ulhs, lhs)
                     if !cmp
-                        " Do we have a mode match?
-                        " TODO: Either expand umodes or use s:or_modes that
-                        " will handle ' ' and '' instead of =~.
-                        let mode_match = umodes =~ modes
-                        if mode_match || need_maybes
+                        " Do we have mode overlap?
+                        " Assumption: All modes have been expanded.
+                        let omodes = s:and_modes(umodes, modes)
+                        if !empty(omodes) || need_maybes
                             " Caveat: This call is safe only because buffer maps
                             " are processed before globals.
                             let umap = maparg(ulhs, umodes, 0, 1)
                             let umap.script = script
                             " Add to lists for subsequent save/restore.
-                            if mode_match
-                                call add(cmds[1], s:build_delete_cmds(umap))
+                            if !empty(omodes)
+                                " Delete only the overlapping modes.
+                                call add(cmds[1], s:build_delete_cmds(umap, omodes))
                                 " Perform the delete now.
                                 " Rationale: Prevents buffer maps from
                                 " shadowing global.
