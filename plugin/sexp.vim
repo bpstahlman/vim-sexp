@@ -665,38 +665,87 @@ function! s:usermap_sort_fn(a, b)
     endif
 endfunction
 
+" Mode Functions: As a general rule, the mode functions assume mode strings
+" have been "expanded": i.e.,
+"   1. no space chars
+"   2. empty string means empty mode flags, *not* 'nvo'
+"   3. s and x in any order (and not necessarily contiguous) have been
+"      converted to 'v'.
+" The expand/collapse_modes functions provide an optional arg to facilitate
+" transitioning between nvo (or nxso) and the special empty string/<space>
+" representations. The and/or_modes functions ensure uniqueness of mode flags
+" in returned string, which facilitates combining modes without worrying about
+" introducing redundancies.
+
+" Expand the input mode string.
+" Assumption: No redundant flags.
+" Rationale: expand_modes is always used on a single source, and hence, should
+" never contain redundant flags.
+" Optional a:1 indicates what (if anything) expands to 'nvo':
+"   0 = no special expansion (default)
+"   1 = space only
+"   2 = empty string or space
 function! s:expand_modes(modes, ...)
-    " Optional a:1 indicates what (if anything) expands to 'nvo':
-    "   0 = no special expansion (default)
-    "   1 = space only
-    "   2 = empty string or space
     return a:0 && a:modes == ' ' && a:1 > 0 || a:modes == '' && a:1 > 1
-        \ ? 'nvo'
+        \ ? 'nxso'
         \ : substitute(a:modes, 'v', 'sx', 'g')
 endfunction
 
-function! s:compare_shared_prefix(a, b)
-    let cmp_len = min([len(a:a), len(a:b)])
-    let [a, b] = [a:a[:cmp_len-1], a:b[:cmp_len-1]]
-    return a < b ? -1 : a > b : 1 : 0
+" Combine s and x into a single v, and if optional arg requests it, convert
+" nvo back to empty string or space.
+" Assumption: No redundant flags.
+" Rationale: All mode combining functions prevent redundancies.
+" TODO: Could probably remove the sort/uniq
+" Optional a:1 indicates what (if anything) 'nvo' gets collapsed to:
+"   0 = no special collapse (default)
+"   1 = space only
+"   2 = empty string
+function! s:collapse_modes(modes, ...)
+    "let ret = join(uniq(sort(split(a:modes, '\zs'))), '')
+    let ret = a:modes
+    " Convert s and x (not necessarily contiguous) to v
+    if ret =~ 's.*x\|x.*s'
+        " Note: Shouldn't have both v and [sx], but check anyways.
+        " TODO: Should we rely upon all assumptions?
+        let ret = 'v' . substitute(ret, '[xsv]', '', 'g')
+    endif
+    " Return the collapsed string, possibly after converting nvo to space or
+    " empty string, as requested by optional arg.
+    return !a:0 || !a:1
+        \ ? ret
+        \ : len(ret) == 3 && ret =~ '^[nvo]\+$'
+            \ ? a:1 == 1 ? ' ' : ''
 endfunction
 
 " TODO: Currently unused.
 function! s:or_modes(a, b)
-    " TODO: Implement - handle ' ' and ''?
     return uniq(sort(split(a:a, '\zs') + split(a:b, '\zs')))
 endfunction
 
 " Return intersection of input mode strings.
 function! s:and_modes(a, b)
-    let a = substitute(a:a, '[^' . a:b . ']', '', 'g')
-    let b = substitute(a:b, '[^' . a   . ']', '', 'g')
-    " No need to sort.
-    return a . b
+    " TODO: If caller guarantees uniqueness of mode flags, we could dispense
+    " with the uniq/sort composition. Same thing for or_modes.
+    " Question: Does it make sense to assume caller has already called
+    " expand()?
+    return join(uniq(sort(filter(
+        \ split(a:a, '\zs'), 'index(a:b, v:val) >= 0'))), '')
 endfunction
 
-function! s:subtract_modes(minuend, subtrahend)
-    return substitute(a:minuend, '[' . a:subtrahend . ']', '', 'g')
+" Compare the head of input lhs's, returning 0 if one is a prefix of the
+" other. If neither lhs is prefix of the other, return...
+"   -1 if a < b
+"   +1 if a > b
+" Note: Used to detect ambiguity.
+function! s:compare_prefix(a, b)
+    let cmp_len = min([len(a:a), len(a:b)])
+    let [a, b] = [a:a[:cmp_len-1], a:b[:cmp_len-1]]
+    return a < b ? -1 : a > b : 1 : 0
+endfunction
+
+" Subtract mode strings: a - b
+function! s:subtract_modes(a, b)
+    return substitute(a:a, '[' . a:b . ']', '', 'g')
 endfunction
 
 " Input: mapinfo is basically a maparg() dict, but with a 'script' flag
@@ -706,6 +755,7 @@ function! s:build_delete_cmds(mapinfo)
     " to have any combination of nvo (and v could even be replaced by s or x).
     let [mi, cmds] = [a:mapinfo, []]
     " Design Decision: Might as well use plain :unmap when mode == '' (nvo).
+    " Assumption: 'mode' key is the value returned by maparg: ('' => nvo)
     for mode in mi.mode == '' ? [''] : split(mi.mode, '\zs')
         call add(cmds, mode . 'unmap '
             \ . (mi.buffer ? '<buffer>' : '') . mi.lhs)
@@ -723,16 +773,18 @@ function! s:build_restore_cmds(mapinfo)
     elseif len(mode) == 1
         let mapcmd = mode
     else
-        " Multiple flags (but not nvo).
+        " Multiple flags (but not necessarily nvo).
         let mapcmd = ''
-        let unmapcmds = s:subtract_modes('nvo', mode)
+        let unmapcmds = s:collapse_modes(
+                \ s:subtract_modes('nxso', s:expand_modes(mode, 2)))
     endif
-
+    " Build the *map command
     let cmd = mapcmd . (mi.noremap ? 'noremap' : 'map')
         \ . (mi.silent ? ' <silent>' : '')
         \ . (mi.expr ? ' <expr>' : '')
         \ . (mi.buffer ? ' <buffer>' : '')
         \ . (mi.nowait ? ' <nowait>' : '')
+        \ . (mi.script ? ' <script>' : '')
         \ . ' ' . lhs . ' ' . mi.rhs
     if mi.sid
         " Caveat: If the map was originally defined in a script
@@ -740,14 +792,13 @@ function! s:build_restore_cmds(mapinfo)
         " proper script-specific identifier.
         " Note: Vim doesn't appear to support escaping <SID> in
         " rhs, so we don't either.
-        let cmd = substitute(cmds[-1],
+        let cmd = substitute(cmd,
             \ '<SID>', '<SNR>' . mi.sid . '_', 'g')
     endif
     if exists('unmapcmds')
         " Now handle any unmaps (required only after :map)
-        " Assumption: This works only because commands with multiple mode
-        " flags are always processed *before* the single mode ones.
-        " TODO: Any advantage to perhaps having lhs passed in?
+        " Assumption: This works only because multiple mode commands are
+        " always processed *before* the single mode ones.
         let cmds = [cmd]
         for unmapcmd in unmapcmds
             call add(cmds, unmapcmd . 'unmap '
@@ -847,14 +898,11 @@ function! s:get_escape_maps_r(builtins, blhs, lhs_lst, modes, escs)
     for [k, o] in items(bmap)
         let blhs = a:blhs . k
         " Loop over leaf builtins (if any).
-        " TODO: <<< Pick up here in review... >>>
         " Accumulate modes in which current map conflicts with builtin.
         " Caveat: Don't add key if nothing to accumulate.
         let overlap = s:or_modes(o.modes, a:modes)
         if !empty(overlap)
-            let a:escs[blhs] = has_key(a:escs, blhs)
-                \ ? s:or_modes(a:escs[blhs], overlap)
-                \ : overlap
+            let a:escs[blhs] = s:or_modes(get(a:escs, blhs, ''), overlap)
         endif
 
         " Descend if there are builtin children *and* the modes we're
@@ -898,11 +946,11 @@ endfunction
 " Note: Deferring running maparg() till we know it's needed.
 " Order: by lhs (case-sensitive)
 " TODO: Could simply augment maparg() dict itself with 'script' flag.
-function! s:get_user_maps(esc_key, buffer)
+function! s:get_user_maps(esc_key, global)
     let ret = []
     redir => maps
     " Note: Get nvo maps.
-    silent exe 'map ' . (a:buffer ? '<buffer>' : '') . ' ' . a:esc_key
+    silent exe 'map ' . (a:global ? '' : '<buffer>') . ' ' . a:esc_key
     redir END
     for map in split(maps, '\n')
         " Extract lhs and everything else (which may be needed later).
@@ -974,9 +1022,9 @@ endfunction
 " Accept esc_key and any number of lists of hash (keys: lhs, modes), and
 " return lists of exit/entry commands needed to save/restore user maps.
 " Inputs:
-" esk_key: 
-" [[{'lhs1': <>, 'modes': <>}, ...], ...]
-" Return: [delete-cmd-list, restore-cmd-list]
+"   esk_key: 
+"   [[{'lhs1': <>, 'modes': <>}, ...], ...]
+" Return: [exit-map-cmds, entry-map-cmds]
 " CAVEAT: Unlike some of the other "builder" functions, this one must actually
 " perform some map removal to prevent global user maps from being shadowed by
 " the buf-locals.
@@ -985,36 +1033,36 @@ endfunction
 " multiple calls... Should never have more than sexp_maps and (optional)
 " esc_maps. Should this be hardcoded in parameter list?
 function! s:shadow_conflicting_usermaps(esc_key, ...)
-    " Initialize return list: [delete-maps, restore-maps]
+    " Initialize return list: [exit-map-cmds, entry-map-cmds]
     let cmds = [[], []]
-    " Loop over lists (sexp, esc) of hashes (keys: lhs, modes)
+    " Loop over provided lists (e.g., sexp, esc) of hashes (keys: lhs, modes)
     " Assumption: Lists can be processed independently because we've already
     " precluded possibility of ambiguous lhs's.
     for maps in a:000
-        " Loop over buffer, global, calling s:get_user_maps for each.
+        " Loop over [buffer, global], calling s:get_user_maps for each.
         " Caveat: s:get_user_maps won't work properly for globals if we
         " haven't already removed the conflicting buf-locals.
         " Assumption: Caller has ensured orthogonality of the input lists, so
-        " we're save to process them independently as outermost loop.
-        for buffer in range(2)
-            let umap_lst = s:get_user_maps(a:esc_key, buffer)
-            " Loop over user maps.
+        " we're safe to process them independently as outermost loop.
+        for global in range(2)
             let prev_ulhs = ''
-            " Optimization: Resetting i only here because both maps and
-            " umap_lst are sorted.
+            " Optimization: Resetting i only here because both maps and umaps
+            " are sorted.
             let [i, n] = [0, len(maps)]
-            for umap in umap_lst
-                " Extract some keys to be added later.
+            " Loop over buffer or global user maps.
+            for umap in s:get_user_maps(a:esc_key, global)
+                " Extract some key values for convenience.
+                " TODO: Consider going back to just using umap.
                 let [ulhs, umodes, script] = [umap.lhs, umap.modes, umap.script]
                 if prev_ulhs != ulhs
                     let prev_ulhs = ulhs
                     " Do we need to restore subsequently encountered single
-                    " mode maps whose mode doesn't match?
+                    " mode maps with same lhs but different mode?
                     " Note: This is required only because I'm insisting on
-                    " using :map wherever it appears user did (i.e., to avoid
+                    " using :map wherever it appears user did (to avoid
                     " splitting a multiple mode map into multiple single mode
                     " maps with identical rhs.
-                    " Assumption: mode string has been expanded.
+                    " Assumption: Mode string has been expanded.
                     let need_maybes = len(umodes) > 1
                 endif
                 " Start with first map that *could* conflict with current user
@@ -1022,11 +1070,11 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
                 while i < n
                     let map = maps[i]
                     let [lhs, lhs_len] = [map.lhs, len(map.lhs)]
-                    let modes = '[' . map.modes . ']'
-                    " Compare just the common prefix.
-                    let cmp = s:compare_shared_prefix(ulhs, lhs)
+                    let modes = map.modes
+                    " Is one lhs a prefix of the other?
+                    let cmp = s:compare_prefix(ulhs, lhs)
                     if !cmp
-                        " Do we have mode overlap?
+                        " Prefixes ambiguous, but do we have mode overlap?
                         " Assumption: All modes have been expanded.
                         let omodes = s:and_modes(umodes, modes)
                         if !empty(omodes) || need_maybes
@@ -1043,11 +1091,16 @@ function! s:shadow_conflicting_usermaps(esc_key, ...)
                                 " shadowing global.
                                 exe cmds[1][-1]
                             endif
+                            " 2 kinds of restore:
+                            " 1. maps deleted upon entry
+                            " 2. maps deleted by :map command used to restore
+                            "    a multi-mode map upon exit.
                             call add(cmds[0], s:build_restore_cmds(umap))
                         endif
                     elseif cmp < 0
                         " Both inner and outer lists are sorted by lhs, so we can
-                        " short-circuit.
+                        " short-circuit and restart this loop at the same map
+                        " after moving to the subsequent umap.
                         break
                     endif
                     let i += 1
@@ -1092,7 +1145,7 @@ function! s:build_sexp_map_cmds(esc_key)
         if !empty(a:esc_key)
             " If caller is creating escape maps, he'll need a list of the sexp
             " maps built.
-            call add(sexp_maps, {'lhs': lhs, 'modes': modestr})
+            call add(sexp_maps, {'lhs': lhs, 'modes': s:expand_modes(modestr)})
         endif
         for mode in split(modestr, '\zs')
             " Accumulate exit/entry commands.
