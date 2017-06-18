@@ -714,6 +714,7 @@ function! s:collapse_modes(modes, ...)
         \ ? ret
         \ : len(ret) == 3 && ret =~ '^[nvo]\+$'
             \ ? a:1 == 1 ? ' ' : ''
+            \ : ret
 endfunction
 
 function! s:or_modes(a, b)
@@ -776,13 +777,19 @@ function! s:build_restore_cmds(mapinfo)
         let mapcmd = s:collapse_modes(modes)
     endif
     " Build the *map command
+    " TODO: Any advantage to using lhs we parsed from :*map, rather than the
+    " one in maparg()?
     let cmd = mapcmd . (mi.noremap ? 'noremap' : 'map')
         \ . (mi.silent ? ' <silent>' : '')
         \ . (mi.expr ? ' <expr>' : '')
         \ . (mi.buffer ? ' <buffer>' : '')
         \ . (mi.nowait ? ' <nowait>' : '')
         \ . (mi.script ? ' <script>' : '')
-        \ . ' ' . lhs . ' ' . mi.rhs
+        \ . ' ' . mi.lhs . ' ' . mi.rhs
+    " Protect any Bar's within rhs.
+    " Assumption: cpo& implies any literal `|' making it into rhs, must have
+    " been escaped.
+    let cmd = substitute(cmd, '|', '<Bar>', 'g')
     if mi.sid
         " Caveat: If the map was originally defined in a script
         " context, we need to replace <SID> in the map with the
@@ -1132,7 +1139,13 @@ function! s:discard_conflicting_escape_maps(esc_maps, sexp_maps)
             if !cmp
                 " Remove the esc map.
                 " TODO: Decide whether to make it immutable.
-                call remove(em, i)
+                call remove(a:esc_maps, i)
+                " Caveat: Skip i increment and record fact that there's one
+                " fewer element.
+                let n -= 1
+                " TODO NOTE: This wouldn't be necessary if we made this
+                " function non-mutating and simply accumulated.
+                continue
             elseif cmp < 0
                 " Short-circuit inner loop.
                 break
@@ -1159,7 +1172,7 @@ function! s:build_sexp_map_cmds(esc_key)
         for mode in split(modestr, '\zs')
             " Accumulate exit/entry commands.
             call add(cmds[0],
-                \ 'silent! execute ' . mode . 'unmap <buffer>' . lhs)
+                \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
             call add(cmds[1],
                 \ mode . 'map <nowait><silent><buffer>'
                 \ . lhs . ' <Plug>(' . plug . ')')
@@ -1187,6 +1200,8 @@ function! s:sexp_toggle_non_insert_mappings()
         endif
 
         let [b:sexp_map_commands, sexp_maps] = s:build_sexp_map_cmds(esc_key)
+        "echomsg "SM Exit: " . string(b:sexp_map_commands[0])
+        "echomsg "SM Enter: " . string(b:sexp_map_commands[1])
         if exists('l:esc_key')
             " Get list of escape maps we'll need to create for builtins.
             " TODO: Perhaps have get_sexp_maps return this as well.
@@ -1204,21 +1219,34 @@ function! s:sexp_toggle_non_insert_mappings()
             "echomsg "esc_maps 2 :" . string(esc_maps)
             " Create the lists of escape map commands.
             let b:escape_map_commands = s:build_escape_map_cmds(esc_key, esc_maps)
+            "echomsg "EM Exit esc: " . string(b:escape_map_commands[0])
+            "echomsg "EM Enter esc: " . string(b:escape_map_commands[1])
         endif
         " Build the commands to save/restore any conflicting user maps.
         " Note: This needs to be run even if user hasn't configured escape
         " key, but in that case, esc_maps will be empty.
         let b:user_map_commands =
             \ s:shadow_conflicting_usermaps(esc_key, sexp_maps, esc_maps)
+        "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
+        "echomsg "UM Enter esc: " . string(b:user_map_commands[1])
     endif
     " Perform entry/exit using buf-locally cached map commands.
     " Caveat: Order in which cmd groups are processed is significant: e.g.,
     " must delete user maps first on entry and restore them last on exit.
-    let cmd_groups = [b:user_map_commands, b:sexp_map_commands,
+    " Caveat: On initial toggle into sexp state, user maps will already have
+    " been removed above, so we'll need to skip here...
+    let cmd_groups = [
+        \ exists('b:sexp_state_enabled') ? b:user_map_commands : [],
+        \ b:sexp_map_commands,
         \ exists('b:escape_map_commands') ? b:escape_map_commands : []]
     for cmds in enabled ? cmd_groups : reverse(cmd_groups)
+        if empty(cmds)
+            " Skip either esc maps or user maps.
+            continue
+        endif
+        "echomsg "Enabled: " . enabled
         for cmd in cmds[enabled]
-            echomsg cmd
+            "echomsg cmd
             exe cmd
         endfor
     endfor
