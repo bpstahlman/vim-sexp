@@ -158,103 +158,25 @@ let s:plug_map_modes = [
 
 let s:builtins = {
     \ 'n': [
-        \ '<C-A>',
-        \ '<C-B>',
-        \ '<C-C>',
-        \ '<C-D>',
-        \ '<C-E>',
-        \ '<C-F>',
-        \ '<C-G>',
-        \ '<BS>',
-        \ '<C-H>',
-        \ '<Tab>',
-        \ '<C-I>',
-        \ '<NL>',
-        \ '<C-J>',
-        \ '<C-L>',
-        \ '<CR>',
-        \ '<C-M>',
-        \ '<C-N>',
-        \ '<C-O>',
-        \ '<C-P>',
-        \ '<C-Q>',
-        \ '<C-R>',
-        \ '<C-S>',
-        \ '<C-T>',
-        \ '<C-U>',
-        \ '<C-V>',
+        \ '<C-A>', '<C-B>', '<C-C>', '<C-D>', '<C-E>', '<C-F>', '<C-G>', '<BS>',
+        \ '<C-H>', '<Tab>', '<C-I>', '<NL>', '<C-J>', '<C-L>', '<CR>', '<C-M>',
+        \ '<C-N>', '<C-O>', '<C-P>', '<C-Q>', '<C-R>', '<C-S>', '<C-T>', '<C-U>', '<C-V>',
         \ {
             \ 'key': '<C-W>',
             \ 'children': [
-                \ '<C-B>',
-                \ '<C-C>',
-                \ '<C-D>',
-                \ '<C-F>',
-                \ '<C-G>',
-                \ '<C-H>',
-                \ '<C-H>',
-                \ '<C-I>',
-                \ '<C-J>',
-                \ '<C-K>',
-                \ '<C-L>',
-                \ '<C-N>',
-                \ '<C-O>',
-                \ '<C-P>',
-                \ '<C-Q>',
-                \ '<C-R>',
-                \ '<C-S>',
-                \ '<C-T>',
-                \ '<C-V>',
-                \ '<C-W>',
-                \ '<C-X>',
-                \ '<C-Z>',
-                \ '<C-]>',
-                \ '<C-^>',
-                \ '<C-_>',
-                \ '+',
-                \ '-',
-                \ '<',
-                \ '=',
-                \ '>',
-                \ 'H',
-                \ 'J',
-                \ 'K',
-                \ 'L',
-                \ 'P',
-                \ 'R',
-                \ 'S',
-                \ 'T',
-                \ 'W',
-                \ ']',
-                \ '^',
-                \ '_',
-                \ 'b',
-                \ 'c',
-                \ 'd',
-                \ 'f',
-                \ 'F',
+                \ '<C-B>', '<C-C>', '<C-D>', '<C-F>', '<C-G>', '<C-H>', '<C-H>', '<C-I>',
+                \ '<C-J>', '<C-K>', '<C-L>', '<C-N>', '<C-O>', '<C-P>', '<C-Q>', '<C-R>',
+                \ '<C-S>', '<C-T>', '<C-V>', '<C-W>', '<C-X>', '<C-Z>', '<C-]>', '<C-^>', '<C-_>',
+                \ '+', '-', '<', '=', '>', 'H', 'J', 'K', 'L', 'P', 'R', 'S', 'T', 'W', ']', '^',
+                \ '_', 'b', 'c', 'd', 'f', 'F',
                 \ {
                     \ 'key': 'g',
                     \ 'children': [
                         \ '<C-]>', ']', '}', 'f', 'F'
                     \ ]
                 \ },
-                \ 'h',
-                \ 'i',
-                \ 'j',
-                \ 'k',
-                \ 'l',
-                \ 'n',
-                \ 'o',
-                \ 'p',
-                \ 'q',
-                \ 'r',
-                \ 's',
-                \ 't',
-                \ 'v',
-                \ 'w',
-                \ 'x',
-                \ 'z',
+                \ {'fn': 's:key_ranges',
+                \  'args': [['h', 'l'], ['n', 'x'], ['z', 'z']]},
                 \ '<Bar>',
                 \ '}',
                 \ '<Down>',
@@ -263,15 +185,12 @@ let s:builtins = {
                 \ '<Right>',
             \ ]
         \ },
-        \ '<C-X>',
-        \ '<C-Y>',
-        \ '<C-Z>',
+        \ '<C-X>', '<C-Y>', '<C-Z>',
         \ {
             \ 'key': '<C-\>',
             \ 'children': [
                 \ '<C-N>', '<C-G>',
-                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'
+                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
             \ ]
         \ },
         \ '<Space>',
@@ -281,58 +200,15 @@ let s:builtins = {
                 \ '!'
             \ ]
         \ },
-        \ '#',
-        \ '$',
-        \ '%',
-        \ '&',
+        \ '#', '$', '%', '&',
         \ {
             \ 'key': '''',
             \ 'children': [
                 \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
             \ ]
         \ },
-        \ '(',
-        \ ')',
-        \ '*',
-        \ '+',
-        \ ',',
-        \ '-',
-        \ '.',
-        \ '/',
-        \ '<CR>',
-        \ '0',
-        \ ':',
-        \ ';',
-        \ '<',
-        \ '=',
-        \ '>',
-        \ '?',
-        \ '@',
-        \ 'A',
-        \ 'B',
-        \ 'C',
-        \ 'D',
-        \ 'E',
-        \ 'F',
-        \ 'G',
-        \ 'H',
-        \ 'I',
-        \ 'J',
-        \ 'K',
-        \ 'L',
-        \ 'M',
-        \ 'N',
-        \ 'O',
-        \ 'P',
-        \ 'Q',
-        \ 'R',
-        \ 'S',
-        \ 'T',
-        \ 'U',
-        \ 'V',
-        \ 'W',
-        \ 'X',
-        \ 'Y',
+        \ '(', ')', '*', '+', ',', '-', '.', '/', '<CR>', '0', ':', ';', '<', '=', '>', '?', '@',
+        \ {'fn': 's:key_ranges', 'args': [['A', 'Y']]},
         \ {
             \ 'key': 'Z',
             \ 'children': [
@@ -352,50 +228,21 @@ let s:builtins = {
         \ {
             \ 'key': '`',
             \ 'children': [
-                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-                \ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-                \ 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-                \ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                \ {'fn': 's:key_ranges',
+                \  'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]},
                 \ '(', ')', '<', '>', '[', ']', '`', '{', '}'
             \ ]
         \ },
-        \ 'a',
-        \ 'b',
-        \ 'c',
-        \ 'd',
-        \ 'e',
-        \ 'f',
-        \ 'g',
-        \ 'h',
-        \ 'i',
-        \ 'j',
-        \ 'k',
-        \ 'l',
-        \ 'm',
-        \ 'n',
-        \ 'o',
-        \ 'p',
+        \ {'fn': 's:key_ranges', 'args': [['a', 'p']]},
         \ {
             \ 'key': 'q',
             \ 'children': [
-                \ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-                \ 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-                \ 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-                \ 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-                \ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                \ {'fn': 's:key_ranges',
+                \  'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]},
                 \ '"', ':', '/', '?'
             \ ]
         \ },
-        \ 'r',
-        \ 's',
-        \ 't',
-        \ 'u',
-        \ 'v',
-        \ 'w',
-        \ 'x',
-        \ 'y',
-        \ 'z',
+        \ {'fn': 's:key_ranges', 'args': [['r', 'z']]},
         \ '{',
         \ '<Bar>',
         \ '}',
@@ -408,36 +255,9 @@ let s:builtins = {
                 \ '<C-N>', '<C-G>'
             \ ]
         \ },
-        \ '<C-C>',
-        \ '<C-G>',
-        \ '<BS>',
-        \ '<C-H>',
-        \ '<C-O>',
-        \ '<C-V>',
-        \ '<Esc>',
-        \ '<C-]>',
-        \ '!',
-        \ ':',
-        \ '<lt>',
-        \ '=',
-        \ 'C',
-        \ 'D',
-        \ 'J',
-        \ 'K',
-        \ 'O',
-        \ 'R',
-        \ 'S',
-        \ 'U',
-        \ 'V',
-        \ 'X',
-        \ 'Y',
-        \ {
-            \ 'key': 'a',
-            \ 'children': [
-                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-                \ 'b', 'p', 's', 't', 'w', '{', '}'
-            \ ]
-        \ },
+        \ '<C-C>', '<C-G>', '<BS>', '<C-H>', '<C-O>', '<C-V>', '<Esc>', '<C-]>',
+        \ '!', ':', '<lt>', '=', 'C', 'D', 'J', 'K', 'O', 'R', 'S', 'U', 'V', 'X', 'Y',
+        \ {'fn': 's:text_objects'}
         \ 'c',
         \ 'd',
         \ {
@@ -446,21 +266,7 @@ let s:builtins = {
                 \ 'J', 'q', 'v'
             \ ]
         \ },
-        \ {
-            \ 'key': 'i',
-            \ 'children': [
-                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-                \ 'b', 'p', 's', 't', 'w', '{', '}'
-            \ ]
-        \ },
-        \ 'o',
-        \ 'r',
-        \ 's',
-        \ 'u',
-        \ 'v',
-        \ 'x',
-        \ 'y',
-        \ '~',
+        \ 'o', 'r', 's', 'u', 'v', 'x', 'y', '~'
     \ ]
 \ }
 
@@ -814,6 +620,69 @@ function! s:build_restore_cmds(mapinfo)
     return cmd
 endfunction
 
+function! s:motions()
+    " TODO: Add square bracket commands.
+    if !exists('s:motion_builtins')
+        let s:motion_builtins = [
+            \ '<BS>', '<C-H>', '<NL>', '<C-J>', '<CR>', '<C-M>', '<C-N>', '<C-P>',
+            \ '<Space>',
+            \ '#', '$', '%',
+            \ {
+                \ 'key': '''',
+                \ 'children': [
+                    \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+                \ ]
+            \ },
+            \ '(', ')', '*', '+', ',', '-', '/', '<CR>', '0', ':', ';', '?',
+            \ 'B', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'T', 'W', '^', '_',
+            \ {
+                \ 'key': '`',
+                \ 'children': [
+                    \ {'fn': 's:key_ranges', 'args':  [['a', 'z'], ['A', 'Z'], ['0', '9']]},
+                    \ '(', ')', '<', '>', '[', ']', '`', '{', '}'
+                \ ]
+            \ },
+            \ 'b', 'e', 'f', 'h', 'j', 'k', 'l', 'n', 't', 'w', '{', '<Bar>', '}',
+            \ '<C-End>', '<C-Home>', '<C-Left>', '<C-Right>', '<Down>', '<End>',
+            \ '<Home>', '<Left>', '<LeftMouse>', '<Right>', '<S-Down>', '<S-Left>',
+            \ '<S-Right>', '<S-Up>', '<Up>',
+            \ {'fn': 's:text_objects'}
+        \ ]
+    endif
+    return s:motion_builtins
+endfunction
+
+function! s:text_objects()
+    if !exists('s:text_object_builtins')
+        let children = [
+            \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
+            \ 'b', 'p', 's', 't', 'w', '{', '}']
+        let s:text_object_builtins = [
+            \ {
+                \ 'key': 'a',
+                \ 'children': children
+            \ },
+            \ {
+                \ 'key': 'i',
+                \ 'children': children
+            \ }
+        \ ]
+    endif
+    return s:text_object_builtins
+endfunction
+
+function! s:key_ranges(...)
+    let ret = []
+    " Loop over all supplied ranges.
+    for r in a:000
+        " Loop over characters in range.
+        for c in range(char2nr(r[0]), char2nr(r[1]))
+            call add(ret, nr2char(c))
+        endfor
+    endfor
+    return ret
+endfu
+
 " Recursively build a tree-like builtins data structure optimized for search.
 " mode    applicable mode
 " keylist list of keys in canonical form at current level, with lower levels
@@ -830,7 +699,22 @@ endfunction
 " permit search short-circuit).
 function! s:add_builtin_r(mode, keylist, map)
     for key in a:keylist
-        let [k, descend] = type(key) == 4 ? [key.key, 1] : [key, 0]
+        if type(key) == 4
+            if has_key(key, 'fn')
+                " Use recursive call to splice keylist returned by named
+                " function (possibly called with args) into current map.
+                call s:add_builtin_r(a:mode,
+                    \ call(key.fn, has_key(key, 'args') ? key.args : []),
+                    \ a:map)
+                " All keys returned by fn have been fully processed.
+                continue
+            else
+                " This key has children.
+                let [k, descend] = [key.key, 1]
+            endif
+        else
+            let [k, descend] = [key, 0]
+        endif
         " Canonicalize key
         " TODO: If this call returns more than 1 element, we have internal
         " error. Perhaps refactor...
@@ -914,7 +798,8 @@ function! s:get_escape_maps_r(builtins, blhs, lhs_lst, modes, escs)
         " but this is probably not justified, given that the fraction of
         " traversals ending in short-circuit would be extremely small.
         if !empty(o.children) && o.dmodes =~ '[' . a:modes . ']'
-            call s:get_escape_maps_r(o, blhs, lhs_lst, a:modes, a:escs)
+            call s:get_escape_maps_r(o.children, blhs, lhs_lst,
+                \ a:modes, a:escs)
         endif
     endfor
 endfunction
