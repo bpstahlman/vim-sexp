@@ -156,175 +156,175 @@ let s:plug_map_modes = [
     \ ['sexp_capture_next_element',      'nx'],
 \ ]
 
-let s:builtins = {
-    \ 'nvo': [
-        \ '<BS>', '<C-H>', '<Tab>', '<C-I>', '<NL>',
-        \ '<C-H>', '<Tab>', '<C-I>', '<NL>', '<C-J>', '<CR>', '<C-M>',
-        \ '<C-N>', '<C-P>', '<C-R>', '<C-Z>',
-        \ '<Space>', '!',
-        \ '#', '$', '%', '&',
-        \ {
-            \ 'key': '''',
-            \ 'children': [
-                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-            \ ]
-        \ },
-        \ '(', ')', '*', '+', ',', '-', '/', '<CR>',
-        \ '0', ':', ';', '?',
-        \ 'B', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'T', 'W', '^', '_',
-        \ {
-            \ 'key': '`',
-            \ 'children': [
-                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-            \ ]
-        \ },
-        \ 'b', 'e', 'f',
-        \ {
-            \ 'key': 'g',
-            \ 'children': [
-                \ '#', '$',
-                \ {
-                    \ 'key': '''',
-                    \ 'children': [
-                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-                    \ ]
-                \ },
-                \ {
-                    \ 'key': '`',
-                    \ 'children': [
-                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-                    \ ]
-                \ },
-                \ '*', '0', 'D', 'E', 'N', '^', '_'
-            \ ]
-        \ },
-        \ 'h', 'j', 'k', 'l', 'n', 't', 'w', '{', '|', '}',
-        \ '<C-End>', '<C-Home>', '<C-Left>', '<C-Right>', '<Down>', '<End>', '<Home>',
-        \ '<Left>', '<LeftMouse>', '<Right>', '<RightMouse>',
-        \ '<S-Left>', '<S-LeftMouse>', '<S-Right>', '<S-RightMouse>', '<Up>',
-        \ {
-            \ 'key': 'a',
-            \ 'children': [
-                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-                \ 'b', 'p', 's', 't', 'w', '{', '}'
-            \ ]
-        \ },
-        \ {
-            \ 'key': 'i',
-            \ 'children': [
-                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-                \ 'b', 'p', 's', 't', 'w', '{', '}'
-            \ ]
-        \ }
-    \ ],
-    \ 'nv': [
-        \ '<C-A>', '<C-D>', '<C-E>', '<C-F>',
-        \ '<NL>', '<C-J>', '<C-L>',
-        \ '<C-Q>', '<C-U>', '<C-V>',
-        \ '<C-X>', '<C-Y>',
-        \ '<', '=', '>', '@',
-        \ 'A', 'C', 'D', 'I', 'J', 'K', 'O', 'P', 'R', 'S', 'V', 'X', 'Y'
-        \ {
-            \ 'key': '[',
-            \ 'children': [ ]
-        \ },
-        \ {
-            \ 'key': ']',
-            \ 'children': [ ]
-        \ },
-        \ 'a', 'c', 'd',
-        \ {
-            \ 'key': 'g',
-            \ 'children': [
-                \ '8', '?', 'I', 'J', 'P', 'T', 'U', ']'
-            \ ]
-        \ },
-        \  'i', 'm', 'o', 'p',
-        \ {
-            \ 'key': 'q',
-            \ 'children': [
-                \ {'fn': 's:key_ranges',
-                \  'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]},
-                \ '"', ':', '/', '?'
-            \ ]
-        \ },
-        \ 'r', 's', 'v', 'x', 'y',
-        \ {
-            \ 'key': 'z',
-            \ 'children': [
-            \ ]
-        \ },
-        \ '~',
-        \ '<Del>', '<MiddleMouse>', '<PageDown>', '<PageUp>', '<S-Up>'
-    \ ],
-    \ 'n': [
-        \ '<C-O>', '<C-G>', '<C-T>', '.', 'Q', 'u',  '<Insert>', '<F1>'
-        \ {
-            \ 'key': 'Z',
-            \ 'children': ['Z', 'Q']
-        \ },
-        \ {
-            \ 'key': '<C-\>',
-            \ 'children': [
-                \ '<C-N>', '<C-G>',
-                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
-            \ ]
-        \ },
-        \ {
-            \ 'key': '<C-W>',
-            \ 'children': [
-                \ '<C-B>', '<C-C>', '<C-D>', '<C-F>', '<C-G>', '<C-H>', '<C-H>', '<C-I>',
-                \ '<C-J>', '<C-K>', '<C-L>', '<C-N>', '<C-O>', '<C-P>', '<C-Q>', '<C-R>',
-                \ '<C-S>', '<C-T>', '<C-V>', '<C-W>', '<C-X>', '<C-Z>', '<C-]>', '<C-^>', '<C-_>',
-                \ '+', '-', '<', '=', '>', 'H', 'J', 'K', 'L', 'P', 'R', 'S', 'T', 'W', ']', '^',
-                \ '_', 'b', 'c', 'd', 'f', 'F',
-                \ {
-                    \ 'key': 'g',
-                    \ 'children': [
-                        \ '<C-]>', ']', '}', 'f', 'F'
-                    \ ]
-                \ },
-                \ {'fn': 's:key_ranges',
-                \  'args': [['h', 'l'], ['n', 'x'], ['z', 'z']]},
-                \ '<Bar>',
-                \ '}',
-                \ '<Down>',
-                \ '<Up>',
-                \ '<Left>',
-                \ '<Right>',
-            \ ]
-        \ },
-        \ {
-            \ 'key': 'g',
-            \ 'children': [
-                \ '+', ',', '-', ';', '<', 'H', 'Q', 'R'
-            \ ]
-        \ },
-    \ ],
-    \ 'v': [
-        \ {
-            \ 'key': '<C-\>',
-            \ 'children': [
-                \ '<C-N>', '<C-G>',
-                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
-            \ ]
-        \ },
-        \ '<C-C>', '<C-G>', '<Esc>', '<C-]>',
-        \ '!', ':', '<lt>', '=', '>', 'C', 'D', 'J', 'K',
-        \ 'O', 'R', 'S', 'U', 'V', 'X', 'Y', 'c', 'd',
-        \ {
-            \ 'key': 'g',
-            \ 'children': [
-                \ 'J', 'q', 'v'
-            \ ]
-        \ },
-        \ 'o', 'r', 's', 'u', 'v', 'x', 'y', '~'
-    \ ]
-\ }
+"let s:builtins = {
+"    \ 'nvo': [
+"        \ '<BS>', '<C-H>', '<Tab>', '<C-I>', '<NL>',
+"        \ '<C-H>', '<Tab>', '<C-I>', '<NL>', '<C-J>', '<CR>', '<C-M>',
+"        \ '<C-N>', '<C-P>', '<C-R>', '<C-Z>',
+"        \ '<Space>', '!',
+"        \ '#', '$', '%', '&',
+"        \ {
+"            \ 'key': '''',
+"            \ 'children': [
+"                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
+"                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+"            \ ]
+"        \ },
+"        \ '(', ')', '*', '+', ',', '-', '/', '<CR>',
+"        \ '0', ':', ';', '?',
+"        \ 'B', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'T', 'W', '^', '_',
+"        \ {
+"            \ 'key': '`',
+"            \ 'children': [
+"                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
+"                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+"            \ ]
+"        \ },
+"        \ 'b', 'e', 'f',
+"        \ {
+"            \ 'key': 'g',
+"            \ 'children': [
+"                \ '#', '$',
+"                \ {
+"                    \ 'key': '''',
+"                    \ 'children': [
+"                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
+"                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+"                    \ ]
+"                \ },
+"                \ {
+"                    \ 'key': '`',
+"                    \ 'children': [
+"                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
+"                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
+"                    \ ]
+"                \ },
+"                \ '*', '0', 'D', 'E', 'N', '^', '_'
+"            \ ]
+"        \ },
+"        \ 'h', 'j', 'k', 'l', 'n', 't', 'w', '{', '|', '}',
+"        \ '<C-End>', '<C-Home>', '<C-Left>', '<C-Right>', '<Down>', '<End>', '<Home>',
+"        \ '<Left>', '<LeftMouse>', '<Right>', '<RightMouse>',
+"        \ '<S-Left>', '<S-LeftMouse>', '<S-Right>', '<S-RightMouse>', '<Up>',
+"        \ {
+"            \ 'key': 'a',
+"            \ 'children': [
+"                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
+"                \ 'b', 'p', 's', 't', 'w', '{', '}'
+"            \ ]
+"        \ },
+"        \ {
+"            \ 'key': 'i',
+"            \ 'children': [
+"                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
+"                \ 'b', 'p', 's', 't', 'w', '{', '}'
+"            \ ]
+"        \ }
+"    \ ],
+"    \ 'nv': [
+"        \ '<C-A>', '<C-D>', '<C-E>', '<C-F>',
+"        \ '<NL>', '<C-J>', '<C-L>',
+"        \ '<C-Q>', '<C-U>', '<C-V>',
+"        \ '<C-X>', '<C-Y>',
+"        \ '<', '=', '>', '@',
+"        \ 'A', 'C', 'D', 'I', 'J', 'K', 'O', 'P', 'R', 'S', 'V', 'X', 'Y'
+"        \ {
+"            \ 'key': '[',
+"            \ 'children': [ ]
+"        \ },
+"        \ {
+"            \ 'key': ']',
+"            \ 'children': [ ]
+"        \ },
+"        \ 'a', 'c', 'd',
+"        \ {
+"            \ 'key': 'g',
+"            \ 'children': [
+"                \ '8', '?', 'I', 'J', 'P', 'T', 'U', ']'
+"            \ ]
+"        \ },
+"        \  'i', 'm', 'o', 'p',
+"        \ {
+"            \ 'key': 'q',
+"            \ 'children': [
+"                \ {'fn': 's:key_ranges',
+"                \  'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]},
+"                \ '"', ':', '/', '?'
+"            \ ]
+"        \ },
+"        \ 'r', 's', 'v', 'x', 'y',
+"        \ {
+"            \ 'key': 'z',
+"            \ 'children': [
+"            \ ]
+"        \ },
+"        \ '~',
+"        \ '<Del>', '<MiddleMouse>', '<PageDown>', '<PageUp>', '<S-Up>'
+"    \ ],
+"    \ 'n': [
+"        \ '<C-O>', '<C-G>', '<C-T>', '.', 'Q', 'u',  '<Insert>', '<F1>'
+"        \ {
+"            \ 'key': 'Z',
+"            \ 'children': ['Z', 'Q']
+"        \ },
+"        \ {
+"            \ 'key': '<C-\>',
+"            \ 'children': [
+"                \ '<C-N>', '<C-G>',
+"                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
+"            \ ]
+"        \ },
+"        \ {
+"            \ 'key': '<C-W>',
+"            \ 'children': [
+"                \ '<C-B>', '<C-C>', '<C-D>', '<C-F>', '<C-G>', '<C-H>', '<C-H>', '<C-I>',
+"                \ '<C-J>', '<C-K>', '<C-L>', '<C-N>', '<C-O>', '<C-P>', '<C-Q>', '<C-R>',
+"                \ '<C-S>', '<C-T>', '<C-V>', '<C-W>', '<C-X>', '<C-Z>', '<C-]>', '<C-^>', '<C-_>',
+"                \ '+', '-', '<', '=', '>', 'H', 'J', 'K', 'L', 'P', 'R', 'S', 'T', 'W', ']', '^',
+"                \ '_', 'b', 'c', 'd', 'f', 'F',
+"                \ {
+"                    \ 'key': 'g',
+"                    \ 'children': [
+"                        \ '<C-]>', ']', '}', 'f', 'F'
+"                    \ ]
+"                \ },
+"                \ {'fn': 's:key_ranges',
+"                \  'args': [['h', 'l'], ['n', 'x'], ['z', 'z']]},
+"                \ '<Bar>',
+"                \ '}',
+"                \ '<Down>',
+"                \ '<Up>',
+"                \ '<Left>',
+"                \ '<Right>',
+"            \ ]
+"        \ },
+"        \ {
+"            \ 'key': 'g',
+"            \ 'children': [
+"                \ '+', ',', '-', ';', '<', 'H', 'Q', 'R'
+"            \ ]
+"        \ },
+"    \ ],
+"    \ 'v': [
+"        \ {
+"            \ 'key': '<C-\>',
+"            \ 'children': [
+"                \ '<C-N>', '<C-G>',
+"                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
+"            \ ]
+"        \ },
+"        \ '<C-C>', '<C-G>', '<Esc>', '<C-]>',
+"        \ '!', ':', '<lt>', '=', '>', 'C', 'D', 'J', 'K',
+"        \ 'O', 'R', 'S', 'U', 'V', 'X', 'Y', 'c', 'd',
+"        \ {
+"            \ 'key': 'g',
+"            \ 'children': [
+"                \ 'J', 'q', 'v'
+"            \ ]
+"        \ },
+"        \ 'o', 'r', 's', 'u', 'v', 'x', 'y', '~'
+"    \ ]
+"\ }
 
 let s:re_key_notation = '\c\v^\<'
     \ . '%(t_)@!'
@@ -433,13 +433,13 @@ endfunction
 " canonicalized pieces: e.g.,
 "   "<foo>" => ["<lt>", "f", "o", "o", ">"]
 "   BUT
-"   "<C-A>" => ["<C-A>"]
+"   "<C-a>" => ["<C-A>"]
 " Important CAVEAT: Because we're doing string comparisons on canonicalized
 " forms (and case is generally sensitive in maps), we need either to
 " canonicalize case here or use "\<...>" to convert to actual byte sequence:
 " e.g., "\<F7>" => <80>k7
 " I don't see this causing problems, since these canonical forms would be used
-" only for in memory comparisons.
+" only for in-memory comparisons.
 " Note: lhs in both :map output and maparg() dict is somewhat canonicalized
 " (i.e., <Space> rather than literal space).
 " TODO: Decide which...
@@ -484,31 +484,6 @@ function! s:split_and_canonicalize_lhs(lhs)
         let i = ie
     endwhile
     return ret
-endfunction
-
-" Build commands for creating/deleting "escape maps" upon entry/exit from sexp
-" state.
-" Design Decision: Do not use :map command to combine modes, even when it's
-" possible.
-" Rationale: Would complicate things considerably, and unlike the user map
-" case, there's no compelling motivation for it.
-function! s:build_escape_map_cmds(esc_key, esc_maps)
-    let cmds = [[], []]
-    let esk_key_len = len(a:esc_key)
-    for em in a:esc_maps
-        " TODO: Perhaps use function capable of combining modes.
-        for mode in split(em.modes, '\zs')
-            " Create the escape map and the corresponding unmap.
-            " TODO: Decide whether stripping off esk key here is better than
-            " prepending it here (keeping in mind that some logic further
-            " upstream needs it to be part of the string).
-            call add(cmds[1], mode . 'noremap <buffer><nowait> '
-                \ . em.lhs . ' ' . em.lhs[esk_key_len:])
-            " Record for subsequent removal.
-            call add(cmds[0], mode . 'unmap <buffer> ' . em.lhs)
-        endfor
-    endfor
-    return cmds
 endfunction
 
 function! s:by_lhs_sort_fn(a, b)
@@ -612,6 +587,27 @@ function! s:compare_prefix(a, b)
     return a < b ? -1 : a > b ? 1 : 0
 endfunction
 
+" Is a prefix of b
+function! s:is_prefix_of(a, b)
+    return a:a == a:b[:len(a:a) - 1]
+endfunction
+
+function! s:check_ambiguity(a, b, ...)
+    let warn = a:0 && !!a:1
+    " In the absence of mode overlap, there can be no ambiguity.
+    let omodes = s:and_modes(a:a.modes, a:b.modes)
+    if !empty(omodes) && !s:compare_prefix(a:a.lhs, a:b.lhs)
+        if warn
+            echohl WarningMsg
+            echomsg "Maps " . a:a.lhs . " and " a:b.lhs . " are ambiguous"
+                \ . " in modes " . omodes
+            echohl None
+        endif
+        return 1
+    endif
+    return 0
+endfunction
+
 " Input: mapinfo is basically a maparg() dict, but with a 'script' flag
 " indicating whether the <script> tag was used.
 function! s:build_delete_cmds(mapinfo, modes)
@@ -676,208 +672,138 @@ function! s:build_restore_cmds(mapinfo)
     return cmd
 endfunction
 
-function! s:motions()
-    " TODO: Add square bracket commands.
-    if !exists('s:motion_builtins')
-        let s:motion_builtins = [
-            \ '<BS>', '<C-H>', '<NL>', '<C-J>', '<CR>', '<C-M>', '<C-N>', '<C-P>',
-            \ '<Space>',
-            \ '#', '$', '%',
-            \ {
-                \ 'key': '''',
-                \ 'children': [
-                    \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-                \ ]
-            \ },
-            \ '(', ')', '*', '+', ',', '-', '/', '<CR>', '0', ':', ';', '?',
-            \ 'B', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'T', 'W', '^', '_',
-            \ {
-                \ 'key': '`',
-                \ 'children': [
-                    \ {'fn': 's:key_ranges', 'args':  [['a', 'z'], ['A', 'Z'], ['0', '9']]},
-                    \ '(', ')', '<', '>', '[', ']', '`', '{', '}'
-                \ ]
-            \ },
-            \ 'b', 'e', 'f', 'h', 'j', 'k', 'l', 'n', 't', 'w', '{', '<Bar>', '}',
-            \ '<C-End>', '<C-Home>', '<C-Left>', '<C-Right>', '<Down>', '<End>',
-            \ '<Home>', '<Left>', '<LeftMouse>', '<Right>', '<S-Down>', '<S-Left>',
-            \ '<S-Right>', '<S-Up>', '<Up>',
-            \ {'fn': 's:text_objects'}
-        \ ]
+" Get list of dictionaries (keys: lhs, modes, plug) representing the sexp maps
+" to be created, sorted by lhs.
+function! s:get_sexp_maps()
+    let sexp_maps = []
+    for [plug, modestr] in s:plug_map_modes
+        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if lhs =~ '^\s*$'
+            " Empty or all whitespace lhs disables map.
+            continue
+        endif
+        call add(sexp_maps,
+            \ {'lhs': lhs, 'modes': s:expand_modes(modestr), 'plug': plug})
+    endfor
+    if !empty(sexp_maps)
+        " Sort the sexp_maps list by lhs.
+        call sort(sexp_maps, 's:by_lhs_sort_fn')
     endif
-    return s:motion_builtins
+    return sexp_maps
 endfunction
 
-function! s:text_objects()
-    if !exists('s:text_object_builtins')
-        let children = [
-            \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-            \ 'b', 'p', 's', 't', 'w', '{', '}']
-        let s:text_object_builtins = [
-            \ {
-                \ 'key': 'a',
-                \ 'children': children
-            \ },
-            \ {
-                \ 'key': 'i',
-                \ 'children': children
-            \ }
-        \ ]
-    endif
-    return s:text_object_builtins
+" Build commands for creating/deleting "sexp maps" upon entry/exit from sexp
+" state, warning user about any lhs ambiguities.
+function! s:build_sexp_map_cmds(sexp_maps)
+    let cmds = [[], []]
+    let prev_sm = {}
+    for sm in a:sexp_maps
+        let [lhs, modes, plug] = [sm.lhs, sm.modes, sm.plug]
+        if !empty(prev_sm)
+            " Warn user about any ambiguities.
+            call s:check_ambiguity(prev_sm, sm, 1)
+        endif
+        for mode in split(modes, '\zs')
+            " Accumulate exit/entry commands.
+            call add(cmds[0],
+                \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
+            call add(cmds[1],
+                \ mode . 'map <nowait><silent><buffer>'
+                \ . lhs . ' <Plug>(' . plug . ')')
+        endfor
+        let prev_sm = sm
+    endfor
+    return cmds
 endfunction
 
-function! s:key_ranges(...)
-    let ret = []
-    " Loop over all supplied ranges.
-    for r in a:000
-        " Loop over characters in range.
-        for c in range(char2nr(r[0]), char2nr(r[1]))
-            call add(ret, nr2char(c))
+" Build commands for creating/deleting "escape maps" upon entry/exit from sexp
+" state.
+" Design Decision: Unless compelling reason is discovered, do not use :map
+" command to combine modes, even when it's possible.
+" Rationale: Would complicate things, and unlike the user map case (in which
+" I'm endeavoring not to split up previously-defined user maps), there's no
+" compelling motivation for it.
+function! s:build_escape_map_cmds(esc_key, esc_maps)
+    let cmds = [[], []]
+    let esk_key_len = len(a:esc_key)
+    for em in a:esc_maps
+        " TODO: Perhaps use function capable of combining modes.
+        for mode in split(em.modes, '\zs')
+            " Create the escape map and the corresponding unmap.
+            call add(cmds[1], mode . 'noremap <buffer><nowait> '
+                \ . em.lhs . ' ' . em.lhs[esk_key_len:])
+            " Record for subsequent removal.
+            call add(cmds[0], mode . 'unmap <buffer> ' . em.lhs)
         endfor
     endfor
-    return ret
-endfu
-
-" Recursively build a tree-like builtins data structure optimized for search.
-" mode    applicable mode
-" keylist list of keys in canonical form at current level, with lower levels
-"         represented by maps: e.g.,
-"         <key1>, <key2>, {'key': <key3>, 'children': [...]}, ...
-" Output: Builtins represented as search-optimized tree structure, of the
-" following form:
-" {<key1>: {'modes', '[nv]', 'dmodes': '[nv]', 'children': {...}},
-"  <key2>: ...}
-" Note: Although represented as separate hierarchies in the non-optimized
-" builtins structure, the modes are merged into a common tree structure here,
-" with the "modes" key indicating the modes for which element is a leaf, and
-" the "dmodes" key indicating which modes are represented at deeper levels (to
-" permit search short-circuit).
-function! s:add_builtin_r(mode, keylist, map)
-    for key in a:keylist
-        if type(key) == 4
-            if has_key(key, 'fn')
-                " Use recursive call to splice keylist returned by named
-                " function (possibly called with args) into current map.
-                call s:add_builtin_r(a:mode,
-                    \ call(key.fn, has_key(key, 'args') ? key.args : []),
-                    \ a:map)
-                " All keys returned by fn have been fully processed.
-                continue
-            else
-                " This key has children.
-                let [k, descend] = [key.key, 1]
-            endif
-        else
-            let [k, descend] = [key, 0]
-        endif
-        " Canonicalize key
-        " TODO: If this call returns more than 1 element, we have internal
-        " error. Perhaps refactor...
-        let k = s:split_and_canonicalize_lhs(k)[0]
-        " TODO: Consider adding a flag that would permit having children but
-        " also serving as leaf.
-        " Rationale: For stuff like normal mode `d', where we might not want
-        " to force user to hit the motion before timeout: e.g., we might want
-        " <EscKey>d to trigger the escape after timeout.
-        if !has_key(a:map, k)
-            let a:map[k] = {'modes': '', 'dmodes': '', 'children': {}}
-        endif
-        let map = a:map[k]
-        if descend
-            " Facilitate short-circuiting searches when applicable mode(s) not
-            " represented below this level.
-            let map.dmodes = s:or_modes(map.dmodes, a:mode)
-            call s:add_builtin_r(a:mode, key.children, map.children)
-        else
-            let map.modes = s:or_modes(map.modes, a:mode)
-        endif
-    endfor
-endfunction
-
-" Return a cached map of builtins, optimized for recursive search.
-" Note: Generate the map on initial call.
-" TODO: Perhaps hide the actual s:builtins data structure in here, and the
-" function itself at the bottom of the file...
-function! s:get_builtins()
-    if exists('s:builtins_optimized')
-        return s:builtins
-    endif
-    let keymap = {}
-    " Need to do the first-time only conversion.
-    for [mode, keylist] in items(s:builtins)
-        call s:add_builtin_r(s:expand_modes(mode), keylist, keymap)
-    endfor
-    " Replace the original with one optimized for search.
-    let s:builtins = keymap
-    let s:builtins_optimized = 1
-    let g:builtins = keymap
-    return s:builtins
-endfunction
-
-" Process the "builtins" tree structure recursively, recording in a escs map
-" all those builtins whose ambiguity/conflict with a sexp-state map
-" necessitates an escape map.
-" builtins  current location in builtins tree structure (implemented as map).
-" blhs      cumulative builtin lhs
-" lhs_lst   list of unprocessed lhs canonicalized key components
-" modes     modes in which the sexp-state map being checked is active.
-" escs      detected conflicts (key=lhs, val=modes)
-function! s:get_escape_maps_r(builtins, blhs, lhs_lst, modes, escs)
-    if empty(a:lhs_lst)
-        " Note: Can't get here on first recursive call.
-        " Process all leaves, which are assumed to be descended from a
-        " conflicting sexp map.
-        let lhs = ''
-        let bmap = a:builtins
-    else
-        " Process only conflicting key and any of its descendants.
-        let [lhs, lhs_lst] = [a:lhs_lst[0], a:lhs_lst[1:]]
-        " Note: Stuffing into a single key hash permits common logic below.
-        let bmap = has_key(a:builtins, lhs) ? {lhs: a:builtins[lhs]} : {}
-    endif
-    " Process any leaf keys at this level (indicated by non-empty modes).
-    for [k, o] in items(bmap)
-        let blhs = a:blhs . k
-        " Loop over leaf builtins (if any).
-        " Accumulate modes in which current map conflicts with builtin.
-        " Caveat: Don't add key if nothing to accumulate.
-        let omodes = s:and_modes(o.modes, a:modes)
-        if !empty(omodes)
-            let a:escs[blhs] = s:or_modes(get(a:escs, blhs, ''), omodes)
-        endif
-
-        " Descend if there are builtin children *and* the modes we're
-        " interested in are represented at lower levels (dmodes).
-        " Possible TODO: There are other short-circuit possibilities: e.g.,
-        " could modify dmodes to reflect current state of conflict detection,
-        " but this is probably not justified, given that the fraction of
-        " traversals ending in short-circuit would be extremely small.
-        if !empty(o.children) && o.dmodes =~ '[' . a:modes . ']'
-            call s:get_escape_maps_r(o.children, blhs, lhs_lst,
-                \ a:modes, a:escs)
-        endif
-    endfor
+    return cmds
 endfunction
 
 " Build sorted list representing all esc maps that will be required for
 " builtins.
 function! s:get_escape_maps(esc_key, sexp_maps)
-    let builtins = s:get_builtins()
     let escs = {}
     for sm in a:sexp_maps
-        let lhs_lst = s:split_and_canonicalize_lhs(sm.lhs)
-        if !empty(lhs_lst)
-            " Recurse...
-            call s:get_escape_maps_r(builtins, '', lhs_lst, sm.modes, escs)
-        endif
+        let lhs = s:split_and_canonicalize_lhs(sm.lhs)[0]
+        " Combine modes.
+        let escs[lhs] = s:or_modes(get(escs, lhs, ''), sm.modes)
     endfor
     " Convert the hash (lhs=>modes) to a list of dicts sorted by lhs.
     let ret = []
-    " TODO: Consider deferring the sort to discard_conflicting_escape_maps.
     for lhs in sort(keys(escs))
         " Note: Prepending the esc key can't change sort order.
         call add(ret, {'lhs': a:esc_key . lhs, 'modes': escs[lhs]})
+    endfor
+    return ret
+endfunction
+
+" Pre Condition: Both lists sorted on lhs.
+" TODO: Decide whether to modify in-place.
+function! s:discard_conflicting_escape_maps(esc_maps, sexp_maps)
+    let [i, n] = [0, len(a:esc_maps)]
+    for sm in a:sexp_maps
+        " Optimization: Sorted lists obviate need to restart iteration.
+        while i < n
+            let em = a:esc_maps[i]
+            " TODO: Verify that both lhs's case is canonicalized.
+            let cmp = s:compare_prefix(sm.lhs, em.lhs)
+            if !cmp
+                " Remove the esc map.
+                " TODO: Decide whether to make it immutable.
+                call remove(a:esc_maps, i)
+                " Caveat: Skip i increment and record fact that there's one
+                " fewer element.
+                let n -= 1
+                " TODO NOTE: This wouldn't be necessary if we made this
+                " function non-mutating and simply accumulated.
+                continue
+            elseif cmp < 0
+                " Short-circuit inner loop.
+                break
+            endif
+            let i += 1
+        endwhile
+    endfor
+    return a:esc_maps
+endfunction
+
+" Merge the sorted input lists of dictionaries representing escape and sexp
+" maps.
+function! s:combine_escape_and_sexp_maps(esc_maps, sexp_maps)
+    let ret = []
+    let [i, n] = [0, len(a:esc_maps)]
+    for sm in a:sexp_maps
+        " Optimization: Sorted lists obviate need to restart iteration.
+        while i < n
+            let em = a:esc_maps[i]
+            if em.lhs <= sm.lhs
+                call add(ret, em)
+            else
+                call add(ret, sm)
+                break
+            endif
+            let i += 1
+        endwhile
     endfor
     return ret
 endfunction
@@ -963,167 +889,98 @@ function! s:get_user_maps(esc_key, global)
     return ret
 endfunction
 
-" Accept esc_key and any number of lists of hash (keys: lhs, modes), and
-" return lists of exit/entry commands needed to save/restore conflicting user
-" maps.
+" Accept esc_key and a list of hashes (keys: lhs, modes), and return lists of
+" exit/entry commands needed to delete/restore conflicting user maps.
 " Inputs:
-"   esk_key: 
-"   [[{'lhs1': <>, 'modes': <>}, ...], ...]
+"   esk_key: single key designator (in fiducial form)
+"   maps:    [{'lhs1': <>, 'modes': <>}, ...]
 " Return: [exit-map-cmds, entry-map-cmds]
-" CAVEAT: Unlike some of the other "builder" functions, this one must actually
-" perform some map removal to prevent global user maps from being shadowed by
-" the buf-locals.
-" TODO: Rework this comment - much has changed!!!!!
-" TODO: Consider advantages of having multiple maps passed in, as opposed to
-" multiple calls... Should never have more than sexp_maps and (optional)
-" esc_maps. Should this be hardcoded in parameter list?
-function! s:shadow_conflicting_usermaps(esc_key, ...)
+" Pre Condition: sexp and esc maps have been combined into a single list
+" sorted by lhs.
+" Rationale: Prevents problems with (albeit unlikely) scenarios such as the
+" following, in which distinct, non-ambiguous sexp and esc maps are shadowed
+" by the same user map, potentially in different modes.
+"   user map _
+"   sexp map _g
+"   esc map  _h
+function! s:shadow_conflicting_usermaps(esc_key, maps)
     " Initialize return list: [exit-map-cmds, entry-map-cmds]
     let cmds = [[], []]
-    " Loop over provided lists (e.g., sexp, esc) of hashes (keys: lhs, modes)
-    " Assumption: Lists can be processed independently because we've already
-    " precluded possibility of ambiguous lhs's.
-    for maps in a:000
-        " Loop over [buffer, global], calling s:get_user_maps for each.
-        " Caveat: s:get_user_maps won't work properly for globals if we
-        " haven't already removed the conflicting buf-locals.
-        " Assumption: Caller has ensured orthogonality of the input lists, so
-        " we're safe to process them independently as outermost loop.
-        for global in range(2)
-            let prev_ulhs = ''
-            " Optimization: Resetting i only here because both maps and umaps
-            " are sorted.
-            let [i, n] = [0, len(maps)]
-            " Loop over buffer or global user maps.
-            for umap in s:get_user_maps(a:esc_key, global)
-                " Extract some key values for convenience.
-                " Note: umap.modes is an expanded value - not from maparg().
-                let [ulhs, umodes, script] = [umap.lhs, umap.modes, umap.script]
-                if prev_ulhs != ulhs
-                    " Starting new range of user maps with common lhs.
-                    " Assumption: For a given ulhs, multi-mode command will be
-                    " first or not at all.
-                    let [prev_ulhs, first_ulhs, need_maybes] = [ulhs, 1, 0]
-                    " Record index at which map search will start for each
-                    " umap in range.
-                    let i_first = i
-                endif
-                " Accumulate overlap between this umap and any ambiguous maps.
-                let omodes = ''
-                " Start with first map that *could* conflict with current user
-                " map, short-circuiting when we pass the last one that could,
-                " or when all modes in the umap have been flagged.
-                let i = i_first
-                while i < n
-                    let map = maps[i]
-                    let [lhs, modes] = [map.lhs, map.modes]
-                    " Is one lhs a prefix of the other?
-                    let cmp = s:compare_prefix(ulhs, lhs)
-                    if !cmp
-                        " Prefixes ambiguous; accumulate any mode overlap.
-                        let omodes = s:or_modes(omodes, s:and_modes(umodes, modes))
-                        if len(omodes) == len(umodes)
-                            " No point in continuing to check maps now that
-                            " we've flagged all modes.
-                            break
-                        endif
-                    elseif cmp < 0
-                        " Both inner and outer lists are sorted by lhs, so we can
-                        " short-circuit and restart this loop at i_first after
-                        " moving to the subsequent umap.
-                        break
-                    endif
-                    let i += 1
-                endwhile
-                " Does this umap require delete/restore?
-                if !empty(omodes) || need_maybes
-                    " Determine whether subsequent umaps with same lhs will
-                    " need restore, if only because of the :map command used
-                    " to restore the head umap in range.
-                    let need_maybes = need_maybes ||
-                        \ (first_ulhs && s:is_multi_modes(umodes))
-                    " TODO: Consider refactoring into function.
-                    " Caveat: This call is safe only because buffer maps
-                    " are processed before globals.
-                    let umap = maparg(ulhs, umodes, 0, 1)
-                    let umap.script = script
-                    " Add to lists for subsequent delete/restore.
-                    if !empty(omodes)
-                        " Delete only the overlapping modes.
-                        call add(cmds[1], s:build_delete_cmds(umap, omodes))
-                        " Perform the delete now.
-                        " Rationale: Prevents buffer maps from shadowing
-                        " global.
-                        exe cmds[1][-1]
-                    endif
-                    " 2 kinds of restore:
-                    " 1. maps deleted upon entry
-                    " 2. maps deleted by :map command used to restore
-                    "    a multi-mode map upon exit.
-                    call add(cmds[0], s:build_restore_cmds(umap))
-                endif
-            endfor
-        endfor
-        return cmds
-endfunction
-
-" Pre-condition: Both lists sorted on lhs.
-" TODO: Decide whether to modify in-place.
-function! s:discard_conflicting_escape_maps(esc_maps, sexp_maps)
-    let [i, n] = [0, len(a:esc_maps)]
-    for sm in a:sexp_maps
-        " Optimization: Sorted lists obviate need to restart iteration.
+    " Loop over provided list of hashes (keys: lhs, modes)
+    " Optimization: Resetting i only here because both maps and umaps
+    " are sorted.
+    let [prev_ulhs, i, n] = ['', 0, len(a:maps)]
+    " Loop over buffer user maps.
+    " Assumption: Global maps don't matter: we won't overwrite them, and
+    " they can't shadow the buffer maps we create.
+    for umap in s:get_user_maps(a:esc_key, 0)
+        " Extract some key values for convenience.
+        " Note: umap.modes is an expanded value - not from maparg().
+        let [ulhs, umodes, script] = [umap.lhs, umap.modes, umap.script]
+        if prev_ulhs != ulhs
+            " Starting new range of user maps with common lhs.
+            " Assumption: For a given ulhs, multi-mode command will be
+            " first in range or not at all.
+            let [prev_ulhs, first_ulhs, force_range] = [ulhs, 1, 0]
+            " Record index at which map search will start for each umap in a
+            " range of umaps with identical lhs.
+            let i_first = i
+        else
+            let first_ulhs = 0
+        endif
+        " Accumulate overlap between this umap and any maps it shadows.
+        let omodes = ''
+        " Start with first map that *could* conflict with current user
+        " map, short-circuiting when we pass the last one that could,
+        " or when all modes in the umap have been flagged.
+        let i = i_first
         while i < n
-            let em = a:esc_maps[i]
-            " TODO: Verify that both lhs's case is canonicalized.
-            let cmp = s:compare_prefix(sm.lhs, em.lhs)
-            if !cmp
-                " Remove the esc map.
-                " TODO: Decide whether to make it immutable.
-                call remove(a:esc_maps, i)
-                " Caveat: Skip i increment and record fact that there's one
-                " fewer element.
-                let n -= 1
-                " TODO NOTE: This wouldn't be necessary if we made this
-                " function non-mutating and simply accumulated.
-                continue
-            elseif cmp < 0
-                " Short-circuit inner loop.
+            let map = a:maps[i]
+            let [lhs, modes] = [map.lhs, map.modes]
+            if s:is_prefix_of(ulhs, lhs)
+                " User map would shadow the sexp/esc map. Accumulate any mode
+                " overlap.
+                let omodes = s:or_modes(omodes, s:and_modes(umodes, modes))
+                " Note: Because and/or_modes sort the flags, could also
+                " test omodes and modes for equality.
+                if len(omodes) == len(umodes)
+                    " No point in continuing to check maps now that
+                    " we've flagged all modes.
+                    break
+                endif
+            elseif ulhs < lhs
+                " Both inner and outer lists are sorted by lhs, so we can
+                " short-circuit and restart this loop at i_first after
+                " moving to the subsequent umap.
                 break
             endif
             let i += 1
         endwhile
-    endfor
-    return a:esc_maps
-endfunction
-
-function! s:build_sexp_map_cmds(esc_key)
-    let [cmds, sexp_maps] = [[[], []], []]
-    for [plug, modestr] in s:plug_map_modes
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if lhs =~ '^\s*$'
-            " Empty or all whitespace lhs disables map.
-            continue
+        " Does this umap require delete/restore?
+        if !empty(omodes) || force_range
+            " Determine whether subsequent umaps with same lhs will
+            " need restore, if only because of the :map command used
+            " to restore the head umap in range.
+            " Note: umaps that aren't first in range can't be multi-mode.
+            let force_range = force_range ||
+                \ (first_ulhs && s:is_multi_modes(umodes))
+            let umap = maparg(ulhs, umodes, 0, 1)
+            let umap.script = script
+            " Add to lists for subsequent delete/restore.
+            " Note: Don't delete maps that are being restored only because of
+            " use of :map command on head map in range.
+            if !empty(omodes)
+                " Delete only the overlapping modes.
+                call add(cmds[1], s:build_delete_cmds(umap, omodes))
+            endif
+            " 2 kinds of restore:
+            " 1. maps deleted upon entry
+            " 2. maps deleted by :map command used to restore
+            "    a multi-mode map upon exit.
+            call add(cmds[0], s:build_restore_cmds(umap))
         endif
-        if !empty(a:esc_key)
-            " If caller is creating escape maps, he'll need a list of the sexp
-            " maps built.
-            call add(sexp_maps, {'lhs': lhs, 'modes': s:expand_modes(modestr)})
-        endif
-        for mode in split(modestr, '\zs')
-            " Accumulate exit/entry commands.
-            call add(cmds[0],
-                \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
-            call add(cmds[1],
-                \ mode . 'map <nowait><silent><buffer>'
-                \ . lhs . ' <Plug>(' . plug . ')')
-        endfor
     endfor
-    " Sort the sexp_maps list.
-    if !empty(sexp_maps)
-        call sort(sexp_maps, 's:by_lhs_sort_fn')
-    endif
-    return [cmds, sexp_maps]
+    return cmds
 endfunction
 
 function! s:sexp_toggle_non_insert_mappings()
@@ -1132,31 +989,32 @@ function! s:sexp_toggle_non_insert_mappings()
     if !exists('b:sexp_state_enabled')
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
-        let esc_key = ''
         if exists('g:sexp_escape_key') && !empty(g:sexp_escape_key)
             " TODO: Perhaps some validation: e.g., single key.
             " TODO: Should we permit stuff like <LocalLeader>? If so, need to
             " canonicalize case...
             let esc_key = g:sexp_escape_key
+        else
+            let esc_key = ''
         endif
 
-        let [b:sexp_map_commands, sexp_maps] = s:build_sexp_map_cmds(esc_key)
+        let sexp_maps = s:get_sexp_maps()
+        let b:sexp_map_commands = s:build_sexp_map_cmds(sexp_maps)
         "echomsg "SM Exit: " . string(b:sexp_map_commands[0])
         "echomsg "SM Enter: " . string(b:sexp_map_commands[1])
         if exists('l:esc_key')
             " Get list of escape maps we'll need to create for builtins.
-            " TODO: Perhaps have get_sexp_maps return this as well.
             let esc_maps = s:get_escape_maps(esc_key, sexp_maps)
             "echomsg "esc_maps 1 :" . string(esc_maps)
             " Discard esc maps that would conflict with sexp maps.
-            " Rationale: The logic within shadow_conflicting_usermaps requires
-            " as pre-condition that no esc_map match the head of any sexp map.
-            " (Moreover, we wouldn't want to shadow sexp maps with esc maps or
-            " vice-versa.)
             " User probably should probably be warned not to do this in docs.
             " Is run-time warning appropriate? (TODO)
             let esc_maps =
                 \ s:discard_conflicting_escape_maps(esc_maps, sexp_maps)
+            " Combine sexp and esc maps into single, sorted list for
+            " shadow_conflicting_usermaps.
+            let sexp_maps =
+                \ s:combine_escape_and_sexp_maps(esc_maps, sexp_maps)
             "echomsg "esc_maps 2 :" . string(esc_maps)
             " Create the lists of escape map commands.
             let b:escape_map_commands = s:build_escape_map_cmds(esc_key, esc_maps)
@@ -1165,19 +1023,18 @@ function! s:sexp_toggle_non_insert_mappings()
         endif
         " Build the commands to save/restore any conflicting user maps.
         " Note: This needs to be run even if user hasn't configured escape
-        " key, but in that case, esc_maps will be empty.
+        " key (in which case, escape/sexp maps will not have been merged).
+        echomsg "Passing sexp_maps: " . string(sexp_maps)
         let b:user_map_commands =
-            \ s:shadow_conflicting_usermaps(esc_key, sexp_maps, esc_maps)
+            \ s:shadow_conflicting_usermaps(esc_key, sexp_maps)
         "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
         "echomsg "UM Enter esc: " . string(b:user_map_commands[1])
     endif
     " Perform entry/exit using buf-locally cached map commands.
     " Caveat: Order in which cmd groups are processed is significant: e.g.,
     " must delete user maps first on entry and restore them last on exit.
-    " Caveat: On initial toggle into sexp state, user maps will already have
-    " been removed above, so we'll need to skip here...
     let cmd_groups = [
-        \ exists('b:sexp_state_enabled') ? b:user_map_commands : [],
+        \ b:user_map_commands,
         \ b:sexp_map_commands,
         \ exists('b:escape_map_commands') ? b:escape_map_commands : []]
     for cmds in enabled ? cmd_groups : reverse(cmd_groups)
