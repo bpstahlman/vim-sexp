@@ -326,15 +326,16 @@ let s:plug_map_modes = [
 "    \ ]
 "\ }
 
-let s:re_key_notation = '\c\v^\<'
-    \ . '%(t_)@!'
+let s:re_key_notation = '\c\v\<%('
+    \ . '%(local)?leader'
+    \ . '|%(t_)@!'
     \ . '%([SCMAD]-)*'
     \ . '%('
-    \ . 'nul|bs|tab|nl|ff|cr|return|enter|esc|space|lt|bslash|bar|del|x?csi'
+    \ . '|nul|bs|tab|nl|ff|cr|return|enter|esc|space|lt|bslash|bar|del|x?csi'
     \ . '|eol|up|down|left|right|f%(10|11|12|[1-9])|help|undo|insert'
     \ . '|home|end|pageup|pagedown|k%(home|end|page%(up|down)|plus|minus'
     \ . '|multiply|divide|enter|point|[0-9])'
-    \ . '|[[:print:]])\>$'
+    \ . '|[[:print:]]))\>'
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
@@ -452,7 +453,7 @@ function! s:split_and_canonicalize_lhs(lhs)
     endif
     let [i, len] = [0, len(s)]
     while i < len
-        let ie = matchend(s, '^\c<[-[:alnum:]]\+>', i)
+        let ie = matchend(s, '^' . s:re_key_notation, i)
         if ie >= 0
             let c = s[i:ie-1]
             " Check for something that *could* be special key notation.
@@ -461,13 +462,22 @@ function! s:split_and_canonicalize_lhs(lhs)
             " something beginning with '<' if it's not a valid key sequence).
             " Note: This strategy could be used to perform more reliable
             " validation than what's provided by s:re_key_notation.
-            if c !~ s:re_key_notation
+            " Note: Vim does NOT translate key notation within mapleader and
+            " maplocalleader.
+            " Also Note: Both mapleader and maplocalleader default
+            " *independently* to backslash.
+            if c ==? '<Leader>'
+                let c = get(g:, 'mapleader', '\')
+            elseif c ==? '<LocalLeader>'
+                let c = get(g:, 'maplocalleader', '\')
+            elseif c !~ s:re_key_notation
                 let c = '<LT>'
                 " Let the rest be handled on subsequent iterations.
                 let ie = i + 1
             endif
         else
             " Definitely not key notation.
+            " TODO: Need to handle bare '<'.
             " Note: This match is guaranteed to succeed.
             let ie = matchend(s, '.', i)
             let c = s[i:ie-1]
@@ -478,6 +488,8 @@ function! s:split_and_canonicalize_lhs(lhs)
             " literally, like Space and Tab.
             if c == '\'
                 let c = '<BSLASH>'
+            elseif c == '<'
+                let c = '<LT>'
             endif
         endif
         call add(ret, c)
@@ -682,6 +694,8 @@ function! s:get_sexp_maps()
             " Empty or all whitespace lhs disables map.
             continue
         endif
+        " Note: Need to canonicalize for subsequent comparisons.
+        let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
         call add(sexp_maps,
             \ {'lhs': lhs, 'modes': s:expand_modes(modestr), 'plug': plug})
     endfor
@@ -999,6 +1013,7 @@ function! s:sexp_toggle_non_insert_mappings()
         endif
 
         let sexp_maps = s:get_sexp_maps()
+        "echomsg "sexp_maps: " . string(sexp_maps)
         let b:sexp_map_commands = s:build_sexp_map_cmds(sexp_maps)
         "echomsg "SM Exit: " . string(b:sexp_map_commands[0])
         "echomsg "SM Enter: " . string(b:sexp_map_commands[1])
@@ -1024,7 +1039,6 @@ function! s:sexp_toggle_non_insert_mappings()
         " Build the commands to save/restore any conflicting user maps.
         " Note: This needs to be run even if user hasn't configured escape
         " key (in which case, escape/sexp maps will not have been merged).
-        echomsg "Passing sexp_maps: " . string(sexp_maps)
         let b:user_map_commands =
             \ s:shadow_conflicting_usermaps(esc_key, sexp_maps)
         "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
