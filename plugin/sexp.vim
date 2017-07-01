@@ -326,6 +326,7 @@ let s:plug_map_modes = [
 "    \ ]
 "\ }
 
+let s:re_unesc_pct = '\%(^\|[^%]\)\%(%%\)*\zs%%\@!'
 let s:re_key_notation = '\c\v\<%('
     \ . '%(local)?leader'
     \ . '|%(t_)@!'
@@ -997,10 +998,105 @@ function! s:shadow_conflicting_usermaps(esc_key, maps)
     return cmds
 endfunction
 
+" Note: This is probably the only global function we'll define.
+function! VimSexpState()
+    return exists('b:sexp_state_enabled')
+        \ ? b:sexp_state_enabled ? '[VS:ON]' : '[VS:off]'
+        \ : ''
+endfunction
+
+function! s:has_stl_placeholder(stl)
+    " Pattern for unescaped percent
+    return a:stl =~ s:re_unesc_pct . '{VimSexpState}'
+endfunction
+
+" TEMP DEBUG ONLY - TODO: Remove.
+fu! S_Test_get_optimal_stl_index()
+    let stls = [
+        \ '%<%f %h%m%r%=%{VimSexpState}%-14.(%l,%c%V%) %P',
+        \ '%<%f %h%m%r%=%-14.(%l,%c%V%) %P',
+        \ '%<%f %H%m%R%=%-14.(%l,%c%V%) %P',
+        \ '%<%f %H%M%R%=%-14.(%l,%c%V%)%h%m%r %P',
+        \ '%<%f %h%m%r%-14.(%l,%c%V%) %P',
+        \ '%<%f %H%m%R%-14.(%l,%c%V%) %P',
+        \ '%<%f %%{VimSexpState}%=%-14.(%l,%c%V%) %h%m%r %P',
+    \ ]
+    let i = 0
+    for stl in stls
+        echo i . ":\t" . stl
+        if s:has_stl_placeholder(stl)
+            echo "\tSkipping - already contains placeholder."
+        else
+            echo "\t" . s:get_optimal_stl(stl)
+        endif
+        let i += 1
+    endfor
+endfu
+
+function! s:get_optimal_stl(stl)
+    let idiv = match(a:stl, s:re_unesc_pct . '=')
+    if idiv >= 0
+        let sides = [a:stl[:idiv-1], a:stl[idiv:]]
+    else
+        let sides = [a:stl]
+    endif
+    " Look for spot just after lhs (or only side) flags, or just before rhs flags.
+    let re_flag = '\c[mrhwy]'
+    let iright = 0
+    for iright in range(idiv >= 0 ? 2 : 1)
+        let re = (!iright ? '.*' : '')
+            \ . s:re_unesc_pct . re_flag
+            \ . (!iright ? '\zs' : '')
+        let i = match(sides[iright], re)
+        if i >= 0
+            if iright
+                let i += idiv
+            endif
+            break
+        endif
+        let iright += 1
+    endfor
+    if i < 0
+        " Still no valid location found. Place either at head of right side,
+        " or at end.
+        let i = idiv > 0 ? idiv + 2 : len(a:stl)
+    endif
+
+    return a:stl[:i-1] . "%{VimSexpState()}" . a:stl[i:]
+endfunction
+
+" TODO; Call this once first time.
+function! s:add_sexp_state_to_stl()
+    " First check to see whether user has put a %{VimSexpState} flag in his
+    " 'stl'.
+    let stl = !empty(&l:stl) ? &l:stl : !empty(&g:stl) ? g:stl : ''
+    if empty(stl)
+        " Start with default.
+        let stl = '%<%f %h%m%r%=%-14.(%l,%c%V%) %P'
+    endif
+    if !empty(stl)
+        if s:has_stl_placeholder(stl)
+            return
+        else
+            " Look for a good spot.
+            let stl = s:get_optimal_stl(stl)
+        endif
+    endif
+    let &l:stl = stl
+endfunction
+
+function! s:display_sexp_state(on)
+    " Force update of statusline.
+    " TODO: Will this do it ro flag not in 'stl'?
+    let &ro = &ro
+endfunction
+
 function! s:sexp_toggle_non_insert_mappings()
     let enabled = !exists('b:sexp_state_enabled') || !b:sexp_state_enabled
     " TODO: Probably add a try/catch/finally around all of this...
     if !exists('b:sexp_state_enabled')
+        " TODO: Is this best place for this?
+        call s:add_sexp_state_to_stl()
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
         if exists('g:sexp_escape_key') && !empty(g:sexp_escape_key)
@@ -1065,6 +1161,8 @@ function! s:sexp_toggle_non_insert_mappings()
 
     " Record current state.
     let b:sexp_state_enabled = enabled
+    " Display visual indication of state.
+    call s:display_sexp_state(enabled)
     " Just in case user does something silly with his customizations, make
     " sure toggle is always available.
     " Note: Since toggle is meant to be always active, there's no need to
