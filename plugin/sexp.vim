@@ -35,6 +35,10 @@ if !exists('g:sexp_mappings')
     let g:sexp_mappings = {}
 endif
 
+if !exists('g:sexp_easymotion_mappings')
+    let g:sexp_easymotion_mappings = {}
+endif
+
 let s:sexp_mappings = {
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
@@ -91,6 +95,14 @@ let s:sexp_mappings = {
     \ 'sexp_capture_prev_element':      '<M-S-h>',
     \ 'sexp_capture_next_element':      '<M-S-l>',
     \ }
+
+" Mappings enabled only when easymotion is available.
+let s:sexp_easymotion_mappings = {
+    \ 'sexp_jump_to_list_in_top':       '<Space>F',
+    \ 'sexp_jump_to_list':              '<Space>f',
+    \ 'sexp_jump_to_leaf_in_top':       '<Space>E',
+    \ 'sexp_jump_to_leaf':              '<Space>e',
+\ }
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
@@ -233,6 +245,19 @@ function! s:sexp_create_mappings()
         endif
     endfor
 
+    " Note: This test won't really work unless we defer mapping creation, at
+    " least for these...
+    if 1 || exists('g:EasyMotion_loaded') && g:EasyMotion_loaded
+        for plug in ['sexp_jump_to_list_in_top',  'sexp_jump_to_list',
+                   \ 'sexp_jump_to_leaf_in_top',  'sexp_jump_to_leaf']
+            let lhs = get(g:sexp_easymotion_mappings, plug, s:sexp_easymotion_mappings[plug])
+            if !empty(lhs)
+                execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+                execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+            endif
+        endfor
+    endif
+
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
         imap <silent><buffer> [    <Plug>(sexp_insert_opening_square)
@@ -322,6 +347,17 @@ DefplugN  nnoremap sexp_flow_to_prev_leaf_tail sexp#leaf_flow('n', v:count, 0, 1
 DEFPLUG   xnoremap sexp_flow_to_prev_leaf_tail <Esc>:<C-u>call sexp#leaf_flow('v', v:prevcount, 0, 1)<CR>
 DefplugN  nnoremap sexp_flow_to_next_leaf_tail sexp#leaf_flow('n', v:count, 1, 1)
 DEFPLUG   xnoremap sexp_flow_to_next_leaf_tail <Esc>:<C-u>call sexp#leaf_flow('v', v:prevcount, 1, 1)<CR>
+
+" Easymotion integration
+Defplug   nnoremap sexp_jump_to_list_in_top sexp#jump_to_target('n', v:count, 'list', 1)
+DEFPLUG   xnoremap sexp_jump_to_list_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'list', 1)<CR>
+Defplug   nnoremap sexp_jump_to_list sexp#jump_to_target('n', v:count, 'list', 0)
+DEFPLUG   xnoremap sexp_jump_to_list <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'list', 0)<CR>
+
+Defplug   nnoremap sexp_jump_to_leaf_in_top sexp#jump_to_target('n', v:count, 'leaf', 1)
+DEFPLUG   xnoremap sexp_jump_to_leaf_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 1)<CR>
+Defplug   nnoremap sexp_jump_to_leaf sexp#jump_to_target('n', v:count, 'leaf', 0)
+DEFPLUG   xnoremap sexp_jump_to_leaf <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 0)<CR>
 
 " Adjacent top element
 Defplug  nnoremap sexp_move_to_prev_top_element sexp#move_to_adjacent_element('n', v:count, 0, 0, 1)

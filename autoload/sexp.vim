@@ -1097,6 +1097,141 @@ function! sexp#leaf_flow(mode, count, next, tail)
     endif
 endfunction
 
+" <<<<<<<<< BPS - Distribute these routines - TODO >>>>>>>>>>>>>>>>
+" Return range of requested form:
+" top == 1: top-level form containing cursor
+" top == 0: count'th parent form relative to cursor position (ignoring a list
+"           on whose bracket cursor is positioned).
+" Inputs:
+"   top:     1=top-level form, 0=ancestor form relative to cursor
+"   [count]: which ancestor form is desired, ignored when top == 1
+" Return: [pos1, pos2] or [] if no valid range.
+function! s:get_form_range(top, ...)
+    let cur = getpos('.')
+    let ret = [[0, 0, 0, 0], []]
+    if !a:top
+        let cnt = a:0 && a:1 ? a:1 : 1
+        " To ensure we ignore a list whose open/close bracket cursor is on, move
+        " to start of any current element.
+        call s:move_to_current_element_terminal(0)
+        let i = 0
+        while i < cnt
+            let pos = s:move_to_nearest_bracket(0)
+            if pos[1]
+                let ret[0] = pos
+            else
+                " Can't go any higher.
+                break
+            endif
+            let i += 1
+        endwhile
+    else
+        let ret[0] = s:move_to_top_bracket(0)
+    endif
+    if ret[0][1]
+        " We have an opening bracket. Find corresponding close.
+        let ret[1] = s:current_element_terminal(1)
+    endif
+    " Restore cursor.
+    call s:setcursor(cur)
+    " Return valid range or []
+    return ret[0][1] && ret[1][1] ? ret : []
+endfunction
+
+function! s:sexp_em_get_next_leaf(range)
+    let pos = searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W',
+        \ 's:is_list(line("."), col("."))')
+    " Move to far side of leaf in preparation for next call
+    call s:move_to_current_element_terminal(1)
+    return pos
+endfunction
+
+function! s:sexp_em_get_next_list(range)
+    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+        \ 's:is_list(line("."), col(".")) != 2',
+        \ a:range[1][2])
+endfunction
+
+" TODO: Move the sexp_em functions into easymotion autoload.
+function! s:sexp_em_get_positions(range, tgt)
+    let ret = []
+    let cur = getpos('.')
+    " Start at head of range.
+    call s:setcursor(a:range[0])
+    while 1
+        " Note: *_get_next functions can assume that the initial call will be
+        " from an open bracket, but should perform post-search movement to
+        " position from which next search should be performed.
+        let [l, c] = s:sexp_em_get_next_{a:tgt}(a:range)
+        " Note: Use of stopline in searchpairpos doesn't prevent our going too
+        " far on the final line of range, so check for that here.
+        if !l || s:compare_pos([0, l, c], a:range[1]) > -1
+            " We've gone as far as we can.
+            break
+        endif
+        call add(ret, [l, c])
+    endwhile
+
+    " Restore cursor position.
+    call s:setcursor(cur)
+    return ret
+endfunction
+
+function! s:sexp_em_get_jump_any_pattern(plist)
+    return '\%('
+        \ . join(map(deepcopy(a:plist),
+            \ '"\\%" . v:val[0] . "l\\%" . v:val[1] . "c"'), '\|')
+        \ .'\).'
+endfunction
+
+" Easymotion movements
+function! sexp#jump_to_target(mode, count, tgt, top)
+    let cur = getpos('.')
+    let range = s:get_form_range(a:top, a:count)
+    if empty(range)
+        return
+    endif
+    let plist = s:sexp_em_get_positions(range, a:tgt)
+    if empty(plist)
+        return
+    endif
+
+    let re_anywhere_save = get(g:, 'EasyMotion_re_anywhere', '')
+    let g:EasyMotion_re_anywhere = s:sexp_em_get_jump_any_pattern(plist)
+
+    " Note: Positioning before valid range allows us to determine unambiguously
+    " whether easymotion performs jump.
+    call s:setcursor(range[0])
+    call feedkeys("\<Plug>(easymotion-jumptoanywhere)", 'x')
+
+    if getpos('.') != range[0]
+        " Jump occurred
+        if a:mode ==? 'v'
+            " Note: Using 'inner' with select_current_element to avoid inclusion
+            " of leading whitespace. Unlike text objects if/af, this will still
+            " include the brackets when positioned on an open.
+            call sexp#select_current_element('v', 1)
+        endif
+    else
+        " No jump
+        if a:mode ==? 'v'
+            " Restore original position and visual selection.
+            " Assumption: easymotion does not change marks.
+            call s:select_current_marks('v')
+        else
+            " Restore original position
+            call s:setcursor(cur)
+        endif
+    endif
+
+    " Restore any old setting(s).
+    " TODO: Consider setting/restoring additional easymotion options.
+    let g:EasyMotion_re_anywhere = re_anywhere_save
+
+
+endfunction
+
 " Move cursor to current list start or end and enter insert mode. Inserts
 " a leading space after opening bracket if inserting at head, unless there
 " already is one.
@@ -2322,3 +2457,5 @@ function! sexp#backspace_insertion()
         return "\<BS>"
     endif
 endfunction
+
+" vim:ts=4:sw=4:et:tw=80
