@@ -712,6 +712,11 @@ function! s:is_list(line, col)
         \ ? maybe : 0
 endfunction
 
+" Returns 1 if character at position is a string.
+function! s:is_string(line, col)
+    return s:syntax_match(s:string_region, a:line, a:col)
+endfunction
+
 " Returns 1 if character at position is an atom.
 "
 " An atom is defined as:
@@ -1138,18 +1143,39 @@ function! s:get_form_range(top, ...)
     return ret[0][1] && ret[1][1] ? ret : []
 endfunction
 
-function! s:sexp_em_get_next_leaf(range)
-    let pos = searchpairpos('a\&b', '\S', 'a\&b',
-        \ 'W',
-        \ 's:is_list(line("."), col("."))')
-    " Move to far side of leaf in preparation for next call
-    call s:move_to_current_element_terminal(1)
-    return pos
-endfunction
-
 function! s:sexp_em_get_next_list(range)
     return searchpairpos('a\&b', '\S', 'a\&b', 'W',
         \ 's:is_list(line("."), col(".")) != 2',
+        \ a:range[1][2])
+endfunction
+
+function! s:sexp_em_get_next_leaf(range)
+    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+        \ 's:is_list(line("."), col("."))',
+        \ a:range[1][2])
+endfunction
+
+function! s:sexp_em_get_next_atom(range)
+    " Note: Currently, is_atom() returns true for macro chars preceding a
+    " bracket, so the skip conditional needs to consider both is_atom and
+    " is_list predicates.
+    " TODO: Determine whether fixing is_atom is a better solution, bearing in
+    " mind that other logic may rely on the current logic.
+    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+        \ 's:is_list(line("."), col("."))'
+        \ . ' || !s:is_atom(line("."), col("."))',
+        \ a:range[1][2])
+endfunction
+
+function! s:sexp_em_get_next_string(range)
+    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+        \ '!s:is_string(line("."), col("."))',
+        \ a:range[1][2])
+endfunction
+
+function! s:sexp_em_get_next_comment(range)
+    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+        \ '!s:is_comment(line("."), col("."))',
         \ a:range[1][2])
 endfunction
 
@@ -1160,9 +1186,6 @@ function! s:sexp_em_get_positions(range, tgt)
     " Start at head of range.
     call s:setcursor(a:range[0])
     while 1
-        " Note: *_get_next functions can assume that the initial call will be
-        " from an open bracket, but should perform post-search movement to
-        " position from which next search should be performed.
         let [l, c] = s:sexp_em_get_next_{a:tgt}(a:range)
         " Note: Use of stopline in searchpairpos doesn't prevent our going too
         " far on the final line of range, so check for that here.
@@ -1171,6 +1194,13 @@ function! s:sexp_em_get_positions(range, tgt)
             break
         endif
         call add(ret, [l, c])
+        if a:tgt != 'list'
+            " Note: *_get_next functions will accept a match immediately past
+            " cursor position, so if we're on something other than an open
+            " bracket, get to the end of the current element before subsequent
+            " search.
+            call s:move_to_current_element_terminal(1)
+        endif
     endwhile
 
     " Restore cursor position.

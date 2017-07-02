@@ -98,10 +98,16 @@ let s:sexp_mappings = {
 
 " Mappings enabled only when easymotion is available.
 let s:sexp_easymotion_mappings = {
-    \ 'sexp_jump_to_list_in_top':       '<Space>F',
-    \ 'sexp_jump_to_list':              '<Space>f',
+    \ 'sexp_jump_to_list_in_top':       '<Space>{',
+    \ 'sexp_jump_to_list':              '<Space>[',
     \ 'sexp_jump_to_leaf_in_top':       '<Space>E',
     \ 'sexp_jump_to_leaf':              '<Space>e',
+    \ 'sexp_jump_to_atom_in_top':       '<Space>A',
+    \ 'sexp_jump_to_atom':              '<Space>a',
+    \ 'sexp_jump_to_string_in_top':     '<Space>''',
+    \ 'sexp_jump_to_string':            '<Space>"',
+    \ 'sexp_jump_to_comment_in_top':    '<Space>c',
+    \ 'sexp_jump_to_comment':           '<Space>C',
 \ }
 
 if !empty(g:sexp_filetypes)
@@ -248,8 +254,11 @@ function! s:sexp_create_mappings()
     " Note: This test won't really work unless we defer mapping creation, at
     " least for these...
     if 1 || exists('g:EasyMotion_loaded') && g:EasyMotion_loaded
-        for plug in ['sexp_jump_to_list_in_top',  'sexp_jump_to_list',
-                   \ 'sexp_jump_to_leaf_in_top',  'sexp_jump_to_leaf']
+        for plug in ['sexp_jump_to_list_in_top',    'sexp_jump_to_list',
+                   \ 'sexp_jump_to_leaf_in_top',    'sexp_jump_to_leaf',
+                   \ 'sexp_jump_to_atom_in_top',    'sexp_jump_to_atom',
+                   \ 'sexp_jump_to_string_in_top',  'sexp_jump_to_string',
+                   \ 'sexp_jump_to_comment_in_top', 'sexp_jump_to_comment']
             let lhs = get(g:sexp_easymotion_mappings, plug, s:sexp_easymotion_mappings[plug])
             if !empty(lhs)
                 execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
@@ -358,6 +367,21 @@ Defplug   nnoremap sexp_jump_to_leaf_in_top sexp#jump_to_target('n', v:count, 'l
 DEFPLUG   xnoremap sexp_jump_to_leaf_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 1)<CR>
 Defplug   nnoremap sexp_jump_to_leaf sexp#jump_to_target('n', v:count, 'leaf', 0)
 DEFPLUG   xnoremap sexp_jump_to_leaf <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 0)<CR>
+
+Defplug   nnoremap sexp_jump_to_atom_in_top sexp#jump_to_target('n', v:count, 'atom', 1)
+DEFPLUG   xnoremap sexp_jump_to_atom_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 1)<CR>
+Defplug   nnoremap sexp_jump_to_atom sexp#jump_to_target('n', v:count, 'atom', 0)
+DEFPLUG   xnoremap sexp_jump_to_atom <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 0)<CR>
+
+Defplug   nnoremap sexp_jump_to_string_in_top sexp#jump_to_target('n', v:count, 'string', 1)
+DEFPLUG   xnoremap sexp_jump_to_string_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'string', 1)<CR>
+Defplug   nnoremap sexp_jump_to_string sexp#jump_to_target('n', v:count, 'string', 0)
+DEFPLUG   xnoremap sexp_jump_to_string <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'string', 0)<CR>
+
+Defplug   nnoremap sexp_jump_to_comment_in_top sexp#jump_to_target('n', v:count, 'comment', 1)
+DEFPLUG   xnoremap sexp_jump_to_comment_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'comment', 1)<CR>
+Defplug   nnoremap sexp_jump_to_comment sexp#jump_to_target('n', v:count, 'comment', 0)
+DEFPLUG   xnoremap sexp_jump_to_comment <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'comment', 0)<CR>
 
 " Adjacent top element
 Defplug  nnoremap sexp_move_to_prev_top_element sexp#move_to_adjacent_element('n', v:count, 0, 0, 1)
