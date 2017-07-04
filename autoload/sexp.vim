@@ -814,6 +814,11 @@ function! s:move_to_adjacent_element(next, tail, top)
     return pos
 endfunction
 
+" UNDER CONSTRUCTION - maybe not needed.
+function! s:move_to_next_open()
+    let pos = s:move_to_adjacent_element(1, 0, 0)
+endfunction
+
 " Move cursor to pos, and then to the next element if in whitespace.
 function! s:move_to_element_near_position(pos)
     call s:setcursor(a:pos)
@@ -1102,8 +1107,8 @@ function! sexp#leaf_flow(mode, count, next, tail)
     endif
 endfunction
 
-" <<<<<<<<< BPS - Distribute these routines - TODO >>>>>>>>>>>>>>>>
-" Return range of requested form:
+" Return range of requested brace-enclosed form as [open-pos, close-pos], with
+" positions in standard 4-part format.
 " top == 1: top-level form containing cursor
 " top == 0: count'th parent form relative to cursor position (ignoring a list
 "           on whose bracket cursor is positioned).
@@ -1113,34 +1118,44 @@ endfunction
 " Return: [pos1, pos2] or [] if no valid range.
 function! s:get_form_range(top, ...)
     let cur = getpos('.')
-    let ret = [[0, 0, 0, 0], []]
-    if !a:top
+    " First find desired close bracket.
+    " Rationale: We need both open and close, but finding close first obviates
+    " need for special handling to skip over macro chars.
+    if a:top
+        let tpos = s:move_to_top_bracket(1)
+    else
         let cnt = a:0 && a:1 ? a:1 : 1
-        " To ensure we ignore a list whose open/close bracket cursor is on, move
-        " to start of any current element.
-        call s:move_to_current_element_terminal(0)
+        " Pre-positioning at end of current element ensures we don't include
+        " current list.
+        call s:move_to_current_element_terminal(1)
         let i = 0
         while i < cnt
-            let pos = s:move_to_nearest_bracket(0)
-            if pos[1]
-                let ret[0] = pos
-            else
+            let tpos = s:move_to_nearest_bracket(1)
+            if !tpos[1]
                 " Can't go any higher.
                 break
             endif
             let i += 1
         endwhile
-    else
-        let ret[0] = s:move_to_top_bracket(0)
     endif
-    if ret[0][1]
-        " We have an opening bracket. Find corresponding close.
-        let ret[1] = s:current_element_terminal(1)
+    " If tpos is invalid, we weren't inside a form, and will have to settle for
+    " the next one in the forward direction.
+    if !tpos[1]
+        while 1
+            let tpos = s:move_to_adjacent_element(1, 1, 1)
+            if !tpos[1] || s:is_list(tpos[1], tpos[2])
+                break
+            endif
+        endwhile
+    endif
+    if tpos[1]
+        " We have a closing bracket. Find corresponding open.
+        let bpos = s:nearest_bracket(0)
     endif
     " Restore cursor.
     call s:setcursor(cur)
     " Return valid range or []
-    return ret[0][1] && ret[1][1] ? ret : []
+    return bpos[1] && tpos[1] ? [bpos, tpos] : []
 endfunction
 
 function! s:sexp_em_get_next_list(range)
@@ -1220,8 +1235,10 @@ function! sexp#jump_to_target(mode, count, tgt, top)
     let cur = getpos('.')
     let range = s:get_form_range(a:top, a:count)
     if empty(range)
+        " TODO: Warn?
         return
     endif
+    " TODO: Don't include off-screen positions.
     let plist = s:sexp_em_get_positions(range, a:tgt)
     if empty(plist)
         return

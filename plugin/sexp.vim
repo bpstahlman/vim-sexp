@@ -35,10 +35,6 @@ if !exists('g:sexp_mappings')
     let g:sexp_mappings = {}
 endif
 
-if !exists('g:sexp_easymotion_mappings')
-    let g:sexp_easymotion_mappings = {}
-endif
-
 let s:sexp_mappings = {
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
@@ -62,6 +58,16 @@ let s:sexp_mappings = {
     \ 'sexp_flow_to_next_leaf_head':    '<M-S-w>',
     \ 'sexp_flow_to_prev_leaf_tail':    '<M-S-g>',
     \ 'sexp_flow_to_next_leaf_tail':    '<M-S-e>',
+    \ 'sexp_jump_to_list_in_top':       '<Space>{',
+    \ 'sexp_jump_to_list':              '<Space>[',
+    \ 'sexp_jump_to_leaf_in_top':       '<Space>E',
+    \ 'sexp_jump_to_leaf':              '<Space>e',
+    \ 'sexp_jump_to_atom_in_top':       '<Space>A',
+    \ 'sexp_jump_to_atom':              '<Space>a',
+    \ 'sexp_jump_to_string_in_top':     '<Space>''',
+    \ 'sexp_jump_to_string':            '<Space>"',
+    \ 'sexp_jump_to_comment_in_top':    '<Space>c',
+    \ 'sexp_jump_to_comment':           '<Space>C',
     \ 'sexp_move_to_prev_top_element':  '[[',
     \ 'sexp_move_to_next_top_element':  ']]',
     \ 'sexp_select_prev_element':       '[e',
@@ -95,20 +101,6 @@ let s:sexp_mappings = {
     \ 'sexp_capture_prev_element':      '<M-S-h>',
     \ 'sexp_capture_next_element':      '<M-S-l>',
     \ }
-
-" Mappings enabled only when easymotion is available.
-let s:sexp_easymotion_mappings = {
-    \ 'sexp_jump_to_list_in_top':       '<Space>{',
-    \ 'sexp_jump_to_list':              '<Space>[',
-    \ 'sexp_jump_to_leaf_in_top':       '<Space>E',
-    \ 'sexp_jump_to_leaf':              '<Space>e',
-    \ 'sexp_jump_to_atom_in_top':       '<Space>A',
-    \ 'sexp_jump_to_atom':              '<Space>a',
-    \ 'sexp_jump_to_string_in_top':     '<Space>''',
-    \ 'sexp_jump_to_string':            '<Space>"',
-    \ 'sexp_jump_to_comment_in_top':    '<Space>c',
-    \ 'sexp_jump_to_comment':           '<Space>C',
-\ }
 
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
@@ -251,15 +243,14 @@ function! s:sexp_create_mappings()
         endif
     endfor
 
-    " Note: This test won't really work unless we defer mapping creation, at
-    " least for these...
-    if 1 || exists('g:EasyMotion_loaded') && g:EasyMotion_loaded
+    " If easymotion plugin is loaded, create easymotion integration maps.
+    if !empty(mapcheck('<Plug>(easymotion-jumptoanywhere)'))
         for plug in ['sexp_jump_to_list_in_top',    'sexp_jump_to_list',
                    \ 'sexp_jump_to_leaf_in_top',    'sexp_jump_to_leaf',
                    \ 'sexp_jump_to_atom_in_top',    'sexp_jump_to_atom',
                    \ 'sexp_jump_to_string_in_top',  'sexp_jump_to_string',
                    \ 'sexp_jump_to_comment_in_top', 'sexp_jump_to_comment']
-            let lhs = get(g:sexp_easymotion_mappings, plug, s:sexp_easymotion_mappings[plug])
+            let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
             if !empty(lhs)
                 execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
                 execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
