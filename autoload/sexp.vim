@@ -1158,40 +1158,95 @@ function! s:get_form_range(top, ...)
     return bpos[1] && tpos[1] ? [bpos, tpos] : []
 endfunction
 
-function! s:sexp_em_get_next_list(range)
-    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+" Return a range that includes only the portion of the input range visible in
+" current window, and a pair of booleans indicating whether the range is
+" inclusive at that end. (Note that unconstrained ends are exclusive.)
+function! s:constrain_range_to_view(range)
+    let range = deepcopy(a:range)
+    let constrained = [0, 0]
+    " Extract the view/range top/bottom lines for comparison.
+    let [vt, vb] = [line('w0'), line('w$')]
+    let [rt, rb] = [a:range[0][1], a:range[1][1]]
+    if rt < vt
+        " Range includes non-visible text above viewport.
+        let range[0][1] = vt
+        let range[0][2] = 1
+        let constrained[0] = 1
+    endif
+    if rb > vb
+        " Range includes non-visible text below viewport.
+        let range[1][1] = vb
+        let range[1][2] = col([vb, '$'])
+        let constrained[1] = 1
+    endif
+    return [range, constrained]
+endfunction
+
+function! s:sexp_em_get_next_list(stopline, accept_curpos)
+    return searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W' . (a:accept_curpos ? 'c' : ''),
         \ 's:is_list(line("."), col(".")) != 2',
-        \ a:range[1][2])
+        \ a:stopline)
 endfunction
 
-function! s:sexp_em_get_next_leaf(range)
-    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+function! s:sexp_em_get_next_leaf(stopline, accept_curpos)
+    return searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W' . (a:accept_curpos ? 'c' : ''),
         \ 's:is_list(line("."), col("."))',
-        \ a:range[1][2])
+        \ a:stopline)
 endfunction
 
-function! s:sexp_em_get_next_atom(range)
+" TODO: Define this as default somewhere, but let user override.
+" Question: Should it be grouped with the pass-through options?
+let s:re_subword_char = '[^_[:punct:][:space:]]'
+
+" Return list of positions representing subwords within the atom at cursor.
+function! s:sexp_em_find_subwords_in_current_atom()
+    let ret = []
+    " Cache atom's line and start col.
+    let [line, col] = [line('.'), col('.')]
+    " Note: The following call cannot fail, since caller has guaranteed that
+    " we're sitting on head of atom.
+    let tpos = s:current_atom_terminal(1)
+    let atom = getline('.')[col-1 : tpos[2]-1]
+    let end = 0
+    while end >= 0
+        let [_, beg, end] = matchstrpos(atom,
+            \ '\%(' . get(g:, 're_subword_char', s:re_subword_char)
+            \ . '\)\+', end)
+        if beg >= 0
+            " Accumulate the subword start location.
+            call add(ret, [line, col + beg])
+        endif
+    endwhile
+    return ret
+endfunction
+
+function! s:sexp_em_get_next_atom(stopline, accept_curpos)
     " Note: Currently, is_atom() returns true for macro chars preceding a
     " bracket, so the skip conditional needs to consider both is_atom and
     " is_list predicates.
     " TODO: Determine whether fixing is_atom is a better solution, bearing in
     " mind that other logic may rely on the current logic.
-    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+    return searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W' . (a:accept_curpos ? 'c' : ''),
         \ 's:is_list(line("."), col("."))'
         \ . ' || !s:is_atom(line("."), col("."))',
-        \ a:range[1][2])
+        \ a:stopline)
 endfunction
 
-function! s:sexp_em_get_next_string(range)
-    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+function! s:sexp_em_get_next_string(stopline, accept_curpos)
+    return searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W' . (a:accept_curpos ? 'c' : ''),
         \ '!s:is_string(line("."), col("."))',
-        \ a:range[1][2])
+        \ a:stopline)
 endfunction
 
-function! s:sexp_em_get_next_comment(range)
-    return searchpairpos('a\&b', '\S', 'a\&b', 'W',
+function! s:sexp_em_get_next_comment(stopline, accept_curpos)
+    return searchpairpos('a\&b', '\S', 'a\&b',
+        \ 'W' . (a:accept_curpos ? 'c' : ''),
         \ '!s:is_comment(line("."), col("."))',
-        \ a:range[1][2])
+        \ a:stopline)
 endfunction
 
 " TODO: Move the sexp_em functions into easymotion autoload.
@@ -1200,15 +1255,34 @@ function! s:sexp_em_get_positions(range, tgt)
     let cur = getpos('.')
     " Start at head of range.
     call s:setcursor(a:range[0])
+    let accept_curpos = 1
     while 1
-        let [l, c] = s:sexp_em_get_next_{a:tgt}(a:range)
+        " Note: Targets like atom-subword use atom's get_next.
+        let use_tgt = substitute(a:tgt, '-.*', '', '')
+        " TODO: Given the amount of common code in the various
+        " sexp_em_get_next_* functions, should probably factor some of it up
+        " here. Also, consider using logic more like the flow commands, with
+        " checks in non-list case for the other types of elements. Would it be
+        " faster? Could just have variables representing the conditions, and
+        " could get rid of this function call altogether. To know whether this
+        " is unnecessary optimization, need to time the searchpairpos calls...
+        let [l, c] =
+            \ s:sexp_em_get_next_{use_tgt}(a:range[1][1], accept_curpos)
+        " Note: Because of viewport constraints, we may accept match at cursor
+        " on initial search, but never subsequent ones.
+        let accept_curpos = 0
         " Note: Use of stopline in searchpairpos doesn't prevent our going too
         " far on the final line of range, so check for that here.
         if !l || s:compare_pos([0, l, c], a:range[1]) > -1
             " We've gone as far as we can.
             break
         endif
-        call add(ret, [l, c])
+        if a:tgt == 'atom-subword'
+            " Special post-processing required for subword case
+            call extend(ret, s:sexp_em_find_subwords_in_current_atom())
+        else
+            call add(ret, [l, c])
+        endif
         if a:tgt != 'list'
             " Note: *_get_next functions will accept a match immediately past
             " cursor position, so if we're on something other than an open
@@ -1238,7 +1312,12 @@ function! sexp#jump_to_target(mode, count, tgt, top)
         " TODO: Warn?
         return
     endif
-    " TODO: Don't include off-screen positions.
+    " Make sure we don't search off screen.
+    " TODO: I'm thinking perhaps we should always include cursor position at
+    " start.
+    " Rationale: We want to be able to jump to head of top-level form.
+    let [range, inc] = s:constrain_range_to_view(range)
+    " Get list of target positions in range: format [[line, col],...]
     let plist = s:sexp_em_get_positions(range, a:tgt)
     if empty(plist)
         return
@@ -1249,16 +1328,24 @@ function! sexp#jump_to_target(mode, count, tgt, top)
 
     " Note: Positioning before valid range allows us to determine unambiguously
     " whether easymotion performs jump.
-    call s:setcursor(range[0])
+    "call s:setcursor(range[0])
+    call s:setcursor(cur)
     call feedkeys("\<Plug>(easymotion-jumptoanywhere)", 'x')
 
-    if getpos('.') != range[0]
+    if getpos('.') != cur
         " Jump occurred
         if a:mode ==? 'v'
-            " Note: Using 'inner' with select_current_element to avoid inclusion
-            " of leading whitespace. Unlike text objects if/af, this will still
-            " include the brackets when positioned on an open.
-            call sexp#select_current_element('v', 1)
+            if a:tgt == 'atom-subword'
+                " Select just the subword.
+                exe 'normal! v/\%('
+                    \ . get(g:, 're_subword_char', s:re_subword_char)
+                    \ . '\)\+/e' . "\<CR>"
+            else
+                " Note: Using 'inner' with select_current_element to avoid inclusion
+                " of leading whitespace. Unlike text objects if/af, this will still
+                " include the brackets when positioned on an open.
+                call sexp#select_current_element('v', 1)
+            endif
         endif
     else
         " No jump
@@ -1275,7 +1362,6 @@ function! sexp#jump_to_target(mode, count, tgt, top)
     " Restore any old setting(s).
     " TODO: Consider setting/restoring additional easymotion options.
     let g:EasyMotion_re_anywhere = re_anywhere_save
-
 
 endfunction
 

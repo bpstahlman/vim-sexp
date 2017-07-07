@@ -58,12 +58,14 @@ let s:sexp_mappings = {
     \ 'sexp_flow_to_next_leaf_head':    '<M-S-w>',
     \ 'sexp_flow_to_prev_leaf_tail':    '<M-S-g>',
     \ 'sexp_flow_to_next_leaf_tail':    '<M-S-e>',
-    \ 'sexp_jump_to_list_in_top':       '<Space>{',
-    \ 'sexp_jump_to_list':              '<Space>[',
+    \ 'sexp_jump_to_list_in_top':       '<Space>[',
+    \ 'sexp_jump_to_list':              '<Space>{',
     \ 'sexp_jump_to_leaf_in_top':       '<Space>E',
     \ 'sexp_jump_to_leaf':              '<Space>e',
     \ 'sexp_jump_to_atom_in_top':       '<Space>A',
     \ 'sexp_jump_to_atom':              '<Space>a',
+    \ 'sexp_jump_to_subword_in_top':    '<Space>-',
+    \ 'sexp_jump_to_subword':           '<Space>_',
     \ 'sexp_jump_to_string_in_top':     '<Space>''',
     \ 'sexp_jump_to_string':            '<Space>"',
     \ 'sexp_jump_to_comment_in_top':    '<Space>c',
@@ -248,6 +250,7 @@ function! s:sexp_create_mappings()
         for plug in ['sexp_jump_to_list_in_top',    'sexp_jump_to_list',
                    \ 'sexp_jump_to_leaf_in_top',    'sexp_jump_to_leaf',
                    \ 'sexp_jump_to_atom_in_top',    'sexp_jump_to_atom',
+                   \ 'sexp_jump_to_subword_in_top', 'sexp_jump_to_subword',
                    \ 'sexp_jump_to_string_in_top',  'sexp_jump_to_string',
                    \ 'sexp_jump_to_comment_in_top', 'sexp_jump_to_comment']
             let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
@@ -363,6 +366,11 @@ Defplug   nnoremap sexp_jump_to_atom_in_top sexp#jump_to_target('n', v:count, 'a
 DEFPLUG   xnoremap sexp_jump_to_atom_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 1)<CR>
 Defplug   nnoremap sexp_jump_to_atom sexp#jump_to_target('n', v:count, 'atom', 0)
 DEFPLUG   xnoremap sexp_jump_to_atom <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 0)<CR>
+
+Defplug   nnoremap sexp_jump_to_subword_in_top sexp#jump_to_target('n', v:count, 'atom-subword', 1)
+DEFPLUG   xnoremap sexp_jump_to_subword_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom-subword', 1)<CR>
+Defplug   nnoremap sexp_jump_to_subword sexp#jump_to_target('n', v:count, 'atom-subword', 0)
+DEFPLUG   xnoremap sexp_jump_to_subword <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom-subword', 0)<CR>
 
 Defplug   nnoremap sexp_jump_to_string_in_top sexp#jump_to_target('n', v:count, 'string', 1)
 DEFPLUG   xnoremap sexp_jump_to_string_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'string', 1)<CR>
