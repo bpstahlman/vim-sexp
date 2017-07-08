@@ -35,6 +35,8 @@ if !exists('g:sexp_mappings')
     let g:sexp_mappings = {}
 endif
 
+let s:sexp_state_toggle = '<C-k>'
+
 let s:sexp_mappings = {
     \ 'sexp_toggle_sexp_state':         '<C-k>',
     \ 'sexp_outer_list':                'af',
@@ -341,7 +343,7 @@ let s:re_key_notation = '\c\v\<%('
 if !empty(g:sexp_filetypes)
     augroup sexp_filetypes
         autocmd!
-        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:on_buf_load()'
+        execute 'autocmd FileType ' . g:sexp_filetypes . ' call s:on_file_type()'
     augroup END
 endif
 
@@ -421,10 +423,12 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
+" TODO: Is this even needed now that it's in the key map? I think it should be
+" one or the other...
 function! s:create_sexp_state_toggle()
     for mode in ['n', 'x']
         execute mode . 'noremap <buffer><nowait> '
-            \ . g:sexp_toggle_map
+            \ . s:get_sexp_state_toggle()
             \ . ' <Esc>:<C-u>call <SID>toggle_sexp_state('
             \ . (mode == "n" ? "'n'" : "'v'")
             \ . ')<CR>'
@@ -1000,26 +1004,27 @@ endfunction
 
 " Note: This is probably the only global function we'll define.
 function! VimSexpState()
-    return exists('b:sexp_state_enabled')
+    return exists('b:sexp_expert_mode') && b:sexp_expert_mode &&
+        \ exists('b:sexp_state_enabled')
         \ ? b:sexp_state_enabled ? '[VS:ON]' : '[VS:off]'
         \ : ''
 endfunction
 
 function! s:has_stl_placeholder(stl)
     " Pattern for unescaped percent
-    return a:stl =~ s:re_unesc_pct . '{VimSexpState}'
+    return a:stl =~ s:re_unesc_pct . '{VimSexpState()}'
 endfunction
 
 " TEMP DEBUG ONLY - TODO: Remove.
 fu! S_Test_get_optimal_stl_index()
     let stls = [
-        \ '%<%f %h%m%r%=%{VimSexpState}%-14.(%l,%c%V%) %P',
+        \ '%<%f %h%m%r%=%{VimSexpState()}%-14.(%l,%c%V%) %P',
         \ '%<%f %h%m%r%=%-14.(%l,%c%V%) %P',
         \ '%<%f %H%m%R%=%-14.(%l,%c%V%) %P',
         \ '%<%f %H%M%R%=%-14.(%l,%c%V%)%h%m%r %P',
         \ '%<%f %h%m%r%-14.(%l,%c%V%) %P',
         \ '%<%f %H%m%R%-14.(%l,%c%V%) %P',
-        \ '%<%f %%{VimSexpState}%=%-14.(%l,%c%V%) %h%m%r %P',
+        \ '%<%f %%{VimSexpState()}%=%-14.(%l,%c%V%) %h%m%r %P',
     \ ]
     let i = 0
     for stl in stls
@@ -1065,9 +1070,11 @@ function! s:get_optimal_stl(stl)
     return a:stl[:i-1] . "%{VimSexpState()}" . a:stl[i:]
 endfunction
 
+let s:laststatus_save = -1
+
 " TODO; Call this once first time.
 function! s:add_sexp_state_to_stl()
-    " First check to see whether user has put a %{VimSexpState} flag in his
+    " First check to see whether user has put a %{VimSexpState()} flag in his
     " 'stl'.
     let stl = !empty(&l:stl) ? &l:stl : !empty(&g:stl) ? g:stl : ''
     if empty(stl)
@@ -1085,25 +1092,76 @@ function! s:add_sexp_state_to_stl()
     let &l:stl = stl
 endfunction
 
+let s:dbg_cnt = 0
+function! s:do_status_line()
+    let s:dbg_cnt += 1
+    echomsg "Inside do_status_line: " . s:dbg_cnt
+    if exists('b:sexp_expert_mode') && b:sexp_expert_mode
+        " Have we saved statusline for this window?
+        if !exists('w:sexp_statusline_save')
+            let w:sexp_statusline_save = !empty(&l:statusline)
+                \ ? &l:statusline
+                \ : 1
+        endif
+        " Design Decision: 'laststatus' reflects the window we're in. We save
+        " it only once, the first time we override. (To do otherwise would
+        " require ref count of some sort and perhaps another autocommand or
+        " two, and I don't think the extra complexity is justified.)
+        if !exists('s:laststatus_save')
+            let s:laststatus_save = &laststatus
+        endif
+        set laststatus=2
+        echomsg "Inside do_status_line, dbg_cnt=" . s:dbg_cnt
+        call s:add_sexp_state_to_stl()
+    else
+        " Not in sexp expert mode. Make sure we're not overriding 'stl'.
+        if exists('w:sexp_statusline_save')
+            if type(w:sexp_statusline_save) == 0
+                " Just remove local setting to allow global to take effect.
+                setl stl=
+            else
+                " Restore explicit local setting.
+                let &l:stl = w:sexp_statusline_save
+            endif
+            unlet! w:sexp_statusline_save
+        endif
+        if exists('s:laststatus_save')
+            let &laststatus = s:laststatus_save
+        endif
+    endif
+endfunction
+
 function! s:display_sexp_state(on)
     " Force update of statusline.
     " TODO: Will this do it ro flag not in 'stl'?
     let &ro = &ro
 endfunction
 
+" TODO: Eventually allow this to be list of toggles, or else support key-chord
+" somehow.
+function! s:get_sexp_state_toggle()
+    " TODO: Needs to default
+    return get(g:, 'sexp_state_toggle', s:sexp_state_toggle)
+endfunction
+
+function! s:get_sexp_escape_key()
+    return get(g:, 'sexp_escape_key', '')
+endfunction
+
 function! s:sexp_toggle_non_insert_mappings()
     let enabled = !exists('b:sexp_state_enabled') || !b:sexp_state_enabled
     " TODO: Probably add a try/catch/finally around all of this...
     if !exists('b:sexp_state_enabled')
-        " TODO: Is this best place for this?
-        call s:add_sexp_state_to_stl()
+        " Record current state.
+        let b:sexp_state_enabled = 1
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
-        if exists('g:sexp_escape_key') && !empty(g:sexp_escape_key)
+        if exists('g:sexp_expert_mode') && g:sexp_expert_mode
             " TODO: Perhaps some validation: e.g., single key.
             " TODO: Should we permit stuff like <LocalLeader>? If so, need to
             " canonicalize case...
-            let esc_key = g:sexp_escape_key
+            let esc_key = s:get_sexp_escape_key()
+            let b:sexp_expert_mode = 1
         else
             let esc_key = ''
         endif
@@ -1139,6 +1197,8 @@ function! s:sexp_toggle_non_insert_mappings()
             \ s:shadow_conflicting_usermaps(esc_key, sexp_maps)
         "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
         "echomsg "UM Enter esc: " . string(b:user_map_commands[1])
+    else
+        let b:sexp_state_enabled = enabled
     endif
     " Perform entry/exit using buf-locally cached map commands.
     " Caveat: Order in which cmd groups are processed is significant: e.g.,
@@ -1159,8 +1219,6 @@ function! s:sexp_toggle_non_insert_mappings()
         endfor
     endfor
 
-    " Record current state.
-    let b:sexp_state_enabled = enabled
     " Display visual indication of state.
     call s:display_sexp_state(enabled)
     " Just in case user does something silly with his customizations, make
@@ -1179,14 +1237,22 @@ function! s:toggle_sexp_state(...)
     endif
 endfunction
 
-function! s:on_buf_load()
-    " TEMP SOLUTION
+function! s:on_file_type()
+    " TODO: Perhaps eliminate vim_sexp_loaded, using sexp_expert_mode, or
+    " something else that has to be created anyways.
     if !exists('b:vim_sexp_loaded')
         let b:vim_sexp_loaded = 1
-        if (!exists('g:sexp_toggle_map') || empty(g:sexp_toggle_map))
+        if !exists('g:sexp_expert_mode') || !g:sexp_expert_mode
             call s:sexp_create_mappings()
         else
+            let b:sexp_expert_mode = 1
             call s:create_sexp_state_toggle()
+            augroup sexp_expert_mode
+                au!
+                au BufEnter * call s:do_status_line()
+                au WinEnter * call s:do_status_line()
+            augroup END
+            call s:do_status_line()
         endif
     endif
 endfunction
