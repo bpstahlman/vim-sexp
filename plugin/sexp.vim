@@ -424,10 +424,11 @@ function! s:repeat_set(buf, count)
 endfunction
 
 " TODO: Is this even needed now that it's in the key map? I think it should be
-" one or the other...
+" one or the other... If it needs special handling, probably just remove from
+" s:sexp_mappings.
 function! s:create_sexp_state_toggle()
     for mode in ['n', 'x']
-        execute mode . 'noremap <buffer><nowait> '
+        execute mode . 'noremap <silent><buffer><nowait> '
             \ . s:get_sexp_state_toggle()
             \ . ' <Esc>:<C-u>call <SID>toggle_sexp_state('
             \ . (mode == "n" ? "'n'" : "'v'")
@@ -691,7 +692,7 @@ endfunction
 
 " Get list of dictionaries (keys: lhs, modes, plug) representing the sexp maps
 " to be created, sorted by lhs.
-function! s:get_sexp_maps()
+function! s:get_sexp_maps(expert_mode)
     let sexp_maps = []
     for [plug, modestr] in s:plug_map_modes
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
@@ -699,10 +700,21 @@ function! s:get_sexp_maps()
             " Empty or all whitespace lhs disables map.
             continue
         endif
+        if lhs[0:1] == '<>'
+            " Design Decision: Strip a leading <> even if not expert mode.
+            " TODO: Present non-fatal warning to user.
+            let permanent = 1
+            let lhs = lhs[2:]
+        else
+            let permanent = 0
+        endif
         " Note: Need to canonicalize for subsequent comparisons.
         let lhs = join(s:split_and_canonicalize_lhs(lhs), '')
+        " Note: permanent flag is needed only for expert mode, but might as
+        " well set it unconditionally.
         call add(sexp_maps,
-            \ {'lhs': lhs, 'modes': s:expand_modes(modestr), 'plug': plug})
+            \ {'lhs': lhs, 'permanent': !a:expert_mode || permanent,
+            \ 'modes': s:expand_modes(modestr), 'plug': plug})
     endfor
     if !empty(sexp_maps)
         " Sort the sexp_maps list by lhs.
@@ -713,25 +725,35 @@ endfunction
 
 " Build commands for creating/deleting "sexp maps" upon entry/exit from sexp
 " state, warning user about any lhs ambiguities.
-function! s:build_sexp_map_cmds(sexp_maps)
-    let cmds = [[], []]
+function! s:build_sexp_map_cmds(sexp_maps, expert_mode)
+    " TODO: Consider using map instead.
+    if a:expert_mode
+        " Order: OFF, ON, PERMANENT
+        let cmds = [[], [], []]
+    else
+        let cmds = []
+    endif
     let prev_sm = {}
     for sm in a:sexp_maps
-        let [lhs, modes, plug] = [sm.lhs, sm.modes, sm.plug]
+        let [lhs, permanent, modes, plug] =
+            \ [sm.lhs, sm.permanent, sm.modes, sm.plug]
         if !empty(prev_sm)
             " Warn user about any ambiguities.
             call s:check_ambiguity(prev_sm, sm, 1)
         endif
         for mode in split(modes, '\zs')
-            " Accumulate exit/entry commands.
-            call add(cmds[0],
-                \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
-            call add(cmds[1],
+            if a:expert_mode && !permanent
+                " Accumulate exit/entry commands.
+                call add(cmds[0],
+                    \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
+            endif
+            call add(a:expert_mode ? permanent ? cmds[2] : cmds[1] : cmds,
                 \ mode . 'map <nowait><silent><buffer>'
                 \ . lhs . ' <Plug>(' . plug . ')')
         endfor
         let prev_sm = sm
     endfor
+    " Return either single list (non-expert mode) or list of 3 lists.
     return cmds
 endfunction
 
@@ -1070,8 +1092,6 @@ function! s:get_optimal_stl(stl)
     return a:stl[:i-1] . "%{VimSexpState()}" . a:stl[i:]
 endfunction
 
-let s:laststatus_save = -1
-
 " TODO; Call this once first time.
 function! s:add_sexp_state_to_stl()
     " First check to see whether user has put a %{VimSexpState()} flag in his
@@ -1092,10 +1112,89 @@ function! s:add_sexp_state_to_stl()
     let &l:stl = stl
 endfunction
 
-let s:dbg_cnt = 0
-function! s:do_status_line()
+fu! s:get_windows_in_last_row()
+    let ret = []
+    let [wnr_orig, wnr] = [winnr(), winnr('$')]
+    while wnr > 0
+        exe wnr . 'wincmd w'
+        " Attempt to move down.
+        wincmd j
+        if winnr() != wnr
+            " Can't move down from last row.
+            break
+        endif
+        " Use insert for intuitive order.
+        " Note: Is this inefficient in VimL? If so, could just add and reverse
+        " later.
+        call insert(ret, wnr)
+        let wnr -= 1
+    endwhile
+    " Return to original window.
+    exe wnr_orig . 'wincmd w'
+    return ret
+endfu
+
+fu! s:get_buffers_in_last_row()
+    return map(s:get_windows_in_last_row(), 'winbufnr(v:val)')
+endfu
+
+fu! s:is_sexp_buffer_in_last_row()
+    for bnr in s:get_buffers_in_last_row()
+        if getbufvar(bnr, 'sexp_expert_mode', -1) == 1
+            return 1
+        endif
+    endfor
+endfu
+
+" Called whenever we move to a new window, or a new buffer enters current
+" window.
+function! s:do_status_line_new()
+    if s:is_sexp_buffer_in_last_row()
+        " Last row contains a sexp expert mode buffer.
+        " Have we saved statusline for this window?
+        if !exists('s:laststatus_save')
+            let s:laststatus_save = &laststatus
+        endif
+        set laststatus=2
+    else
+        if exists('s:laststatus_save')
+            " Assumption: BufEnter and WinEnter trigger on tab change.
+            " (If they didn't, restoring 'laststatus' solely on the basis of
+            " current tab's last row would be problematic.)
+            let &laststatus = s:laststatus_save
+            unlet! s:laststatus_save
+        endif
+    endif
+    let expert_mode_buf = getbufvar('%', 'sexp_expert_mode', -1) == 1
+    if expert_mode_buf
+        " Make sure we're overriding 'stl' in this window.
+        if !exists('w:sexp_statusline_save')
+            let w:sexp_statusline_save = !empty(&l:statusline)
+                \ ? &l:statusline
+                \ : 1
+        endif
+        call s:add_sexp_state_to_stl()
+    else
+        " Make sure we're not overriding 'stl' in this window.
+        if exists('w:sexp_statusline_save')
+            if type(w:sexp_statusline_save) == 0
+                " Just remove local setting to allow global to take effect.
+                setl stl=
+            else
+                " Restore explicit local setting.
+                let &l:stl = w:sexp_statusline_save
+            endif
+            unlet! w:sexp_statusline_save
+        endif
+    endif
+endfunction
+
+function! s:do_status_line_old()
     let s:dbg_cnt += 1
-    echomsg "Inside do_status_line: " . s:dbg_cnt
+    "echomsg "Inside do_status_line: " . s:dbg_cnt
+    " TODO: Do we still need to check expert mode here? Will we even be called
+    " in non-expert mode? I think the real test is sexp vs non-sexp, so could
+    " check a different buf-local var.
     if exists('b:sexp_expert_mode') && b:sexp_expert_mode
         " Have we saved statusline for this window?
         if !exists('w:sexp_statusline_save')
@@ -1111,7 +1210,7 @@ function! s:do_status_line()
             let s:laststatus_save = &laststatus
         endif
         set laststatus=2
-        echomsg "Inside do_status_line, dbg_cnt=" . s:dbg_cnt
+        "echomsg "Inside do_status_line, dbg_cnt=" . s:dbg_cnt
         call s:add_sexp_state_to_stl()
     else
         " Not in sexp expert mode. Make sure we're not overriding 'stl'.
@@ -1148,30 +1247,34 @@ function! s:get_sexp_escape_key()
     return get(g:, 'sexp_escape_key', '')
 endfunction
 
+function! s:sexp_create_non_insert_mappings()
+    let b:sexp_expert_mode = 0
+    let maps = s:get_sexp_maps(0)
+    for cmd in s:build_sexp_map_cmds(maps, 0)
+        exe cmd
+    endfor
+endfunction
+
 function! s:sexp_toggle_non_insert_mappings()
-    let enabled = !exists('b:sexp_state_enabled') || !b:sexp_state_enabled
-    " TODO: Probably add a try/catch/finally around all of this...
-    if !exists('b:sexp_state_enabled')
-        " Record current state.
-        let b:sexp_state_enabled = 1
+    let b:sexp_expert_mode = 1
+    " Note: First toggle leaves us in non-sexp-state (OFF), defining only the
+    " permanent mappings.
+    let enabled = exists('b:sexp_state_enabled') && !b:sexp_state_enabled
+    let first_time = !exists('b:sexp_state_enabled')
+    if first_time
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
-        if exists('g:sexp_expert_mode') && g:sexp_expert_mode
-            " TODO: Perhaps some validation: e.g., single key.
-            " TODO: Should we permit stuff like <LocalLeader>? If so, need to
-            " canonicalize case...
-            let esc_key = s:get_sexp_escape_key()
-            let b:sexp_expert_mode = 1
-        else
-            let esc_key = ''
-        endif
+        " TODO: Perhaps some validation: e.g., single key.
+        " TODO: Should we permit stuff like <LocalLeader>? If so, need to
+        " canonicalize case...
+        let esc_key = s:get_sexp_escape_key()
 
-        let sexp_maps = s:get_sexp_maps()
+        let sexp_maps = s:get_sexp_maps(1)
         "echomsg "sexp_maps: " . string(sexp_maps)
-        let b:sexp_map_commands = s:build_sexp_map_cmds(sexp_maps)
+        let b:sexp_map_commands = s:build_sexp_map_cmds(sexp_maps, 1)
         "echomsg "SM Exit: " . string(b:sexp_map_commands[0])
         "echomsg "SM Enter: " . string(b:sexp_map_commands[1])
-        if exists('l:esc_key')
+        if !empty(esc_key)
             " Get list of escape maps we'll need to create for builtins.
             let esc_maps = s:get_escape_maps(esc_key, sexp_maps)
             "echomsg "esc_maps 1 :" . string(esc_maps)
@@ -1197,32 +1300,37 @@ function! s:sexp_toggle_non_insert_mappings()
             \ s:shadow_conflicting_usermaps(esc_key, sexp_maps)
         "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
         "echomsg "UM Enter esc: " . string(b:user_map_commands[1])
-    else
-        let b:sexp_state_enabled = enabled
     endif
-    " Perform entry/exit using buf-locally cached map commands.
-    " Caveat: Order in which cmd groups are processed is significant: e.g.,
-    " must delete user maps first on entry and restore them last on exit.
-    let cmd_groups = [
-        \ b:user_map_commands,
-        \ b:sexp_map_commands,
-        \ exists('b:escape_map_commands') ? b:escape_map_commands : []]
-    for cmds in enabled ? cmd_groups : reverse(cmd_groups)
-        if empty(cmds)
-            " Skip either esc maps or user maps.
-            continue
-        endif
-        "echomsg "Enabled: " . enabled
-        for cmd in cmds[enabled]
-            "echomsg cmd
+    " Record state change.
+    let b:sexp_state_enabled = enabled
+    if first_time
+        " Create the always-active commands once-only.
+        for cmd in b:sexp_map_commands[2]
             exe cmd
         endfor
-    endfor
+    else
+        " Perform entry/exit using buf-locally cached map commands.
+        " Caveat: Order in which cmd groups are processed is significant: e.g.,
+        " must delete user maps first on entry and restore them last on exit.
+        let cmd_groups = [
+            \ b:user_map_commands,
+            \ b:sexp_map_commands,
+            \ exists('b:escape_map_commands') ? b:escape_map_commands : []]
+        for cmds in enabled ? cmd_groups : reverse(cmd_groups)
+            if empty(cmds)
+                " Skip either esc maps or user maps.
+                continue
+            endif
+            "echomsg "Enabled: " . enabled
+            for cmd in cmds[enabled]
+                "echomsg cmd
+                exe cmd
+            endfor
+        endfor
+    endif
 
     " Display visual indication of state.
     call s:display_sexp_state(enabled)
-    " Just in case user does something silly with his customizations, make
-    " sure toggle is always available.
     " Note: Since toggle is meant to be always active, there's no need to
     " worry about conflict with existing user maps or global maps.
     call s:create_sexp_state_toggle()
@@ -1242,27 +1350,30 @@ function! s:on_file_type()
     " something else that has to be created anyways.
     if !exists('b:vim_sexp_loaded')
         let b:vim_sexp_loaded = 1
-        if !exists('g:sexp_expert_mode') || !g:sexp_expert_mode
-            call s:sexp_create_mappings()
-        else
-            let b:sexp_expert_mode = 1
-            call s:create_sexp_state_toggle()
-            augroup sexp_expert_mode
-                au!
-                au BufEnter * call s:do_status_line()
-                au WinEnter * call s:do_status_line()
-            augroup END
-            call s:do_status_line()
-        endif
+        call s:sexp_create_mappings()
     endif
 endfunction
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-    " TODO: Does this need to be refactored? Ok to treat the initial
-    " activation as toggle when sexp-state disabled?
-    call s:sexp_toggle_non_insert_mappings()
+    if !exists('g:sexp_expert_mode') || !g:sexp_expert_mode
+        call s:sexp_create_non_insert_mappings()
+    else
+        " Question: Should we ignore file_type event? For expert mode only, or
+        " both cases? If not, we'd need to take care, since if we're in sexp
+        " state, we'd probably need to toggle out (to restore user maps)
+        " before doing anything else. But is there any reason not to ignore?
+        " Note: Might want ability to toggle everything off for handling
+        " BufWinLeave.
+        call s:sexp_toggle_non_insert_mappings()
+        augroup sexp_expert_mode
+            au!
+            au BufEnter * call s:do_status_line()
+            au WinEnter * call s:do_status_line()
+        augroup END
+        call s:do_status_line()
+    endif
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
