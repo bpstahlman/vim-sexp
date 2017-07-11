@@ -1037,29 +1037,6 @@ function! s:has_stl_placeholder(stl)
     return a:stl =~ s:re_unesc_pct . '{VimSexpState()}'
 endfunction
 
-" TEMP DEBUG ONLY - TODO: Remove.
-fu! S_Test_get_optimal_stl_index()
-    let stls = [
-        \ '%<%f %h%m%r%=%{VimSexpState()}%-14.(%l,%c%V%) %P',
-        \ '%<%f %h%m%r%=%-14.(%l,%c%V%) %P',
-        \ '%<%f %H%m%R%=%-14.(%l,%c%V%) %P',
-        \ '%<%f %H%M%R%=%-14.(%l,%c%V%)%h%m%r %P',
-        \ '%<%f %h%m%r%-14.(%l,%c%V%) %P',
-        \ '%<%f %H%m%R%-14.(%l,%c%V%) %P',
-        \ '%<%f %%{VimSexpState()}%=%-14.(%l,%c%V%) %h%m%r %P',
-    \ ]
-    let i = 0
-    for stl in stls
-        echo i . ":\t" . stl
-        if s:has_stl_placeholder(stl)
-            echo "\tSkipping - already contains placeholder."
-        else
-            echo "\t" . s:get_optimal_stl(stl)
-        endif
-        let i += 1
-    endfor
-endfu
-
 function! s:get_optimal_stl(stl)
     let idiv = match(a:stl, s:re_unesc_pct . '=')
     if idiv >= 0
@@ -1092,10 +1069,8 @@ function! s:get_optimal_stl(stl)
     return a:stl[:i-1] . "%{VimSexpState()}" . a:stl[i:]
 endfunction
 
-" TODO; Call this once first time.
 function! s:add_sexp_state_to_stl()
-    " First check to see whether user has put a %{VimSexpState()} flag in his
-    " 'stl'.
+    " Check to see whether user has put a %{VimSexpState()} flag in his 'stl'.
     let stl = !empty(&l:stl) ? &l:stl : !empty(&g:stl) ? g:stl : ''
     if empty(stl)
         " Start with default.
@@ -1112,132 +1087,14 @@ function! s:add_sexp_state_to_stl()
     let &l:stl = stl
 endfunction
 
-fu! s:get_windows_in_last_row()
-    let ret = []
-    let [wnr_orig, wnr] = [winnr(), winnr('$')]
-    while wnr > 0
-        exe wnr . 'wincmd w'
-        " Attempt to move down.
-        wincmd j
-        if winnr() != wnr
-            " Can't move down from last row.
-            break
-        endif
-        " Use insert for intuitive order.
-        " Note: Is this inefficient in VimL? If so, could just add and reverse
-        " later.
-        call insert(ret, wnr)
-        let wnr -= 1
-    endwhile
-    " Return to original window.
-    exe wnr_orig . 'wincmd w'
-    return ret
-endfu
-
-fu! s:get_buffers_in_last_row()
-    return map(s:get_windows_in_last_row(), 'winbufnr(v:val)')
-endfu
-
-fu! s:is_sexp_buffer_in_last_row()
-    for bnr in s:get_buffers_in_last_row()
-        if getbufvar(bnr, 'sexp_expert_mode', -1) == 1
-            return 1
-        endif
-    endfor
-endfu
-
-" Called whenever we move to a new window, or a new buffer enters current
-" window.
-function! s:do_status_line_new()
-    if s:is_sexp_buffer_in_last_row()
-        " Last row contains a sexp expert mode buffer.
-        " Have we saved statusline for this window?
-        if !exists('s:laststatus_save')
-            let s:laststatus_save = &laststatus
-        endif
-        set laststatus=2
-    else
-        if exists('s:laststatus_save')
-            " Assumption: BufEnter and WinEnter trigger on tab change.
-            " (If they didn't, restoring 'laststatus' solely on the basis of
-            " current tab's last row would be problematic.)
-            let &laststatus = s:laststatus_save
-            unlet! s:laststatus_save
-        endif
-    endif
-    let expert_mode_buf = getbufvar('%', 'sexp_expert_mode', -1) == 1
-    if expert_mode_buf
-        " Make sure we're overriding 'stl' in this window.
-        if !exists('w:sexp_statusline_save')
-            let w:sexp_statusline_save = !empty(&l:statusline)
-                \ ? &l:statusline
-                \ : 1
-        endif
-        call s:add_sexp_state_to_stl()
-    else
-        " Make sure we're not overriding 'stl' in this window.
-        if exists('w:sexp_statusline_save')
-            if type(w:sexp_statusline_save) == 0
-                " Just remove local setting to allow global to take effect.
-                setl stl=
-            else
-                " Restore explicit local setting.
-                let &l:stl = w:sexp_statusline_save
-            endif
-            unlet! w:sexp_statusline_save
-        endif
-    endif
-endfunction
-
-function! s:do_status_line_old()
-    let s:dbg_cnt += 1
-    "echomsg "Inside do_status_line: " . s:dbg_cnt
-    " TODO: Do we still need to check expert mode here? Will we even be called
-    " in non-expert mode? I think the real test is sexp vs non-sexp, so could
-    " check a different buf-local var.
-    if exists('b:sexp_expert_mode') && b:sexp_expert_mode
-        " Have we saved statusline for this window?
-        if !exists('w:sexp_statusline_save')
-            let w:sexp_statusline_save = !empty(&l:statusline)
-                \ ? &l:statusline
-                \ : 1
-        endif
-        " Design Decision: 'laststatus' reflects the window we're in. We save
-        " it only once, the first time we override. (To do otherwise would
-        " require ref count of some sort and perhaps another autocommand or
-        " two, and I don't think the extra complexity is justified.)
-        if !exists('s:laststatus_save')
-            let s:laststatus_save = &laststatus
-        endif
-        set laststatus=2
-        "echomsg "Inside do_status_line, dbg_cnt=" . s:dbg_cnt
-        call s:add_sexp_state_to_stl()
-    else
-        " Not in sexp expert mode. Make sure we're not overriding 'stl'.
-        if exists('w:sexp_statusline_save')
-            if type(w:sexp_statusline_save) == 0
-                " Just remove local setting to allow global to take effect.
-                setl stl=
-            else
-                " Restore explicit local setting.
-                let &l:stl = w:sexp_statusline_save
-            endif
-            unlet! w:sexp_statusline_save
-        endif
-        if exists('s:laststatus_save')
-            let &laststatus = s:laststatus_save
-        endif
-    endif
-endfunction
-
 function! s:display_sexp_state(on)
     " Force update of statusline.
     " TODO: Will this do it ro flag not in 'stl'?
     let &ro = &ro
 endfunction
 
-" TODO: Eventually allow this to be list of toggles, or else support key-chord
-" somehow.
+" TODO: Eventually allow this to be list of toggles, or else support
+" key-chords some other way.
 function! s:get_sexp_state_toggle()
     " TODO: Needs to default
     return get(g:, 'sexp_state_toggle', s:sexp_state_toggle)
@@ -1354,6 +1211,76 @@ function! s:on_file_type()
     endif
 endfunction
 
+function! s:is_sexp_expert_mode_buffer()
+    return getbufvar('%', 'sexp_expert_mode', -1) == 1
+endfunction
+
+" Buffer Number Designations: % is new buffer; <abuf> is buf being left.
+" Assumption: Called only for sexp expert mode buffers.
+function! s:OnBufWinLeave(...)
+    let bnr = 0 + expand('<abuf>')
+    if bnr < 0
+        " Note: Vim doesn't document it, but I'm pretty sure I've seen on-exit
+        " invocations in which <abuf> is already invalid at this point.
+        return
+    endif
+    " Remove this buffer from the map.
+    call remove(s:loaded_buffer_map, bnr)
+    if empty(s:loaded_buffer_map)
+        if exists('s:laststatus_save')
+            " Restore the 'laststatus' setting in effect when the first sexp
+            " expert mode buffer was loaded.
+            let &laststatus = s:laststatus_save
+            unlet! s:laststatus_save
+        endif
+    endif
+    if getbufvar(bnr, 'sexp_state_enabled', 0)
+        " Experimental: Mark a buffer for toggle to non-sexp state whenever it's
+        " loaded.
+        " Vim Idiosyncrasy: expand() returns a string, and since setbufvar()
+        " can take one, there's no automatic conversion, which means a bufnr
+        " will be interpreted as name if not forced to int.
+        call setbufvar(str2nr(expand('<abuf>')), 'sexp_need_toggle_off', 1)
+    endif
+endfunction
+
+function! s:OnBufEnter()
+    if s:is_sexp_expert_mode_buffer()
+        " Make sure we're overriding 'stl' in this window.
+        if !exists('w:sexp_statusline_save')
+            let w:sexp_statusline_save = !empty(&l:statusline)
+                \ ? &l:statusline
+                \ : 1
+            call s:add_sexp_state_to_stl()
+        endif
+        " 'laststatus' logic
+        let s:loaded_buffer_map[bufnr('%')] = 1
+        if &laststatus != 2
+            let s:laststatus_save = &laststatus
+            set laststatus=2
+        endif
+        " Experimental: If we deferred toggling off in BufWinLeave handler,
+        " toggle off now.
+        if exists('b:sexp_need_toggle_off') && b:sexp_need_toggle_off
+            " TODO: Perhaps use lower-level function, and possibly add an
+            " argument to force desired state.
+            call s:toggle_sexp_state()
+        endif
+    elseif exists('w:sexp_statusline_save')
+        " Cancel existing override now that this window no longer contains a
+        " sexp expert mode buffer.
+        if type(w:sexp_statusline_save) == 0
+            " Just remove local setting to allow global to take effect.
+            setl stl=
+        else
+            " Restore explicit local setting.
+            let &l:stl = w:sexp_statusline_save
+        endif
+        unlet! w:sexp_statusline_save
+    endif
+
+endfunction
+
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
@@ -1369,10 +1296,12 @@ function! s:sexp_create_mappings()
         call s:sexp_toggle_non_insert_mappings()
         augroup sexp_expert_mode
             au!
-            au BufEnter * call s:do_status_line()
-            au WinEnter * call s:do_status_line()
+            au BufEnter * call s:OnBufEnter()
+            au BufWinLeave <buffer> call s:OnBufWinLeave()
+            let s:loaded_buffer_map = {bufnr('%'): 1}
         augroup END
-        call s:do_status_line()
+        " Jumpstart the mechanism.
+        call s:OnBufEnter()
     endif
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
