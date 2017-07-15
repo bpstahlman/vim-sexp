@@ -196,7 +196,7 @@ g<M-e>                                *<Plug>(sexp_move_to_prev_element_tail)*
         and insert at the "else" form.
 
 "FLOW" COMMANDS (normal, visual)~
-
+                                                               *flow-commands*
 Although the preceding commands are useful for moving forward and backward
 within a list, sometimes you want to "escape" from the current list, or
 descend into a child list. The commands in this section are called "flow"
@@ -322,6 +322,84 @@ Leaf flow commands~
         parent list.
 
         Analogous to |ge| and |e| motions.
+
+
+
+TARGETED JUMPS (normal, visual)~
+NOTE: Requires vim-easymotion plugin:
+https://github.com/easymotion/vim-easymotion
+
+Motivation~
+Although Vim's search commands (/ and ?) allow you to jump to somewhat
+arbitrary targets, they can be unwieldy to use. For one thing, you may have to
+type a lot of keys to disambiguate the desired target from other targets
+beginning with the same characters. Moreover, if the desired target is a word
+appearing many times, you may have to hit n or N multiple times to reach the
+desired occurrence.
+
+The commands in this section provide a way to jump to arbitrary targets within
+a form, in a manner inspired by (and partially implemented by) Kim
+Silkebækken's "EasyMotion" plugin. If you're unfamiliar with EasyMotion, you
+may want to visit the github page and view the animation. Although it is
+certaily possible to use EasyMotion in a lisp buffer without any special
+vim-sexp integration, the specialized vim-sexp commands outlined below will
+generally result in fewer highlighted jump targets, and thus, fewer
+keystrokes.
+
+Overview~
+Targeted jumps always occur within the context of a specific compound form.
+Each of the jump commands has 2 variants: one considers targets anywhere
+within the enclosing top-level compound form; the other considers targets only
+within the innermost compound form containing the cursor (or the [count]th
+ancestor compound form if a count is supplied). The individual commands
+determine the type of elements considered as candidate jump targets. 
+
+
+<Space>{                                           *<Plug>(sexp_jump_to_list)*
+<Space>[                                    *<Plug>(sexp_jump_to_list_in_top)*
+        Display jump targets on all open brackets within [count] surrounding
+        lists or current top-level list.
+
+<Space>E                                           *<Plug>(sexp_jump_to_leaf)*
+<Space>e                                    *<Plug>(sexp_jump_to_leaf_in_top)*
+        Display jump targets on all "leaf" elements within [count] surrounding
+        lists or current top-level list.
+        Note: See |flow-commands| for the definition of a leaf element.
+
+<Space>A                                           *<Plug>(sexp_jump_to_atom)*
+<Space>a                                    *<Plug>(sexp_jump_to_atom_in_top)*
+        Display jump targets on all atoms within [count] surrounding lists or
+        current top-level list.
+
+<Space>C                                        *<Plug>(sexp_jump_to_comment)*
+<Space>c                                 *<Plug>(sexp_jump_to_comment_in_top)*
+        Display jump targets on all comments within [count] surrounding lists
+        or current top-level list.
+
+<Space>_                                        *<Plug>(sexp_jump_to_subword)*
+<Space>-                                 *<Plug>(sexp_jump_to_subword_in_top)*
+        Display jump targets on all atom "sub-words" within [count]
+        surrounding lists or current top-level list.
+
+        Note: Each atom is composed of one or more more sub-words. The intent
+        is to allow symbols such as `some-lisp-symbol' to be treated as three
+        words rather than one. You can customize the exact definition of a
+        sub-word using the |g:sexp_em_subword_split_re| option, whose default
+        value results in the target locations indicated by `^' for the
+        following symbols:
+
+                foo-bar-baz
+                ^   ^   ^
+                foo_bar_baz
+                ^   ^   ^
+                fooBarBaz
+                ^  ^  ^
+
+<Space>"                                         *<Plug>(sexp_jump_to_string)*
+<Space>'                                  *<Plug>(sexp_jump_to_string_in_top)*
+        Display jump targets on all strings within [count] surrounding lists
+        or current top-level list.
+
 
 
 
@@ -537,6 +615,13 @@ at head) after using a wrap command like |<Plug>(sexp_round_head_wrap_list)|.
         " Default
         let g:sexp_insert_after_wrap = 1
 <
+                                                  *g:sexp_em_subword_split_re*
+Regex pattern used to find sub-words within an atom.
+>
+        " Default
+        let g:sexp_em_subword_split_re = '\v%([[:punct:]_]+|\l\@<=\u\@=)'
+<
+
                                                              *g:sexp_mappings*
 Dictionary of user vim-sexp mappings. Keys are the <Plug> names without
 "<Plug>" or the surrounding parentheses, and the values are the key sequences

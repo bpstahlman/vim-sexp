@@ -58,6 +58,8 @@ let s:pairs = {
 
 " Patch 7.3.590 introduced the ability to set visual marks with setpos()
 let s:can_set_visual_marks = v:version > 703 || (v:version == 703 && has('patch590'))
+" Default value of sexp_em_subword_split_re option.
+let s:em_subword_split_re = '\v%([[:punct:]_]+|\l@<=\u@=)'
 
 " Return macro characters for current filetype. Defaults to Scheme's macro
 " characters if 'lisp' is set, invalid characters otherwise.
@@ -1196,10 +1198,6 @@ function! s:sexp_em_get_next_leaf(stopline, accept_curpos)
         \ a:stopline)
 endfunction
 
-" TODO: Define this as default somewhere, but let user override.
-" Question: Should it be grouped with the pass-through options?
-let s:re_subword_char = '[^_[:punct:][:space:]]'
-
 " Return list of positions representing subwords within the atom at cursor.
 function! s:sexp_em_find_subwords_in_current_atom()
     let ret = []
@@ -1209,14 +1207,22 @@ function! s:sexp_em_find_subwords_in_current_atom()
     " we're sitting on head of atom.
     let tpos = s:current_atom_terminal(1)
     let atom = getline('.')[col-1 : tpos[2]-1]
-    let end = 0
-    while end >= 0
-        let [_, beg, end] = matchstrpos(atom,
-            \ '\%(' . get(g:, 're_subword_char', s:re_subword_char)
-            \ . '\)\+', end)
+    let atom_len = len(atom)
+    " Keep up with start of sub-word and end of split.
+    let [i, end] = [0, 0]
+    let split_re = get(g:, 'sexp_em_subword_split_re', s:em_subword_split_re)
+    while end >= 0 && end < atom_len
+        let [_, beg, end] = matchstrpos(atom, split_re, end)
+        if beg != i
+            " Either split not found (beg < 0) or split found past current
+            " location. In either case, accumulate the subword start location.
+            call add(ret, [line, col + i])
+        endif
         if beg >= 0
-            " Accumulate the subword start location.
-            call add(ret, [line, col + beg])
+            " Found a split. Start subsequent search just past it, taking care
+            " to ensure we can't get stuck on a zero-width match.
+            "let i = max([beg + 1, end])
+            let i = beg == end ? end + 1 : end
         endif
     endwhile
     return ret
