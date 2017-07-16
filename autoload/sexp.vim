@@ -1310,6 +1310,37 @@ function! s:sexp_em_get_jump_any_pattern(plist)
         \ .'\).'
 endfunction
 
+function! s:range_regex_constraint(range, very_magic)
+    let open  = a:very_magic ? '%(' : '\%('
+    let close = a:very_magic ? ')'  : '\)'
+    let pct   = a:very_magic ? '%'  : '\%'
+    let and   = a:very_magic ? '&'  : '\&'
+    let or    = a:very_magic ? '|'  : '\|'
+
+    " Note: VimL should really permit recursive destructuring.
+    let [_, l1, c1, _] = a:range[0]
+    let [_, l2, c2, _] = a:range[1]
+    " Template: (l1 && >c1-1 || l2 && <c2+1 || >l1 && <l2)
+    return open . pct . l1 . 'l' . and . pct . '>' . (c1-1) . 'c'
+        \ . or . pct . l2 . 'l' . and . pct . '<' . (c2+1) . 'c'
+        \ . or . pct . '>' . l1 . 'l' . and . pct . '<' . l2 . 'l' . close
+endfunction
+
+function! s:em_get_target_char()
+    echohl Question
+    echo "Enter desired character: "
+    echohl None
+    let ch = getchar()
+    if type(ch) == 1
+        echohl WarningMsg
+        echo "Only plain text characters can serve as jump targets"
+        echohl None
+        return ''
+    else
+        return nr2char(ch)
+    endif
+endfunction
+
 " Easymotion movements
 function! sexp#jump_to_target(mode, count, tgt, top)
     let cur = getpos('.')
@@ -1323,14 +1354,26 @@ function! sexp#jump_to_target(mode, count, tgt, top)
     " start.
     " Rationale: We want to be able to jump to head of top-level form.
     let [range, inc] = s:constrain_range_to_view(range)
-    " Get list of target positions in range: format [[line, col],...]
-    let plist = s:sexp_em_get_positions(range, a:tgt)
-    if empty(plist)
-        return
-    endif
+    if a:tgt == 'char'
+        " Char jump requires special handling.
+        let tgt_ch = s:em_get_target_char()
+        " TODO: Handle escaping of tgt_ch.
+        " TODO: Consider removing the very_magic option.
+        let re = s:range_regex_constraint(range, 0) . tgt_ch
+        if empty(re)
+            return
+        endif
+    else
+        " Get list of target positions in range: format [[line, col],...]
+        let plist = s:sexp_em_get_positions(range, a:tgt)
+        if empty(plist)
+            return
+        endif
 
+        let re = s:sexp_em_get_jump_any_pattern(plist)
+    endif
     let re_anywhere_save = get(g:, 'EasyMotion_re_anywhere', '')
-    let g:EasyMotion_re_anywhere = s:sexp_em_get_jump_any_pattern(plist)
+    let g:EasyMotion_re_anywhere = re
 
     " Note: Positioning before valid range allows us to determine unambiguously
     " whether easymotion performs jump.

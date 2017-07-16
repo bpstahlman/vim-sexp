@@ -371,8 +371,8 @@ determine the type of elements considered as candidate jump targets.
         Display jump targets on all atoms within [count] surrounding lists or
         current top-level list.
 
-<Space>C                                        *<Plug>(sexp_jump_to_comment)*
-<Space>c                                 *<Plug>(sexp_jump_to_comment_in_top)*
+<Space>:                                        *<Plug>(sexp_jump_to_comment)*
+<Space>;                                 *<Plug>(sexp_jump_to_comment_in_top)*
         Display jump targets on all comments within [count] surrounding lists
         or current top-level list.
 
@@ -400,6 +400,13 @@ determine the type of elements considered as candidate jump targets.
         Display jump targets on all strings within [count] surrounding lists
         or current top-level list.
 
+<Space>C                                           *<Plug>(sexp_jump_to_char)*
+<Space>c                                    *<Plug>(sexp_jump_to_char_in_top)*
+        Displays a prompt and waits for you to press a key. If the next key
+        pressed is a valid character, jump targets are displayed on all
+        occurrences of the character within [count] surrounding lists or
+        current top-level list.
+        TODO: Rework all this text...
 
 
 
