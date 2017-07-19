@@ -158,176 +158,6 @@ let s:plug_map_modes = [
     \ ['sexp_capture_next_element',      'nx'],
 \ ]
 
-"let s:builtins = {
-"    \ 'nvo': [
-"        \ '<BS>', '<C-H>', '<Tab>', '<C-I>', '<NL>',
-"        \ '<C-H>', '<Tab>', '<C-I>', '<NL>', '<C-J>', '<CR>', '<C-M>',
-"        \ '<C-N>', '<C-P>', '<C-R>', '<C-Z>',
-"        \ '<Space>', '!',
-"        \ '#', '$', '%', '&',
-"        \ {
-"            \ 'key': '''',
-"            \ 'children': [
-"                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-"                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-"            \ ]
-"        \ },
-"        \ '(', ')', '*', '+', ',', '-', '/', '<CR>',
-"        \ '0', ':', ';', '?',
-"        \ 'B', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'T', 'W', '^', '_',
-"        \ {
-"            \ 'key': '`',
-"            \ 'children': [
-"                \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-"                \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-"            \ ]
-"        \ },
-"        \ 'b', 'e', 'f',
-"        \ {
-"            \ 'key': 'g',
-"            \ 'children': [
-"                \ '#', '$',
-"                \ {
-"                    \ 'key': '''',
-"                    \ 'children': [
-"                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-"                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-"                    \ ]
-"                \ },
-"                \ {
-"                    \ 'key': '`',
-"                    \ 'children': [
-"                        \ {'fn': 's:key_ranges', 'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]}
-"                        \ '''', '(', ')', '<', '>', '[', ']', '{', '}'
-"                    \ ]
-"                \ },
-"                \ '*', '0', 'D', 'E', 'N', '^', '_'
-"            \ ]
-"        \ },
-"        \ 'h', 'j', 'k', 'l', 'n', 't', 'w', '{', '|', '}',
-"        \ '<C-End>', '<C-Home>', '<C-Left>', '<C-Right>', '<Down>', '<End>', '<Home>',
-"        \ '<Left>', '<LeftMouse>', '<Right>', '<RightMouse>',
-"        \ '<S-Left>', '<S-LeftMouse>', '<S-Right>', '<S-RightMouse>', '<Up>',
-"        \ {
-"            \ 'key': 'a',
-"            \ 'children': [
-"                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-"                \ 'b', 'p', 's', 't', 'w', '{', '}'
-"            \ ]
-"        \ },
-"        \ {
-"            \ 'key': 'i',
-"            \ 'children': [
-"                \ '"', "'", '(', ')', '<lt>', '>', 'B', 'W', '[', ']', '`',
-"                \ 'b', 'p', 's', 't', 'w', '{', '}'
-"            \ ]
-"        \ }
-"    \ ],
-"    \ 'nv': [
-"        \ '<C-A>', '<C-D>', '<C-E>', '<C-F>',
-"        \ '<NL>', '<C-J>', '<C-L>',
-"        \ '<C-Q>', '<C-U>', '<C-V>',
-"        \ '<C-X>', '<C-Y>',
-"        \ '<', '=', '>', '@',
-"        \ 'A', 'C', 'D', 'I', 'J', 'K', 'O', 'P', 'R', 'S', 'V', 'X', 'Y'
-"        \ {
-"            \ 'key': '[',
-"            \ 'children': [ ]
-"        \ },
-"        \ {
-"            \ 'key': ']',
-"            \ 'children': [ ]
-"        \ },
-"        \ 'a', 'c', 'd',
-"        \ {
-"            \ 'key': 'g',
-"            \ 'children': [
-"                \ '8', '?', 'I', 'J', 'P', 'T', 'U', ']'
-"            \ ]
-"        \ },
-"        \  'i', 'm', 'o', 'p',
-"        \ {
-"            \ 'key': 'q',
-"            \ 'children': [
-"                \ {'fn': 's:key_ranges',
-"                \  'args': [['a', 'z'], ['A', 'Z'], ['0', '9']]},
-"                \ '"', ':', '/', '?'
-"            \ ]
-"        \ },
-"        \ 'r', 's', 'v', 'x', 'y',
-"        \ {
-"            \ 'key': 'z',
-"            \ 'children': [
-"            \ ]
-"        \ },
-"        \ '~',
-"        \ '<Del>', '<MiddleMouse>', '<PageDown>', '<PageUp>', '<S-Up>'
-"    \ ],
-"    \ 'n': [
-"        \ '<C-O>', '<C-G>', '<C-T>', '.', 'Q', 'u',  '<Insert>', '<F1>'
-"        \ {
-"            \ 'key': 'Z',
-"            \ 'children': ['Z', 'Q']
-"        \ },
-"        \ {
-"            \ 'key': '<C-\>',
-"            \ 'children': [
-"                \ '<C-N>', '<C-G>',
-"                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
-"            \ ]
-"        \ },
-"        \ {
-"            \ 'key': '<C-W>',
-"            \ 'children': [
-"                \ '<C-B>', '<C-C>', '<C-D>', '<C-F>', '<C-G>', '<C-H>', '<C-H>', '<C-I>',
-"                \ '<C-J>', '<C-K>', '<C-L>', '<C-N>', '<C-O>', '<C-P>', '<C-Q>', '<C-R>',
-"                \ '<C-S>', '<C-T>', '<C-V>', '<C-W>', '<C-X>', '<C-Z>', '<C-]>', '<C-^>', '<C-_>',
-"                \ '+', '-', '<', '=', '>', 'H', 'J', 'K', 'L', 'P', 'R', 'S', 'T', 'W', ']', '^',
-"                \ '_', 'b', 'c', 'd', 'f', 'F',
-"                \ {
-"                    \ 'key': 'g',
-"                    \ 'children': [
-"                        \ '<C-]>', ']', '}', 'f', 'F'
-"                    \ ]
-"                \ },
-"                \ {'fn': 's:key_ranges',
-"                \  'args': [['h', 'l'], ['n', 'x'], ['z', 'z']]},
-"                \ '<Bar>',
-"                \ '}',
-"                \ '<Down>',
-"                \ '<Up>',
-"                \ '<Left>',
-"                \ '<Right>',
-"            \ ]
-"        \ },
-"        \ {
-"            \ 'key': 'g',
-"            \ 'children': [
-"                \ '+', ',', '-', ';', '<', 'H', 'Q', 'R'
-"            \ ]
-"        \ },
-"    \ ],
-"    \ 'v': [
-"        \ {
-"            \ 'key': '<C-\>',
-"            \ 'children': [
-"                \ '<C-N>', '<C-G>',
-"                \ {'fn': 's:key_ranges', 'args': [['a', 'z']]}
-"            \ ]
-"        \ },
-"        \ '<C-C>', '<C-G>', '<Esc>', '<C-]>',
-"        \ '!', ':', '<lt>', '=', '>', 'C', 'D', 'J', 'K',
-"        \ 'O', 'R', 'S', 'U', 'V', 'X', 'Y', 'c', 'd',
-"        \ {
-"            \ 'key': 'g',
-"            \ 'children': [
-"                \ 'J', 'q', 'v'
-"            \ ]
-"        \ },
-"        \ 'o', 'r', 's', 'u', 'v', 'x', 'y', '~'
-"    \ ]
-"\ }
-
 let s:re_unesc_pct = '\%(^\|[^%]\)\%(%%\)*\zs%%\@!'
 let s:re_key_notation = '\c\v\<%('
     \ . '%(local)?leader'
@@ -1218,6 +1048,9 @@ endfunction
 " Buffer Number Designations: % is new buffer; <abuf> is buf being left.
 " Assumption: Called only for sexp expert mode buffers.
 function! s:OnBufWinLeave(...)
+    " Vim Idiosyncrasy: expand() returns a string, and since setbufvar() can
+    " take one, there's no automatic conversion, which means a bufnr will be
+    " interpreted as name if not forced to int.
     let bnr = 0 + expand('<abuf>')
     if bnr < 0
         " Note: Vim doesn't document it, but I'm pretty sure I've seen on-exit
@@ -1228,31 +1061,23 @@ function! s:OnBufWinLeave(...)
     call remove(s:loaded_buffer_map, bnr)
     if empty(s:loaded_buffer_map)
         if exists('s:laststatus_save')
-            " Restore the 'laststatus' setting in effect when the first sexp
-            " expert mode buffer was loaded.
-            let &laststatus = s:laststatus_save
+            if &laststatus == 2
+                " Restore the 'laststatus' setting in effect when the first
+                " sexp expert mode buffer was loaded.
+                let &laststatus = s:laststatus_save
+            endif
             unlet! s:laststatus_save
         endif
     endif
     if getbufvar(bnr, 'sexp_state_enabled', 0)
         " Experimental: Mark a buffer for toggle to non-sexp state whenever it's
         " loaded.
-        " Vim Idiosyncrasy: expand() returns a string, and since setbufvar()
-        " can take one, there's no automatic conversion, which means a bufnr
-        " will be interpreted as name if not forced to int.
-        call setbufvar(str2nr(expand('<abuf>')), 'sexp_need_toggle_off', 1)
+        call setbufvar(bnr, 'sexp_need_toggle_off', 1)
     endif
 endfunction
 
-function! s:OnBufEnter()
+function! s:OnBufWinEnter()
     if s:is_sexp_expert_mode_buffer()
-        " Make sure we're overriding 'stl' in this window.
-        if !exists('w:sexp_statusline_save')
-            let w:sexp_statusline_save = !empty(&l:statusline)
-                \ ? &l:statusline
-                \ : 1
-            call s:add_sexp_state_to_stl()
-        endif
         " 'laststatus' logic
         let s:loaded_buffer_map[bufnr('%')] = 1
         if &laststatus != 2
@@ -1266,19 +1091,7 @@ function! s:OnBufEnter()
             " argument to force desired state.
             call s:toggle_sexp_state()
         endif
-    elseif exists('w:sexp_statusline_save')
-        " Cancel existing override now that this window no longer contains a
-        " sexp expert mode buffer.
-        if type(w:sexp_statusline_save) == 0
-            " Just remove local setting to allow global to take effect.
-            setl stl=
-        else
-            " Restore explicit local setting.
-            let &l:stl = w:sexp_statusline_save
-        endif
-        unlet! w:sexp_statusline_save
     endif
-
 endfunction
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
@@ -1296,12 +1109,14 @@ function! s:sexp_create_mappings()
         call s:sexp_toggle_non_insert_mappings()
         augroup sexp_expert_mode
             au!
-            au BufEnter * call s:OnBufEnter()
+            au BufWinEnter * call s:OnBufWinEnter()
             au BufWinLeave <buffer> call s:OnBufWinLeave()
             let s:loaded_buffer_map = {bufnr('%'): 1}
         augroup END
         " Jumpstart the mechanism.
-        call s:OnBufEnter()
+        " TODO: !!!!!!! UNDER CONSTRUCTION !!!!!!!
+        call s:OnBufWinEnter()
+        call s:add_sexp_state_to_stl()
     endif
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
