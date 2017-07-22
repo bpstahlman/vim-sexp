@@ -243,6 +243,7 @@ select an arbitrary child, grandchild or even more deeply-nested element with
 a single command.)
 
 List flow commands~
+                                                          *list-flow-commands*
 
 <M-]>                                         *<Plug>(sexp_flow_to_next_open)*
         [count] open brackets forward (ignoring any close brackets). Movement
@@ -306,6 +307,7 @@ List flow command examples:~
 
 
 Leaf flow commands~
+                                                          *leaf-flow-commands*
 
 <M-S-b>                                  *<Plug>(sexp_flow_to_prev_leaf_head)*
 <M-S-w>                                  *<Plug>(sexp_flow_to_next_leaf_head)*
@@ -325,7 +327,9 @@ Leaf flow commands~
 
 
 
-TARGETED JUMPS (normal, visual)~
+TARGETED JUMP COMMANDS (normal, visual)~
+                                                      *targeted-jump-commands*
+
 NOTE: Requires vim-easymotion plugin:
 https://github.com/easymotion/vim-easymotion
 
@@ -334,14 +338,14 @@ Although Vim's search commands (/ and ?) allow you to jump to somewhat
 arbitrary targets, they can be unwieldy to use. For one thing, you may have to
 type a lot of keys to disambiguate the desired target from other targets
 beginning with the same characters. Moreover, if the desired target is a word
-appearing many times, you may have to hit n or N multiple times to reach the
-desired occurrence.
+or symbol appearing many times, you may have to hit "n" or "N" many times to
+reach the desired occurrence.
 
 The commands in this section provide a way to jump to arbitrary targets within
-a form, in a manner inspired by (and partially implemented by) Kim
+a compound form, in a manner inspired by (and partially implemented by) Kim
 Silkebækken's "EasyMotion" plugin. If you're unfamiliar with EasyMotion, you
 may want to visit the github page and view the animation. Although it is
-certaily possible to use EasyMotion in a lisp buffer without any special
+certainly possible to use EasyMotion in a lisp buffer without any special
 vim-sexp integration, the specialized vim-sexp commands outlined below will
 generally result in fewer highlighted jump targets, and thus, fewer
 keystrokes.
@@ -354,60 +358,95 @@ within the innermost compound form containing the cursor (or the [count]th
 ancestor compound form if a count is supplied). The individual commands
 determine the type of elements considered as candidate jump targets. 
 
+Example~
+>
+        (let [foo 42 bar 43 baz 44]
+          (some-function foo bar baz))
+<
+With cursor positioned anywhere within the let binding form, <Space>A
+(|sexp_jump_to_atom|) brings up the following overlay text ({} used to
+designate highlighted characters):
+>
+        (set [{a}oo {d}2 {g}ar {h}3 {k}az {l}4]
+          ({q}ome-function {w}oo {e}ar {r}az))
+<
 
-<Space>{                                           *<Plug>(sexp_jump_to_list)*
-<Space>[                                    *<Plug>(sexp_jump_to_list_in_top)*
+Note how the first character of each atom is displayed as a unique character,
+intended to serve as a convenient "jump target". In an actual vim-sexp buffer,
+these jump targets would be highlighted to make them stand out. It is even
+possible to customize the jump targets: e.g., you can specify that only
+uppercase letters should be used. See |jump-to-target-customization|.
+
+You can now press a single character to jump to any atom within the compound
+form:
+        s -> let
+        a -> foo
+        d -> 42
+        g -> bar
+        .
+        .
+
+In such a simple example, of course, it would have been easy to get to the
+desired atom another way (e.g., using |leaf-flow-commands|), but for larger
+compound forms, targeted jumps can save a considerable number of key strokes.
+
+
+<Space>L                                           *<Plug>(sexp_jump_to_list)*
+<Space>l                                    *<Plug>(sexp_jump_to_list_in_top)*
         Display jump targets on all open brackets within [count] surrounding
         lists or current top-level list.
+        Mnemonic: {l}ist
 
 <Space>E                                           *<Plug>(sexp_jump_to_leaf)*
 <Space>e                                    *<Plug>(sexp_jump_to_leaf_in_top)*
         Display jump targets on all "leaf" elements within [count] surrounding
         lists or current top-level list.
         Note: See |flow-commands| for the definition of a leaf element.
+        Mnemonic: l{e}af {e}lement
 
 <Space>A                                           *<Plug>(sexp_jump_to_atom)*
 <Space>a                                    *<Plug>(sexp_jump_to_atom_in_top)*
         Display jump targets on all atoms within [count] surrounding lists or
         current top-level list.
 
-<Space>:                                        *<Plug>(sexp_jump_to_comment)*
-<Space>;                                 *<Plug>(sexp_jump_to_comment_in_top)*
+<Space>C                                        *<Plug>(sexp_jump_to_comment)*
+<Space>c                                 *<Plug>(sexp_jump_to_comment_in_top)*
         Display jump targets on all comments within [count] surrounding lists
         or current top-level list.
 
-<Space>_                                        *<Plug>(sexp_jump_to_subword)*
-<Space>-                                 *<Plug>(sexp_jump_to_subword_in_top)*
+<Space>W                                        *<Plug>(sexp_jump_to_subword)*
+<Space>w                                 *<Plug>(sexp_jump_to_subword_in_top)*
         Display jump targets on all atom "sub-words" within [count]
         surrounding lists or current top-level list.
 
         Note: Each atom is composed of one or more more sub-words. The intent
-        is to allow symbols such as `some-lisp-symbol' to be treated as three
-        words rather than one. You can customize the exact definition of a
-        sub-word using the |g:sexp_em_subword_split_re| option, whose default
-        value results in the target locations indicated by `^' for the
-        following symbols:
+        is to allow symbols such as "some-lisp-symbol", "some_lisp_symbol" and
+        "someLispSymbol" to be treated as three words rather than one. You can
+        customize the exact definition of a sub-word using the
+        |g:sexp_em_subword_split_re| option.
 
-                foo-bar-baz
-                ^   ^   ^
-                foo_bar_baz
-                ^   ^   ^
-                fooBarBaz
-                ^  ^  ^
-
-<Space>"                                         *<Plug>(sexp_jump_to_string)*
-<Space>'                                  *<Plug>(sexp_jump_to_string_in_top)*
+<Space>S                                         *<Plug>(sexp_jump_to_string)*
+<Space>s                                  *<Plug>(sexp_jump_to_string_in_top)*
         Display jump targets on all strings within [count] surrounding lists
         or current top-level list.
 
-<Space>C                                           *<Plug>(sexp_jump_to_char)*
-<Space>c                                    *<Plug>(sexp_jump_to_char_in_top)*
+<Space>F                                           *<Plug>(sexp_jump_to_char)*
+<Space>f                                    *<Plug>(sexp_jump_to_char_in_top)*
         Displays a prompt and waits for you to press a key. If the next key
         pressed is a valid character, jump targets are displayed on all
-        occurrences of the character within [count] surrounding lists or
+        occurrences of that character within [count] surrounding lists or
         current top-level list.
-        TODO: Rework all this text...
+        Mnemonic: analogous to builtin "f" command
 
+
+Jump to target customization~
+                                                *jump-to-target-customization*
+
+The EasyMotion plugin provides a number of options that may be used to
+customize various aspects of the EasyMotion engine: e.g., target labels,
+shading, case matching, etc... Although the defaults are probably suitable for
+most users, Vim-sexp allows you to override the defaults using dictionary
+option |g:sexp_easymotion_options{}|.
 
 
 INDENT COMMANDS (normal)~
@@ -623,11 +662,69 @@ at head) after using a wrap command like |<Plug>(sexp_round_head_wrap_list)|.
         let g:sexp_insert_after_wrap = 1
 <
                                                   *g:sexp_em_subword_split_re*
-Regex pattern used to find sub-words within an atom.
+Regex pattern used to find sub-words within an atom. The pattern will be used
+to split the atom; thus, it should match any character or sequence of
+characters that might be used as word separators. The default value splits at
+punctuation characters, underscores and transitions from lowercase to
+uppercase. 
 >
         " Default
         let g:sexp_em_subword_split_re = '\v%([[:punct:]_]+|\l\@<=\u\@=)'
 <
+Examples:~
+In the following symbols, default target locations are indicated by `^':
+        namespace/foo-bar-baz
+        ^         ^   ^   ^
+        namespace/foo_bar_baz
+        ^         ^   ^   ^
+        namespace/fooBarBaz
+        ^         ^  ^  ^
+        #'fooBarBaz
+          ^  ^  ^
+
+                                                   *g:sexp_easymotion_options{}*
+Dictionary used to override EasyMotion options for |targeted-jump-commands|.
+Each key in the dictionary corresponds to one of the supported EasyMotion
+option names (with "EasyMotion_" prefix removed). The following keys are
+supported:
+        keys
+        do_shade
+        grouping
+        smartcase
+        use_smartsign_us
+        use_smartsign_jp
+        use_migemo
+        use_upper
+        enter_jump_first
+        space_jump_first
+        verbose
+
+For descriptions of the individual options...
+        :help EasyMotion_{option-key}
+
+Example:~
+        If you wish to have target labels shown in uppercase for readability,
+        while allowing yourself to type them in lowercase for convenience, you
+        could put the following in your vimrc: 
+>
+        let g:sexp_easymotion_options = {
+                "use_upper": 1,
+                "keys" = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ;'
+        }
+<
+        :help EasyMotion_use_upper
+
+        Note: If you want the same behavior for both EasyMotion and Vim-sexp
+        targeted jump commands, simply set the EasyMotion global option, which
+        will apply to both EasyMotion and Vim-sexp commands in the absence of
+        any Vim-sexp overrides: e.g.,
+>
+        let g:EasyMotion_use_upper = 1
+        let g:EasyMotion_keys = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ;'
+<
+        This option is needed only when you want the EasyMotion targeting engine
+        to behave differently when it's used by Vim-sexp's |targeted-jump-commands|.
+
 
                                                              *g:sexp_mappings*
 Dictionary of user vim-sexp mappings. Keys are the <Plug> names without
@@ -664,6 +761,20 @@ not necessary to copy all the entries to change a few.
             \ 'sexp_flow_to_next_leaf_head':    '<M-S-w>',
             \ 'sexp_flow_to_prev_leaf_tail':    '<M-S-g>',
             \ 'sexp_flow_to_next_leaf_tail':    '<M-S-e>',
+            \ 'sexp_jump_to_list':              '<Space>L',
+            \ 'sexp_jump_to_list_in_top':       '<Space>l',
+            \ 'sexp_jump_to_leaf':              '<Space>E',
+            \ 'sexp_jump_to_leaf_in_top':       '<Space>e',
+            \ 'sexp_jump_to_atom_in_top':       '<Space>A',
+            \ 'sexp_jump_to_atom':              '<Space>a',
+            \ 'sexp_jump_to_subword':           '<Space>W',
+            \ 'sexp_jump_to_subword_in_top':    '<Space>w',
+            \ 'sexp_jump_to_string':            '<Space>S',
+            \ 'sexp_jump_to_string_in_top':     '<Space>s',
+            \ 'sexp_jump_to_comment':           '<Space>C',
+            \ 'sexp_jump_to_comment_in_top':    '<Space>c',
+            \ 'sexp_jump_to_char':              '<Space>F',
+            \ 'sexp_jump_to_char_in_top':       '<Space>f',
             \ 'sexp_move_to_prev_top_element':  '[[',
             \ 'sexp_move_to_next_top_element':  ']]',
             \ 'sexp_select_prev_element':       '[e',
