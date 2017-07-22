@@ -685,8 +685,10 @@ In the following symbols, default target locations are indicated by `^':
                                                    *g:sexp_easymotion_options{}*
 Dictionary used to override EasyMotion options for |targeted-jump-commands|.
 Each key in the dictionary corresponds to one of the supported EasyMotion
-option names (with "EasyMotion_" prefix removed). The following keys are
-supported:
+option names (with "EasyMotion_" prefix removed). The values assigned to the
+keys are not validated by Vim-sexp, but simply "passed through" to EasyMotion,
+so you should refer to the EasyMotion documentation to ensure the values you
+specify are valid. The following keys are supported:
         keys
         do_shade
         grouping

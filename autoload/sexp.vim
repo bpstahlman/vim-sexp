@@ -60,6 +60,19 @@ let s:pairs = {
 let s:can_set_visual_marks = v:version > 703 || (v:version == 703 && has('patch590'))
 " Default value of sexp_em_subword_split_re option.
 let s:em_subword_split_re = '\v%([[:punct:]_]+|\l@<=\u@=)'
+let s:em_options = [
+    \ 'keys',
+    \ 'do_shade',
+    \ 'grouping',
+    \ 'smartcase',
+    \ 'use_smartsign_us',
+    \ 'use_smartsign_jp',
+    \ 'use_migemo',
+    \ 'use_upper',
+    \ 'enter_jump_first',
+    \ 'space_jump_first',
+    \ 'verbose',
+\ ]
 
 " Return macro characters for current filetype. Defaults to Scheme's macro
 " characters if 'lisp' is set, invalid characters otherwise.
@@ -1341,6 +1354,57 @@ function! s:em_get_target_char()
     endif
 endfunction
 
+function! s:em_override_options(re_anywhere)
+    " There will always be at least 1 option to override/restore.
+    let opts = {
+        \ 're_anywhere': exists('g:EasyMotion_re_anywhere')
+        \ ? g:EasyMotion_re_anywhere : ''
+    \ }
+    let g:EasyMotion_re_anywhere = a:re_anywhere
+    if exists('g:sexp_easymotion_options')
+        " Apply user-specified overrides.
+        for [opt, val] in items(g:sexp_easymotion_options)
+            " TODO: Consider making s:em_options a dict that contains
+            " information permitting validation of option values.
+            " Alernatively... Could iterate over em_options.
+            if index(s:em_options, opt) >= 0
+                " Save either the original setting or empty string to indicate
+                " unset.
+                let opts[opt] = exists('g:EasyMotion_' . opt)
+                    \ ? g:EasyMotion_{opt}
+                    \ : ''
+                " Override.
+                let g:EasyMotion_{opt} = val
+            else
+                echohl WarningMsg
+                echomsg "Ignoring invalid sexp EasyMotion option: " . opt
+                echohl None
+            endif
+        endfor
+    endif
+    return opts
+endfunction
+
+function! s:em_restore_options(opts)
+    for [opt, val] in items(a:opts)
+        " Had the option been set by user?
+        if type(val) == 1 && empty(val)
+            unlet! g:EasyMotion_{opt}
+        else
+            let g:EasyMotion_{opt} = val
+        endif
+    endfor
+endfunction
+
+function! s:em_do_jump(re)
+    " Save and override settings.
+    let save_opts = s:em_override_options(a:re)
+    " Perform the jump.
+    call feedkeys("\<Plug>(easymotion-jumptoanywhere)", 'x')
+    " Restore any old setting(s).
+    call s:em_restore_options(save_opts)
+endfunction
+
 " Easymotion movements
 function! sexp#jump_to_target(mode, count, tgt, top)
     let cur = getpos('.')
@@ -1372,15 +1436,12 @@ function! sexp#jump_to_target(mode, count, tgt, top)
 
         let re = s:sexp_em_get_jump_any_pattern(plist)
     endif
-    let re_anywhere_save = get(g:, 'EasyMotion_re_anywhere', '')
-    let g:EasyMotion_re_anywhere = re
 
     " Note: Positioning before valid range allows us to determine unambiguously
     " whether easymotion performs jump.
-    "call s:setcursor(range[0])
     call s:setcursor(cur)
-    call feedkeys("\<Plug>(easymotion-jumptoanywhere)", 'x')
-
+    call s:em_do_jump(re)
+    " Handle post-jump visual selection/cursor positioning.
     if getpos('.') != cur
         " Jump occurred
         if a:mode ==? 'v'
@@ -1407,11 +1468,6 @@ function! sexp#jump_to_target(mode, count, tgt, top)
             call s:setcursor(cur)
         endif
     endif
-
-    " Restore any old setting(s).
-    " TODO: Consider setting/restoring additional easymotion options.
-    let g:EasyMotion_re_anywhere = re_anywhere_save
-
 endfunction
 
 " Move cursor to current list start or end and enter insert mode. Inserts
