@@ -751,6 +751,12 @@ function! s:is_atom(line, col)
     endif
 endfunction
 
+" TODO: This function wouldn't be needed if is_atom didn't return true for macro
+" chars before bracket. Can we safely fix is_atom?
+function! s:is_atom2(line, col)
+    return !s:is_list(a:line, a:col) && s:is_atom(a:line, a:col)
+endfunction
+
 " Returns 1 if vmode is blank or equals 'v', 0 otherwise. Vim defaults to 'v'
 " if the vmode member has not yet been set.
 function! s:is_characterwise(vmode)
@@ -1122,79 +1128,87 @@ function! sexp#leaf_flow(mode, count, next, tail)
     endif
 endfunction
 
-" Return range of requested brace-enclosed form as [open-pos, close-pos], with
-" positions in standard 4-part format.
+" Return range comprising 2 positions in standard 4-part format.
 " top == 1: top-level form containing cursor
 " top == 0: count'th parent form relative to cursor position (ignoring a list
 "           on whose bracket cursor is positioned).
 " Inputs:
+"   fwd:     1=search forward, 0=search backward
 "   top:     1=top-level form, 0=ancestor form relative to cursor
 "   [count]: which ancestor form is desired, ignored when top == 1
 " Return: [pos1, pos2] or [] if no valid range.
-function! s:get_form_range(top, ...)
+function! s:get_form_range(fwd, top, ...)
     let cur = getpos('.')
-    " First find desired close bracket.
-    " Rationale: We need both open and close, but finding close first obviates
-    " need for special handling to skip over macro chars.
+    let win = winsaveview()
+    " Save view limits.
+    " TODO: Consider just getting from winsaveview Dict.
+    let [wtop, wbot] = [getpos('w0'), getpos('w$')]
+    let list = s:is_list(cur[1], cur[2])
+    if list
+        " We're on a list.
+        if a:fwd && list < 3
+            " Move to close bracket.
+            call s:move_to_current_element_terminal(1)
+        elseif !a:fwd && list == 3
+            " Move to open bracket.
+            call s:move_to_nearest_bracket(0)
+        endif
+    endif
     if a:top
-        let tpos = s:move_to_top_bracket(1)
+        call s:move_to_top_bracket(a:fwd)
     else
         let cnt = a:0 && a:1 ? a:1 : 1
-        " Pre-positioning at end of current element ensures we don't include
-        " current list.
-        call s:move_to_current_element_terminal(1)
         let i = 0
         while i < cnt
-            let tpos = s:move_to_nearest_bracket(1)
-            if !tpos[1]
-                " Can't go any higher.
+            let p = s:move_to_nearest_bracket(a:fwd)
+            if !p[1] || !a:fwd && p[1] < wtop[1] || a:fwd && p[1] > wbot[1]
+                " Either can't go higher, or hit edge of visible area.
                 break
             endif
             let i += 1
         endwhile
     endif
-    " If tpos is invalid, we weren't inside a form, and will have to settle for
-    " the next one in the forward direction.
-    if !tpos[1]
+    let p = getpos('.')
+    " If we haven't moved yet, we're not within a form, in which case, we'll
+    " look for the next one in desired direction that's at least partially
+    " visible.
+    if p == cur
+        " Look for next FORM in desired direction.
         while 1
-            let tpos = s:move_to_adjacent_element(1, 1, 1)
-            if !tpos[1] || s:is_list(tpos[1], tpos[2])
+            let p = s:move_to_adjacent_element(a:fwd, !a:fwd, 1)
+            if !p[1]
+                break
+            endif
+            if a:fwd && p[1] > wbot[1] || !a:fwd && p[1] < wtop[1]
+                " Don't bother checking for list, since it's irrelevant.
+                break
+            endif
+            if s:is_list(p[1], p[2])
+                " Find the other end.
+                call s:move_to_current_element_terminal(a:fwd)
                 break
             endif
         endwhile
+        let p = getpos('.')
     endif
-    if tpos[1]
-        " We have a closing bracket. Find corresponding open.
-        let bpos = s:nearest_bracket(0)
+    if p == cur
+        " Null range
+        let p = a:fwd ? wbot : wtop
+        " Make sure we weren't already at the limit.
+        if p == cur
+            let p = []
+        endif
+    else
+        " We have a non-empty range. Constrain to visible area.
+        if a:fwd && p[1] > wbot[1]
+            let p = wbot
+        elseif !a:fwd && p[1] < wtop[1]
+            let p = wtop
+        endif
     endif
-    " Restore cursor.
-    call s:setcursor(cur)
+    call winrestview(win)
     " Return valid range or []
-    return bpos[1] && tpos[1] ? [bpos, tpos] : []
-endfunction
-
-" Return a range that includes only the portion of the input range visible in
-" current window, and a pair of booleans indicating whether the range is
-" inclusive at that end. (Note that unconstrained ends are exclusive.)
-function! s:constrain_range_to_view(range)
-    let range = deepcopy(a:range)
-    let constrained = [0, 0]
-    " Extract the view/range top/bottom lines for comparison.
-    let [vt, vb] = [line('w0'), line('w$')]
-    let [rt, rb] = [a:range[0][1], a:range[1][1]]
-    if rt < vt
-        " Range includes non-visible text above viewport.
-        let range[0][1] = vt
-        let range[0][2] = 1
-        let constrained[0] = 1
-    endif
-    if rb > vb
-        " Range includes non-visible text below viewport.
-        let range[1][1] = vb
-        let range[1][2] = col([vb, '$'])
-        let constrained[1] = 1
-    endif
-    return [range, constrained]
+    return empty(p) ? [] : a:fwd ? [cur, p] : [p, cur]
 endfunction
 
 function! s:sexp_em_get_next_list(stopline, accept_curpos)
@@ -1268,47 +1282,37 @@ function! s:sexp_em_get_next_comment(stopline, accept_curpos)
         \ a:stopline)
 endfunction
 
-" TODO: Move the sexp_em functions into easymotion autoload.
 function! s:sexp_em_get_positions(range, tgt)
     let ret = []
     let cur = getpos('.')
     " Start at head of range.
     call s:setcursor(a:range[0])
-    let accept_curpos = 1
+    " Determine jump direction by comparing cursor pos with range endpoints.
+    let fwd = cur[1:2] == a:range[0]
+    let accept_curpos = !fwd
+    let [patt, Pred] = [s:em_get_patt(a:tgt), s:em_get_pred(a:tgt)]
+    let is_pred_fn = type(Pred) == 2
     while 1
-        " Note: Targets like atom-subword use atom's get_next.
-        let use_tgt = substitute(a:tgt, '-.*', '', '')
-        " TODO: Given the amount of common code in the various
-        " sexp_em_get_next_* functions, should probably factor some of it up
-        " here. Also, consider using logic more like the flow commands, with
-        " checks in non-list case for the other types of elements. Would it be
-        " faster? Could just have variables representing the conditions, and
-        " could get rid of this function call altogether. To know whether this
-        " is unnecessary optimization, need to time the searchpairpos calls...
-        let [l, c] =
-            \ s:sexp_em_get_next_{use_tgt}(a:range[1][1], accept_curpos)
+        " TODO: Decide on accepting curpos: I think easymotion will ignore if
+        " start of range is also current position, but there are some corner
+        " cases in which start of range doesn't correspond to list open.
+        let [l, c] = searchpos(patt, 'W', a:range[0][0], accept_curpos)
         " Note: Because of viewport constraints, we may accept match at cursor
         " on initial search, but never subsequent ones.
         let accept_curpos = 0
-        " Note: Use of stopline in searchpairpos doesn't prevent our going too
+        " Note: Use of stopline in searchpos doesn't prevent our going too
         " far on the final line of range, so check for that here.
-        if !l || s:compare_pos([0, l, c], a:range[1]) > -1
+        " Note: Allow match at end pos only when it's not cur pos.
+        if !l || s:compare_pos([0, l, c], a:range[1]) > (fwd ? 0 : -1)
             " We've gone as far as we can.
             break
         endif
-        if a:tgt == 'atom-subword'
-            " Special post-processing required for subword case
-            call extend(ret, s:sexp_em_find_subwords_in_current_atom())
-        else
-            call add(ret, [l, c])
+        if !empty(Pred) && !(is_pred_fn ? Pred(l, c) : eval(Pred))
+            " Predicate fails.
+            continue
         endif
-        if a:tgt != 'list'
-            " Note: *_get_next functions will accept a match immediately past
-            " cursor position, so if we're on something other than an open
-            " bracket, get to the end of the current element before subsequent
-            " search.
-            call s:move_to_current_element_terminal(1)
-        endif
+        " Accumulate the position.
+        call add(ret, [l, c])
     endwhile
 
     " Restore cursor position.
@@ -1405,20 +1409,56 @@ function! s:em_do_jump(re)
     call s:em_restore_options(save_opts)
 endfunction
 
+" Note: This avoids need to define this data structure after the predicates.
+function! s:em_get_targets()
+    if !exists('s:em_targets')
+        let s:em_targets = {
+            \ 'patt': {
+                \ 'w': '',
+                \ 'e': '',
+                \ 'W': '\v%(^|' . s:delimiter . ')@<=%(' . s:delimiter . ')@!.',
+                \ 'E': '\v%(' . s:delimiter . ')@!.%($|' . s:delimiter . ')@=',
+                \ 's': '',
+                \ 'c': '',
+                \ 'l': '',
+                \ ']': '',
+                \ '}': '',
+            \ },
+            \ 'pred': {
+                \ 'w': '',
+                \ 'e': '',
+                \ 'W': function('s:is_atom2'),
+                \ 'E': function('s:is_atom2'),
+                \ 's': '',
+                \ 'c': '',
+                \ 'l': '',
+                \ ']': '',
+                \ '}': '',
+            \ }
+        \ }
+    endif
+    return s:em_targets
+endfunction
+
+function! s:em_get_patt(tgt)
+    let o = s:em_get_targets().patt
+    return has_key(o, a:tgt) ? o[a:tgt] : ''
+endfunction
+
+function! s:em_get_pred(tgt)
+    let o = s:em_get_targets().pred
+    return has_key(o, a:tgt) ? o[a:tgt] : ''
+endfunction
+
 " Easymotion movements
-function! sexp#jump_to_target(mode, count, tgt, top)
+function! sexp#jump_to_target(mode, count, tgt, fwd, top)
     let cur = getpos('.')
-    let range = s:get_form_range(a:top, a:count)
+    let range = s:get_form_range(a:fwd, a:top, a:count)
     if empty(range)
         " TODO: Warn?
         return
     endif
-    " Make sure we don't search off screen.
-    " TODO: I'm thinking perhaps we should always include cursor position at
-    " start.
-    " Rationale: We want to be able to jump to head of top-level form.
-    let [range, inc] = s:constrain_range_to_view(range)
-    if a:tgt == 'char'
+    if a:tgt == 'f'
         " Char jump requires special handling.
         let tgt_ch = s:em_get_target_char()
         " TODO: Handle escaping of tgt_ch.
@@ -1433,20 +1473,19 @@ function! sexp#jump_to_target(mode, count, tgt, top)
         if empty(plist)
             return
         endif
-
         let re = s:sexp_em_get_jump_any_pattern(plist)
     endif
 
-    " Note: Positioning before valid range allows us to determine unambiguously
-    " whether easymotion performs jump.
-    call s:setcursor(cur)
+    " Assumption: Cursor hasn't moved.
     call s:em_do_jump(re)
     " Handle post-jump visual selection/cursor positioning.
     if getpos('.') != cur
         " Jump occurred
         if a:mode ==? 'v'
-            if a:tgt == 'atom-subword'
+            if a:tgt == 'w'
                 " Select just the subword.
+                " TODO: Probably change the configuration mechanism such that
+                " separators are defined.
                 exe 'normal! v/\%('
                     \ . get(g:, 're_subword_char', s:re_subword_char)
                     \ . '\)\+/e' . "\<CR>"
@@ -1469,6 +1508,57 @@ function! sexp#jump_to_target(mode, count, tgt, top)
         endif
     endif
 endfunction
+
+fu! sexp#jump_test1()
+    let ret = []
+    call cursor(1, 1)
+    let ts = reltime()
+    while 1
+        let pos = searchpairpos('a\&b', '\S', 'a\&b',
+            \ 'W',
+            \ 's:is_list(line("."), col("."))'
+            \ . ' || !s:is_atom(line("."), col("."))')
+        if pos[0]
+            call add(ret, pos)
+            " Move past the atom.
+            call s:move_to_current_element_terminal(1)
+        else
+            break
+        endif
+    endwhile
+    echo "Old:" reltimestr(reltime(ts))
+    echo "Match count:" len(ret)
+    "return ret
+endfu
+
+fu! sexp#jump_test2(...)
+    let ret = []
+    call cursor(1, 1)
+    let move_past = a:0 && a:1
+    let ts = reltime()
+    let re = '\v%(\_^|' . s:delimiter . ')@<=%(' . s:delimiter . ')@!.'
+    let g:re = re
+    while 1
+        let pos = searchpos(re, 'W')
+        let g:pos = pos
+        if pos[0]
+            " Make sure...
+            " TODO: Why was the is_list test necessary?
+            if !s:is_list(pos[0], pos[1]) && s:is_atom(pos[0], pos[1])
+                call add(ret, pos)
+                " Move past the atom.
+                if move_past
+                    call s:move_to_current_element_terminal(1)
+                endif
+            endif
+        else
+            break
+        endif
+    endwhile
+    echo "New" . (move_past ? "-mp" : "") . ": " . reltimestr(reltime(ts))
+    echo "Match count:" len(ret)
+    "return ret
+endfu
 
 " Move cursor to current list start or end and enter insert mode. Inserts
 " a leading space after opening bracket if inserting at head, unless there

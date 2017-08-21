@@ -58,20 +58,46 @@ let s:sexp_mappings = {
     \ 'sexp_flow_to_next_leaf_head':    '<M-S-w>',
     \ 'sexp_flow_to_prev_leaf_tail':    '<M-S-g>',
     \ 'sexp_flow_to_next_leaf_tail':    '<M-S-e>',
-    \ 'sexp_jump_to_list':              '<Space>L',
-    \ 'sexp_jump_to_list_in_top':       '<Space>l',
-    \ 'sexp_jump_to_leaf':              '<Space>E',
-    \ 'sexp_jump_to_leaf_in_top':       '<Space>e',
-    \ 'sexp_jump_to_atom_in_top':       '<Space>A',
-    \ 'sexp_jump_to_atom':              '<Space>a',
-    \ 'sexp_jump_to_subword':           '<Space>W',
-    \ 'sexp_jump_to_subword_in_top':    '<Space>w',
-    \ 'sexp_jump_to_string':            '<Space>S',
-    \ 'sexp_jump_to_string_in_top':     '<Space>s',
-    \ 'sexp_jump_to_comment':           '<Space>C',
-    \ 'sexp_jump_to_comment_in_top':    '<Space>c',
-    \ 'sexp_jump_to_char':              '<Space>F',
-    \ 'sexp_jump_to_char_in_top':       '<Space>f',
+    \ 'sexp_jump_backward_to_word_in_FORM':           '<Space>b',
+    \ 'sexp_jump_forward_to_word_in_FORM':            '<Space>w',
+    \ 'sexp_jump_backward_to_word_end_in_FORM':       '<Space>g',
+    \ 'sexp_jump_forward_to_word_end_in_FORM':        '<Space>e',
+    \ 'sexp_jump_backward_to_atom_in_FORM':           '<Space>B',
+    \ 'sexp_jump_forward_to_atom_in_FORM':            '<Space>W',
+    \ 'sexp_jump_backward_to_atom_end_in_FORM':       '<Space>G',
+    \ 'sexp_jump_forward_to_atom_end_in_FORM':        '<Space>E',
+    \ 'sexp_jump_backward_to_string_in_FORM':         '<Space>S',
+    \ 'sexp_jump_forward_to_string_in_FORM':          '<Space>s',
+    \ 'sexp_jump_backward_to_comment_in_FORM':        '<Space>C',
+    \ 'sexp_jump_forward_to_comment_in_FORM':         '<Space>c',
+    \ 'sexp_jump_backward_to_leaf_in_FORM':           '<Space>L',
+    \ 'sexp_jump_forward_to_leaf_in_FORM':            '<Space>l',
+    \ 'sexp_jump_backward_to_char_in_FORM':           '<Space>F',
+    \ 'sexp_jump_forward_to_char_in_FORM':            '<Space>f',
+    \ 'sexp_jump_backward_to_open_in_FORM':           '<Space>[',
+    \ 'sexp_jump_forward_to_open_in_FORM':            '<Space>]',
+    \ 'sexp_jump_backward_to_close_in_FORM':          '<Space>{',
+    \ 'sexp_jump_forward_to_close_in_FORM':           '<Space>}',
+    \ 'sexp_jump_backward_to_word_in_form':           '<C-Space>b',
+    \ 'sexp_jump_forward_to_word_in_form':            '<C-Space>w',
+    \ 'sexp_jump_backward_to_word_end_in_form':       '<C-Space>g',
+    \ 'sexp_jump_forward_to_word_end_in_form':        '<C-Space>e',
+    \ 'sexp_jump_backward_to_atom_in_form':           '<C-Space>B',
+    \ 'sexp_jump_forward_to_atom_in_form':            '<C-Space>W',
+    \ 'sexp_jump_backward_to_atom_end_in_form':       '<C-Space>G',
+    \ 'sexp_jump_forward_to_atom_end_in_form':        '<C-Space>E',
+    \ 'sexp_jump_backward_to_string_in_form':         '<C-Space>S',
+    \ 'sexp_jump_forward_to_string_in_form':          '<C-Space>s',
+    \ 'sexp_jump_backward_to_comment_in_form':        '<C-Space>C',
+    \ 'sexp_jump_forward_to_comment_in_form':         '<C-Space>c',
+    \ 'sexp_jump_backward_to_leaf_in_form':           '<C-Space>L',
+    \ 'sexp_jump_forward_to_leaf_in_form':            '<C-Space>l',
+    \ 'sexp_jump_backward_to_char_in_form':           '<C-Space>F',
+    \ 'sexp_jump_forward_to_char_in_form':            '<C-Space>f',
+    \ 'sexp_jump_backward_to_open_in_form':           '<C-Space>[',
+    \ 'sexp_jump_forward_to_open_in_form':            '<C-Space>]',
+    \ 'sexp_jump_backward_to_close_in_form':          '<C-Space>{',
+    \ 'sexp_jump_forward_to_close_in_form':           '<C-Space>}',
     \ 'sexp_move_to_prev_top_element':  '[[',
     \ 'sexp_move_to_next_top_element':  ']]',
     \ 'sexp_select_prev_element':       '[e',
@@ -249,13 +275,46 @@ function! s:sexp_create_mappings()
 
     " If easymotion plugin is loaded, create easymotion integration maps.
     if !empty(mapcheck('<Plug>(easymotion-jumptoanywhere)'))
-        for plug in ['sexp_jump_to_list_in_top',    'sexp_jump_to_list',
-                   \ 'sexp_jump_to_leaf_in_top',    'sexp_jump_to_leaf',
-                   \ 'sexp_jump_to_atom_in_top',    'sexp_jump_to_atom',
-                   \ 'sexp_jump_to_subword_in_top', 'sexp_jump_to_subword',
-                   \ 'sexp_jump_to_string_in_top',  'sexp_jump_to_string',
-                   \ 'sexp_jump_to_comment_in_top', 'sexp_jump_to_comment',
-                   \ 'sexp_jump_to_char_in_top',    'sexp_jump_to_char']
+        for plug in ['sexp_jump_backward_to_word_in_FORM',      'sexp_jump_forward_to_word_in_FORM',
+                   \ 'sexp_jump_backward_to_word_end_in_FORM',  'sexp_jump_forward_to_word_end_in_FORM',
+                   \ 'sexp_jump_backward_to_atom_in_FORM',      'sexp_jump_forward_to_atom_in_FORM',
+                   \ 'sexp_jump_backward_to_atom_end_in_FORM',  'sexp_jump_forward_to_atom_end_in_FORM',
+                   \ 'sexp_jump_backward_to_string_in_FORM',    'sexp_jump_forward_to_string_in_FORM',
+                   \ 'sexp_jump_backward_to_comment_in_FORM',   'sexp_jump_forward_to_comment_in_FORM',
+                   \ 'sexp_jump_backward_to_leaf_in_FORM',      'sexp_jump_forward_to_leaf_in_FORM',
+                   \ 'sexp_jump_backward_to_char_in_FORM',      'sexp_jump_forward_to_char_in_FORM',
+                   \ 'sexp_jump_backward_to_open_in_FORM',      'sexp_jump_forward_to_open_in_FORM',
+                   \ 'sexp_jump_backward_to_close_in_FORM',     'sexp_jump_forward_to_close_in_FORM',
+                   \ 'sexp_jump_backward_to_word_in_FORM',      'sexp_jump_forward_to_word_in_FORM',
+                   \ 'sexp_jump_backward_to_word_end_in_FORM',  'sexp_jump_forward_to_word_end_in_FORM',
+                   \ 'sexp_jump_backward_to_atom_in_FORM',      'sexp_jump_forward_to_atom_in_FORM',
+                   \ 'sexp_jump_backward_to_atom_end_in_FORM',  'sexp_jump_forward_to_atom_end_in_FORM',
+                   \ 'sexp_jump_backward_to_string_in_FORM',    'sexp_jump_forward_to_string_in_FORM',
+                   \ 'sexp_jump_backward_to_comment_in_FORM',   'sexp_jump_forward_to_comment_in_FORM',
+                   \ 'sexp_jump_backward_to_leaf_in_FORM',      'sexp_jump_forward_to_leaf_in_FORM',
+                   \ 'sexp_jump_backward_to_char_in_FORM',      'sexp_jump_forward_to_char_in_FORM',
+                   \ 'sexp_jump_backward_to_open_in_FORM',      'sexp_jump_forward_to_open_in_FORM',
+                   \ 'sexp_jump_backward_to_close_in_FORM',     'sexp_jump_forward_to_close_in_FORM',
+                   \ 'sexp_jump_backward_to_word_in_form',      'sexp_jump_forward_to_word_in_form',
+                   \ 'sexp_jump_backward_to_word_end_in_form',  'sexp_jump_forward_to_word_end_in_form',
+                   \ 'sexp_jump_backward_to_atom_in_form',      'sexp_jump_forward_to_atom_in_form',
+                   \ 'sexp_jump_backward_to_atom_end_in_form',  'sexp_jump_forward_to_atom_end_in_form',
+                   \ 'sexp_jump_backward_to_string_in_form',    'sexp_jump_forward_to_string_in_form',
+                   \ 'sexp_jump_backward_to_comment_in_form',   'sexp_jump_forward_to_comment_in_form',
+                   \ 'sexp_jump_backward_to_leaf_in_form',      'sexp_jump_forward_to_leaf_in_form',
+                   \ 'sexp_jump_backward_to_char_in_form',      'sexp_jump_forward_to_char_in_form',
+                   \ 'sexp_jump_backward_to_open_in_form',      'sexp_jump_forward_to_open_in_form',
+                   \ 'sexp_jump_backward_to_close_in_form',     'sexp_jump_forward_to_close_in_form',
+                   \ 'sexp_jump_backward_to_word_in_form',      'sexp_jump_forward_to_word_in_form',
+                   \ 'sexp_jump_backward_to_word_end_in_form',  'sexp_jump_forward_to_word_end_in_form',
+                   \ 'sexp_jump_backward_to_atom_in_form',      'sexp_jump_forward_to_atom_in_form',
+                   \ 'sexp_jump_backward_to_atom_end_in_form',  'sexp_jump_forward_to_atom_end_in_form',
+                   \ 'sexp_jump_backward_to_string_in_form',    'sexp_jump_forward_to_string_in_form',
+                   \ 'sexp_jump_backward_to_comment_in_form',   'sexp_jump_forward_to_comment_in_form',
+                   \ 'sexp_jump_backward_to_leaf_in_form',      'sexp_jump_forward_to_leaf_in_form',
+                   \ 'sexp_jump_backward_to_char_in_form',      'sexp_jump_forward_to_char_in_form',
+                   \ 'sexp_jump_backward_to_open_in_form',      'sexp_jump_forward_to_open_in_form',
+                   \ 'sexp_jump_backward_to_close_in_form',     'sexp_jump_forward_to_close_in_form']
             let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
             if !empty(lhs)
                 execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
@@ -355,40 +414,90 @@ DefplugN  nnoremap sexp_flow_to_next_leaf_tail sexp#leaf_flow('n', v:count, 1, 1
 DEFPLUG   xnoremap sexp_flow_to_next_leaf_tail <Esc>:<C-u>call sexp#leaf_flow('v', v:prevcount, 1, 1)<CR>
 
 " Easymotion integration
-Defplug   nnoremap sexp_jump_to_list_in_top sexp#jump_to_target('n', v:count, 'list', 1)
-DEFPLUG   xnoremap sexp_jump_to_list_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'list', 1)<CR>
-Defplug   nnoremap sexp_jump_to_list sexp#jump_to_target('n', v:count, 'list', 0)
-DEFPLUG   xnoremap sexp_jump_to_list <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'list', 0)<CR>
 
-Defplug   nnoremap sexp_jump_to_leaf_in_top sexp#jump_to_target('n', v:count, 'leaf', 1)
-DEFPLUG   xnoremap sexp_jump_to_leaf_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 1)<CR>
-Defplug   nnoremap sexp_jump_to_leaf sexp#jump_to_target('n', v:count, 'leaf', 0)
-DEFPLUG   xnoremap sexp_jump_to_leaf <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'leaf', 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_word_in_FORM sexp#jump_to_target('n', v:count, 'w', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_word_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'w', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_word_in_FORM sexp#jump_to_target('n', v:count, 'w', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_word_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'w', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_word_end_in_FORM sexp#jump_to_target('n', v:count, 'e', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_word_end_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'e', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_word_end_in_FORM sexp#jump_to_target('n', v:count, 'e', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_word_end_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'e', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_atom_in_FORM sexp#jump_to_target('n', v:count, 'W', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_atom_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'W', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_atom_in_FORM sexp#jump_to_target('n', v:count, 'W', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_atom_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'W', 1, 1)<CR>
+" TODO: Decide on atom end...
+Defplug   nnoremap sexp_jump_backward_to_atom_end_in_FORM sexp#jump_to_target('n', v:count, 'E', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_atom_end_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'E', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_atom_end_in_FORM sexp#jump_to_target('n', v:count, 'E', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_atom_end_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'E', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_string_in_FORM sexp#jump_to_target('n', v:count, 'S', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_string_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'S', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_string_in_FORM sexp#jump_to_target('n', v:count, 's', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_string_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 's', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_comment_in_FORM sexp#jump_to_target('n', v:count, 'C', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_comment_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'C', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_comment_in_FORM sexp#jump_to_target('n', v:count, 'c', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_comment_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'c', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_leaf_in_FORM sexp#jump_to_target('n', v:count, 'L', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_leaf_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'L', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_leaf_in_FORM sexp#jump_to_target('n', v:count, 'l', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_leaf_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'l', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_char_in_FORM sexp#jump_to_target('n', v:count, 'F', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_char_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'F', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_char_in_FORM sexp#jump_to_target('n', v:count, 'f', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_char_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'f', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_open_in_FORM sexp#jump_to_target('n', v:count, '[', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_open_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '[', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_open_in_FORM sexp#jump_to_target('n', v:count, ']', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_open_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, ']', 1, 1)<CR>
+Defplug   nnoremap sexp_jump_backward_to_close_in_FORM sexp#jump_to_target('n', v:count, '{', 0, 1)
+DEFPLUG   xnoremap sexp_jump_backward_to_close_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '{', 0, 1)<CR>
+Defplug   nnoremap sexp_jump_forward_to_close_in_FORM sexp#jump_to_target('n', v:count, '}', 1, 1)
+DEFPLUG   xnoremap sexp_jump_forward_to_close_in_FORM <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '}', 1, 1)<CR>
 
-Defplug   nnoremap sexp_jump_to_atom_in_top sexp#jump_to_target('n', v:count, 'atom', 1)
-DEFPLUG   xnoremap sexp_jump_to_atom_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 1)<CR>
-Defplug   nnoremap sexp_jump_to_atom sexp#jump_to_target('n', v:count, 'atom', 0)
-DEFPLUG   xnoremap sexp_jump_to_atom <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom', 0)<CR>
-
-Defplug   nnoremap sexp_jump_to_subword_in_top sexp#jump_to_target('n', v:count, 'atom-subword', 1)
-DEFPLUG   xnoremap sexp_jump_to_subword_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom-subword', 1)<CR>
-Defplug   nnoremap sexp_jump_to_subword sexp#jump_to_target('n', v:count, 'atom-subword', 0)
-DEFPLUG   xnoremap sexp_jump_to_subword <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'atom-subword', 0)<CR>
-
-Defplug   nnoremap sexp_jump_to_string_in_top sexp#jump_to_target('n', v:count, 'string', 1)
-DEFPLUG   xnoremap sexp_jump_to_string_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'string', 1)<CR>
-Defplug   nnoremap sexp_jump_to_string sexp#jump_to_target('n', v:count, 'string', 0)
-DEFPLUG   xnoremap sexp_jump_to_string <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'string', 0)<CR>
-
-Defplug   nnoremap sexp_jump_to_comment_in_top sexp#jump_to_target('n', v:count, 'comment', 1)
-DEFPLUG   xnoremap sexp_jump_to_comment_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'comment', 1)<CR>
-Defplug   nnoremap sexp_jump_to_comment sexp#jump_to_target('n', v:count, 'comment', 0)
-DEFPLUG   xnoremap sexp_jump_to_comment <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'comment', 0)<CR>
-
-Defplug   nnoremap sexp_jump_to_char_in_top sexp#jump_to_target('n', v:count, 'char', 1)
-DEFPLUG   xnoremap sexp_jump_to_char_in_top <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'char', 1)<CR>
-Defplug   nnoremap sexp_jump_to_char sexp#jump_to_target('n', v:count, 'char', 0)
-DEFPLUG   xnoremap sexp_jump_to_char <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'char', 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_word_in_form sexp#jump_to_target('n', v:count, 'w', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_word_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'w', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_word_in_form sexp#jump_to_target('n', v:count, 'w', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_word_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'w', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_word_end_in_form sexp#jump_to_target('n', v:count, 'e', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_word_end_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'e', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_word_end_in_form sexp#jump_to_target('n', v:count, 'e', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_word_end_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'e', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_atom_in_form sexp#jump_to_target('n', v:count, 'W', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_atom_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'W', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_atom_in_form sexp#jump_to_target('n', v:count, 'W', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_atom_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'W', 1, 0)<CR>
+" TODO: Decide on atom end...
+Defplug   nnoremap sexp_jump_backward_to_atom_end_in_form sexp#jump_to_target('n', v:count, 'E', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_atom_end_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'E', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_atom_end_in_form sexp#jump_to_target('n', v:count, 'E', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_atom_end_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'E', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_string_in_form sexp#jump_to_target('n', v:count, 'S', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_string_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'S', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_string_in_form sexp#jump_to_target('n', v:count, 's', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_string_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 's', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_comment_in_form sexp#jump_to_target('n', v:count, 'C', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_comment_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'C', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_comment_in_form sexp#jump_to_target('n', v:count, 'c', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_comment_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'c', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_leaf_in_form sexp#jump_to_target('n', v:count, 'L', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_leaf_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'L', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_leaf_in_form sexp#jump_to_target('n', v:count, 'l', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_leaf_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'l', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_char_in_form sexp#jump_to_target('n', v:count, 'F', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_char_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'F', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_char_in_form sexp#jump_to_target('n', v:count, 'f', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_char_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, 'f', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_open_in_form sexp#jump_to_target('n', v:count, '[', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_open_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '[', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_open_in_form sexp#jump_to_target('n', v:count, ']', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_open_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, ']', 1, 0)<CR>
+Defplug   nnoremap sexp_jump_backward_to_close_in_form sexp#jump_to_target('n', v:count, '{', 0, 0)
+DEFPLUG   xnoremap sexp_jump_backward_to_close_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '{', 0, 0)<CR>
+Defplug   nnoremap sexp_jump_forward_to_close_in_form sexp#jump_to_target('n', v:count, '}', 1, 0)
+DEFPLUG   xnoremap sexp_jump_forward_to_close_in_form <Esc>:<C-u>call sexp#jump_to_target('v', v:prevcount, '}', 1, 0)<CR>
 
 " Adjacent top element
 Defplug  nnoremap sexp_move_to_prev_top_element sexp#move_to_adjacent_element('n', v:count, 0, 0, 1)
