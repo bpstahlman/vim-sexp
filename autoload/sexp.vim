@@ -488,10 +488,15 @@ endfunction
 " that case, even though it will return false values for empty lines within
 " strings, etc.
 if exists('*synstack')
-    function! s:syntax_match(pat, line, col)
-        let stack = synstack(a:line, a:col)
-        return (synIDattr(get(stack, -1, ''), 'name') =~? a:pat) ||
-             \ (synIDattr(get(stack, -2, ''), 'name') =~? a:pat)
+    function! s:syntax_match(pat, line, col, ...)
+        if a:0 && a:1
+            " This is *much* faster than using synstack (albeit less robust).
+            return synIDattr(synID(a:line, a:col, 0), 'name') =~? a:pat
+        else
+            let stack = synstack(a:line, a:col)
+            return (synIDattr(get(stack, -1, ''), 'name') =~? a:pat) ||
+                 \ (synIDattr(get(stack, -2, ''), 'name') =~? a:pat)
+        endif
     endfunction
 else
     function! s:syntax_match(pat, line, col)
@@ -1282,6 +1287,201 @@ function! s:sexp_em_get_next_comment(stopline, accept_curpos)
         \ a:stopline)
 endfunction
 
+" Note: Currently, not saving/restoring pos.
+function! s:sexp_em_get_subwords(range, tail, ps)
+    " TODO: Which position format?
+    let [ls, cs] = [a:range[0][0], a:range[0][1]]
+    let [le, ce] = [a:range[1][0], a:range[1][1]]
+    " TODO: Consider how much control to give user over this.
+    let split_re = get(g:, 'sexp_em_subword_split_re', s:em_subword_split_re)
+    " TODO: Decide whether delimiter is redundant...
+    " TODO: split_re currently contains quantifier that's unnecessary in re1.
+    " But how to handle with option?
+    let re1 = '\v$|\s|' . split_re
+    let re2 = '\v%(\_s|' . split_re . ')+\zs'
+    let cflag = 'c'
+    call cursor(ls, cs)
+    while 1
+        let [l, c] = searchpos(re1, 'W' . cflag, le)
+        " Assumption: re1 will never match across line end.
+        if a:tail && (empty(cflag) || !l || (c > cs && c <= ce))
+            " TODO: mb consideration
+            call add(a:ps, l ? [l, c - 1] : [le, ce])
+        endif
+        if !l
+            break
+        endif
+        let cflag = ''
+        " Assumption: This pattern has \zs at the end, and is guaranteed to
+        " match.
+        let [l, c] = searchpos(re2, 'Wc', le)
+        if l > le || l == le && c > ce
+            break
+        endif
+        " We're past separator but not past end of range.
+        if !a:tail
+            call add(a:ps, [l, c])
+        endif
+    endwhile
+endfunction
+
+function! s:sexp_em_get_subwords_save2(range, tail, ps)
+    " TODO: Which position format?
+    let [le, ce] = [a:range[1][0], a:range[1][1]]
+    " TODO: Consider how much control to give user over this.
+    let split_re = get(g:, 'sexp_em_subword_split_re', s:em_subword_split_re)
+    " TODO: Decide whether delimiter is redundant...
+    let split_re = '\v%(' . (a:tail ? '$' : '^') . '|\s+|' . split_re . (a:tail ? '' : '\zs'),
+    let [ls, cs] = [a:range[0][0], a:range[0][1]]
+    let [l, c] = [ls, cs]
+    " TODO: Probably get rid of cflag
+    let [first, cflag] = [1, '']
+    call cursor(l, c)
+    while l < le || l == le && c <= ce
+        let [l, c] = searchpos(split_re, 'W' . cflag, le)
+        if !a:tail && first && (!l || l > ls || c != cs)
+            " Accumulate start position.
+            call add(a:ps, [ls, cs])
+        endif
+        let [first, cflag] = [0, '']
+        " Assumption:
+        if !l
+            break
+        endif
+        if a:tail || c < col([l, '$']) && l < le || l == le && c <= ce
+            " Note: c-1 could be in the midst of mb char.
+            call add(a:ps, [l, a:tail ? c - 1 : c])
+        endif
+    endwhile
+
+endfunction
+
+function! s:sexp_em_get_subwords_save(range, tail, ps)
+    " TODO: Which position format?
+    let [le, ce] = [a:range[1][0], a:range[1][1]]
+    " TODO: Consider how much control to give user over this.
+    let split_re = get(g:, 'sexp_em_subword_split_re', s:em_subword_split_re)
+    " TODO: Decide whether delimiter is redundant...
+    let split_re = '\v%(' . (a:tail ? '$' : '^') . '|\s+|' . split_re . (a:tail ? '' : '\zs'),
+    let [ls, cs] = [a:range[0][0], a:range[0][1]]
+    let [l, c] = [ls, cs]
+    let cflag = ''
+    if !a:tail
+        let cflag = 'c'
+        if c > 1
+            " TODO: Consider mb implications.
+            let c -= 1
+        endif
+    endif
+    call cursor(l, c)
+    while l < le || l == le && c <= ce
+        let [l, c] = searchpos(split_re, 'W' . cflag, le)
+        let cflag = ''
+        " Assumption:
+        if !l
+            break
+        endif
+        if a:tail || c < col([l, '$']) && l < le || l == le && c <= ce
+            " Note: c-1 could be in the midst of mb char.
+            call add(a:ps, [l, a:tail ? c - 1 : c])
+        endif
+    endwhile
+
+endfunction
+
+
+" New approach...
+function! s:sexp_em_get_subword_positions(range, tgt)
+    let ret = []
+    let cur = getpos('.')
+    " Start at head of range.
+    call s:setcursor(a:range[0])
+    " Determine jump direction by comparing cursor pos with range endpoints.
+    let fwd = cur[1:2] == a:range[0]
+    let cflag = !fwd ? 'c' : ''
+    let [ls, cs] = a:range[0][1:2]
+    let [l, c] = [ls, cs]
+    let [le, ce] = a:range[1][1:2]
+    let grp = a:tgt =~? '[c;:]'
+        \ ? 'comment'
+        \ : a:tgt =~? '[sS''"]'
+        \ ? 'string'
+        \ : a:tgt =~? '[weg]'
+        \ ? 'atom'
+        \ : ''
+    let has_synstack = exists('*synstack')
+    let l:is_subword = a:tgt =~ '[weg;:''"]'
+    let l:is_tail = a:tgt =~ '[egE]'
+    " Boot-strap in_grp with char just prior to range.
+    let in_grp_prev = l == 1 && c == 1
+        \ ? 0
+        \ : c == 1
+            \ ? s:syntax_match(grp, l - 1, col([l - 1, '$']) - 1)
+            \ : s:syntax_match(grp, l, c - 1)
+    while 1
+        " Note: Inhibit use of synstack for performance.
+        let in_grp = synIDattr(synID(l, c, 0), 'name') =~? grp
+        " edge: 1=rising, 0=none, -1=falling
+        let edge = 0
+        if in_grp != in_grp_prev
+            if in_grp
+                let edge = 1
+            else
+                let edge = has_synstack && s:syntax_match(grp, l, c) ? 0 : -1
+            endif
+        endif
+        let in_grp_prev = in_grp
+        " tgts: w e g W E G s c l ; : ] }
+        " TODO: For now, just handle comments and strings in this function.
+        if edge > 0
+            " Save head.
+            " TODO: May not need it if tail and non-subword. But until all
+            " design decisions finalized, save unconditionally.
+            let [lh, ch] = [l, c]
+        endif
+        if edge > 0 && !l:is_tail && !l:is_subword
+            " Handle head, non-subwords.
+            call add(ret, [l, c])
+        elseif edge < 0 && l:is_tail && !l:is_subword
+            " Handle tail, non-subwords.
+            call add(ret, [lp, cp])
+        elseif l:is_subword && (edge < 0 ||
+            \ in_grp && s:compare_pos([0, l, c], a:range[1]) > (fwd ? 0 : -1))
+            " TODO: Decide on the proper condition above: asymmetrical or not?
+            " Recall I'm allowing matches at cursor position now, to be filtered
+            " out either by me or Easymotion.
+            " Subwords
+            " Note: Handle sub-words even if we didn't get to tail.
+            " Rationale: Subsequent pattern will handle.
+            call s:sexp_em_get_subwords(
+                \ [exists('l:lh') ? [lh, ch] : [ls, cs],
+                \  edge < 0 ? [lp, cp] : [le, ce]],
+                \ l:is_tail, ret)
+        endif
+        """"""""""""""""""""'
+        " If we've gone past end of range, or we're at end and not in grp, we're done.
+        if l > le || l == le && c > (in_grp ? ce : ce - 1)
+            " TODO: Need test to ensure we've actually advanced a full *char*
+            " past end of range (for multibyte case).
+            break
+        endif
+        " Old positions needed because we go past end of range.
+        " TODO: Could simply calculate prev position when needed above.
+        let [lp, cp] = [l, c]
+        " Update line/col
+        let c += 1
+        if c >= col([l, '$'])
+            " Move to next line
+            let l += 1
+            let c = 1
+        endif
+    endwhile
+
+    " Restore cursor position.
+    call s:setcursor(cur)
+    return ret
+endfunction
+
 function! s:sexp_em_get_positions(range, tgt)
     let ret = []
     let cur = getpos('.')
@@ -1289,17 +1489,17 @@ function! s:sexp_em_get_positions(range, tgt)
     call s:setcursor(a:range[0])
     " Determine jump direction by comparing cursor pos with range endpoints.
     let fwd = cur[1:2] == a:range[0]
-    let accept_curpos = !fwd
+    let cflag = !fwd ? 'c' : ''
     let [patt, Pred] = [s:em_get_patt(a:tgt), s:em_get_pred(a:tgt)]
     let is_pred_fn = type(Pred) == 2
     while 1
         " TODO: Decide on accepting curpos: I think easymotion will ignore if
         " start of range is also current position, but there are some corner
         " cases in which start of range doesn't correspond to list open.
-        let [l, c] = searchpos(patt, 'W', a:range[0][0], accept_curpos)
+        let [l, c] = searchpos(patt, 'W' . cflag, a:range[1][1])
         " Note: Because of viewport constraints, we may accept match at cursor
         " on initial search, but never subsequent ones.
-        let accept_curpos = 0
+        let cflag = ''
         " Note: Use of stopline in searchpos doesn't prevent our going too
         " far on the final line of range, so check for that here.
         " Note: Allow match at end pos only when it's not cur pos.
@@ -1411,11 +1611,16 @@ endfunction
 
 " Note: This avoids need to define this data structure after the predicates.
 function! s:em_get_targets()
+    " TODO: Get this option some other way.
+    let split_re = '\v%([[:punct:]_]+|\l@<=\u@=)'
     if !exists('s:em_targets')
+        " TODO: Try optimizing w/e patts: possibly changing the delimiter
+        " pattern to one that uses character class, and maybe using \zs \ze in
+        " lieu of lookaround... Also, should probably get rid of redundant \v's.
         let s:em_targets = {
             \ 'patt': {
-                \ 'w': '',
-                \ 'e': '',
+                \ 'w': '\v%(^|' . s:delimiter . '|' . split_re . ')@<=%(' . s:delimiter . '|' . split_re . ')@!.',
+                \ 'e': '\v%(' . s:delimiter . '|' . split_re . ')@!.%($|' . s:delimiter . '|' . split_re . ')@=',
                 \ 'W': '\v%(^|' . s:delimiter . ')@<=%(' . s:delimiter . ')@!.',
                 \ 'E': '\v%(' . s:delimiter . ')@!.%($|' . s:delimiter . ')@=',
                 \ 's': '',
@@ -1425,8 +1630,8 @@ function! s:em_get_targets()
                 \ '}': '',
             \ },
             \ 'pred': {
-                \ 'w': '',
-                \ 'e': '',
+                \ 'w': function('s:is_atom2'),
+                \ 'e': function('s:is_atom2'),
                 \ 'W': function('s:is_atom2'),
                 \ 'E': function('s:is_atom2'),
                 \ 's': '',
@@ -1458,6 +1663,7 @@ function! sexp#jump_to_target(mode, count, tgt, fwd, top)
         " TODO: Warn?
         return
     endif
+    let l:is_subword = a:tgt =~ '[weg;:''"]'
     if a:tgt == 'f'
         " Char jump requires special handling.
         let tgt_ch = s:em_get_target_char()
@@ -1468,8 +1674,13 @@ function! sexp#jump_to_target(mode, count, tgt, fwd, top)
             return
         endif
     else
-        " Get list of target positions in range: format [[line, col],...]
-        let plist = s:sexp_em_get_positions(range, a:tgt)
+        if l:is_subword
+            let plist = s:sexp_em_get_subword_positions(range, a:tgt)
+        else
+            " Get list of target positions in range: format [[line, col],...]
+            let plist = s:sexp_em_get_positions(range, a:tgt)
+        endif
+        " TODO: TEMP DEBUG
         if empty(plist)
             return
         endif
@@ -1558,6 +1769,60 @@ fu! sexp#jump_test2(...)
     echo "New" . (move_past ? "-mp" : "") . ": " . reltimestr(reltime(ts))
     echo "Match count:" len(ret)
     "return ret
+endfu
+
+fu! sexp#jump_test3(...)
+    let ret = []
+    let ts = reltime()
+    let [l, lns] = [1, line('$')]
+    let isstr = 0
+    while l <= lns
+        let [c, clast] = [1, col([l, '$'])]
+        while c < clast
+            let isstr_ = synIDattr(synID(l, c, 0), 'name') =~? 'string'
+            if isstr_ && !isstr
+                " Starting new string
+                "echo "Found string at " l c
+                call add(ret, [l, c])
+            endif
+            "echo "isstr=" . isstr . " isstr_=" . isstr_
+            let isstr = isstr_
+            let c += 1
+        endwhile
+        "echo "l: " . l
+        let l += 1
+    endwhile
+    echo "New 3:" reltimestr(reltime(ts))
+    echo "Match count:" len(ret)
+    return ret
+endfu
+
+fu! sexp#jump_test4(...)
+    let ret = []
+    let ts = reltime()
+    call cursor(1, 1)
+    let [l, c] = [1, 1]
+    let isstr = 0
+    while l
+        "let isstr_ = synIDattr(synID(l, c, 0), 'name') =~? 'string'
+        if a:0 && a:1
+                let stack = synstack(l, c)
+                let isstr_ =
+                    \ (synIDattr(get(stack, -1, ''), 'name') =~? 'string') ||
+                    \ (synIDattr(get(stack, -2, ''), 'name') =~? 'string')
+        else
+            let isstr_ = synIDattr(synID(l, c, 0), 'name') =~? 'string'
+        endif
+        if isstr_ && !isstr
+            " Starting new string
+            call add(ret, [l, c])
+        endif
+        let isstr = isstr_
+        let [l, c] = searchpos('.', 'W')
+    endwhile
+    echo "New 4:" reltimestr(reltime(ts))
+    echo "Match count:" len(ret)
+    return ret
 endfu
 
 " Move cursor to current list start or end and enter insert mode. Inserts
