@@ -499,7 +499,7 @@ if exists('*synstack')
         endif
     endfunction
 else
-    function! s:syntax_match(pat, line, col)
+    function! s:syntax_match(pat, line, col, ...)
         return synIDattr(synID(a:line, a:col, 0), 'name') =~? a:pat
     endfunction
 endif
@@ -1389,8 +1389,26 @@ function! s:sexp_em_get_subwords_save(range, tail, ps)
 
 endfunction
 
+function! s:sexp_em_is_in_grp(l, c, grp, fast)
+    if a:fast
+        let sgrp = synIDattr(synID(a:l, a:c, 0), 'name')
+        return a:grp == 'atom' ? sgrp !~? 'string\|comment' : sgrp =~? a:grp
+    else
+        let stack = synstack(a:l, a:c)
+        let [g1, g2] = [
+            \ synIDattr(get(stack, -1, ''), 'name'),
+            \ synIDattr(get(stack, -2, ''), 'name')]
+        return a:grp == 'atom'
+            \ ? g1 !~? 'string\|comment' && g1 !~? 'string\|comment'
+            \ : g2 =~? a:grp && g2 =~? a:grp
+    endif
+endif
+    return a:grp == 'atom' ? sgrp !~? 'string\|comment' : sgrp =~? a:grp
+endfunction
 
 " New approach...
+" TODO: Eventually rename this as it's intended to handle more than just
+" subwords.
 function! s:sexp_em_get_subword_positions(range, tgt)
     let ret = []
     let cur = getpos('.')
@@ -1404,7 +1422,7 @@ function! s:sexp_em_get_subword_positions(range, tgt)
     let [le, ce] = a:range[1][1:2]
     let grp = a:tgt =~? '[c;:]'
         \ ? 'comment'
-        \ : a:tgt =~? '[sS''"]'
+        \ : a:tgt =~? '[s''"]'
         \ ? 'string'
         \ : a:tgt =~? '[weg]'
         \ ? 'atom'
@@ -1413,21 +1431,26 @@ function! s:sexp_em_get_subword_positions(range, tgt)
     let l:is_subword = a:tgt =~ '[weg;:''"]'
     let l:is_tail = a:tgt =~ '[egE]'
     " Boot-strap in_grp with char just prior to range.
+    " Note: Use the slow method outside loop.
     let in_grp_prev = l == 1 && c == 1
         \ ? 0
         \ : c == 1
-            \ ? s:syntax_match(grp, l - 1, col([l - 1, '$']) - 1)
-            \ : s:syntax_match(grp, l, c - 1)
+            \ ? s:sexp_em_is_in_grp(l - 1, col([l - 1, '$']) - 1, grp, 0)
+            \ : s:sexp_em_is_in_grp(l, c - 1, grp, 0)
     while 1
         " Note: Inhibit use of synstack for performance.
-        let in_grp = synIDattr(synID(l, c, 0), 'name') =~? grp
+        """let in_grp = synIDattr(synID(l, c, 0), 'name') =~? grp
+        let in_grp = s:sexp_em_is_in_grp(l, c, grp, 1)
+        " TODO: Work in "atom" here... Note that calling is_atom as it stands
+        " now is probably pretty slow, because of getline() and such...
         " edge: 1=rising, 0=none, -1=falling
         let edge = 0
         if in_grp != in_grp_prev
             if in_grp
                 let edge = 1
             else
-                let edge = has_synstack && s:syntax_match(grp, l, c) ? 0 : -1
+                """let edge = has_synstack && s:syntax_match(grp, l, c) ? 0 : -1
+                let edge = has_synstack && s:sexp_em_is_in_grp(l, c, grp, 0) ? 0 : -1
             endif
         endif
         let in_grp_prev = in_grp
@@ -1675,7 +1698,9 @@ function! sexp#jump_to_target(mode, count, tgt, fwd, top)
         endif
     else
         if l:is_subword
+            let ts = reltime()
             let plist = s:sexp_em_get_subword_positions(range, a:tgt)
+            echomsg "Time: " reltimestr(reltime(ts))
         else
             " Get list of target positions in range: format [[line, col],...]
             let plist = s:sexp_em_get_positions(range, a:tgt)
@@ -1684,7 +1709,9 @@ function! sexp#jump_to_target(mode, count, tgt, fwd, top)
         if empty(plist)
             return
         endif
+        let ts = reltime()
         let re = s:sexp_em_get_jump_any_pattern(plist)
+        echomsg "Easymotion time: " reltimestr(reltime(ts))
     endif
 
     " Assumption: Cursor hasn't moved.
