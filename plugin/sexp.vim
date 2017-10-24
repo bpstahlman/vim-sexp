@@ -35,10 +35,10 @@ if !exists('g:sexp_mappings')
     let g:sexp_mappings = {}
 endif
 
-let s:sexp_state_toggle = '<C-k>'
+let s:sexp_mode_toggle = '<C-k>'
 
 let s:sexp_mappings = {
-    \ 'sexp_toggle_sexp_state':         '<C-k>',
+    \ 'sexp_toggle_sexp_mode':         '<C-k>',
     \ 'sexp_outer_list':                'af',
     \ 'sexp_inner_list':                'if',
     \ 'sexp_outer_top_list':            'aF',
@@ -101,7 +101,7 @@ let s:sexp_mappings = {
 " no control over the modes in which mappings apply.
 " TODO: Align this list.
 let s:plug_map_modes = [
-    \ ['sexp_toggle_sexp_state',         'nx'],
+    \ ['sexp_toggle_sexp_mode',         'nx'],
     \ ['sexp_outer_list',                'xo'],
     \ ['sexp_inner_list',                'xo'],
     \ ['sexp_outer_top_list',            'xo'],
@@ -256,11 +256,11 @@ endfunction
 " TODO: Is this even needed now that it's in the key map? I think it should be
 " one or the other... If it needs special handling, probably just remove from
 " s:sexp_mappings.
-function! s:create_sexp_state_toggle()
+function! s:create_sexp_mode_toggle()
     for mode in ['n', 'x']
         execute mode . 'noremap <silent><buffer><nowait> '
-            \ . s:get_sexp_state_toggle()
-            \ . ' <Esc>:<C-u>call <SID>toggle_sexp_state('
+            \ . s:get_sexp_mode_toggle()
+            \ . ' <Esc>:<C-u>call <SID>toggle_sexp_mode('
             \ . (mode == "n" ? "'n'" : "'v'")
             \ . ')<CR>'
     endfor
@@ -522,7 +522,7 @@ endfunction
 
 " Get list of dictionaries (keys: lhs, modes, plug) representing the sexp maps
 " to be created, sorted by lhs.
-function! s:get_sexp_maps(expert_mode)
+function! s:get_sexp_maps(sexp_mode)
     let sexp_maps = []
     for [plug, modestr] in s:plug_map_modes
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
@@ -543,7 +543,7 @@ function! s:get_sexp_maps(expert_mode)
         " Note: permanent flag is needed only for expert mode, but might as
         " well set it unconditionally.
         call add(sexp_maps,
-            \ {'lhs': lhs, 'permanent': !a:expert_mode || permanent,
+            \ {'lhs': lhs, 'permanent': !a:sexp_mode || permanent,
             \ 'modes': s:expand_modes(modestr), 'plug': plug})
     endfor
     if !empty(sexp_maps)
@@ -555,9 +555,9 @@ endfunction
 
 " Build commands for creating/deleting "sexp maps" upon entry/exit from sexp
 " state, warning user about any lhs ambiguities.
-function! s:build_sexp_map_cmds(sexp_maps, expert_mode)
+function! s:build_sexp_map_cmds(sexp_maps, sexp_mode)
     " TODO: Consider using map instead.
-    if a:expert_mode
+    if a:sexp_mode
         " Order: OFF, ON, PERMANENT
         let cmds = [[], [], []]
     else
@@ -572,12 +572,12 @@ function! s:build_sexp_map_cmds(sexp_maps, expert_mode)
             call s:check_ambiguity(prev_sm, sm, 1)
         endif
         for mode in split(modes, '\zs')
-            if a:expert_mode && !permanent
+            if a:sexp_mode && !permanent
                 " Accumulate exit/entry commands.
                 call add(cmds[0],
                     \ 'silent! ' . mode . 'unmap <buffer>' . lhs)
             endif
-            call add(a:expert_mode ? permanent ? cmds[2] : cmds[1] : cmds,
+            call add(a:sexp_mode ? permanent ? cmds[2] : cmds[1] : cmds,
                 \ mode . 'map <nowait><silent><buffer>'
                 \ . lhs . ' <Plug>(' . plug . ')')
         endfor
@@ -616,6 +616,13 @@ function! s:get_escape_maps(esc_key, sexp_maps)
     let escs = {}
     for sm in a:sexp_maps
         let lhs = s:split_and_canonicalize_lhs(sm.lhs)[0]
+	" TODO: Really ought to skip if lhs can't start a builtin, though
+	" doing so isn't catastrophic: worst-case is that we create a useless
+	" escape like <esc-key><leader> or <esc-key><M-a>, but even if that
+	" happens to correspond to a user mapping, our save/restore logic
+	" ensures it won't be clobbered, just unavailable in sexp mode.
+	" TODO: Perhaps maintain a map of all chars capable of starting a
+	" builtin. Or use a regex...
         " Combine modes.
         let escs[lhs] = s:or_modes(get(escs, lhs, ''), sm.modes)
     endfor
@@ -827,7 +834,7 @@ function! s:shadow_conflicting_usermaps(esc_key, maps)
             endif
             let i += 1
         endwhile
-        " Does this umap require delete/restore?
+        " Does this umap require delete/restore/remap?
         if !empty(omodes) || force_range
             " Determine whether subsequent umaps with same lhs will
             " need restore, if only because of the :map command used
@@ -854,17 +861,18 @@ function! s:shadow_conflicting_usermaps(esc_key, maps)
     return cmds
 endfunction
 
-" Note: This is probably the only global function we'll define.
-function! VimSexpState()
-    return exists('b:sexp_expert_mode') && b:sexp_expert_mode &&
-        \ exists('b:sexp_state_enabled')
-        \ ? b:sexp_state_enabled ? '[VS:ON]' : '[VS:off]'
+" Note: This is probably the only global function we'll define, and we define
+" it only if user has not.
+if !exists('*VimSexpStatus')
+function! VimSexpStatus()
+    return exists('b:sexp_mode_enabled')
+        \ ? b:sexp_mode_enabled ? '[VS:ON]' : '[VS:off]'
         \ : ''
 endfunction
+endif
 
 function! s:has_stl_placeholder(stl)
-    " Pattern for unescaped percent
-    return a:stl =~ s:re_unesc_pct . '{VimSexpState()}'
+    return a:stl =~ s:re_unesc_pct . '{VimSexpStatus()}'
 endfunction
 
 function! s:get_optimal_stl(stl)
@@ -896,12 +904,12 @@ function! s:get_optimal_stl(stl)
         let i = idiv > 0 ? idiv + 2 : len(a:stl)
     endif
 
-    return a:stl[:i-1] . "%{VimSexpState()}" . a:stl[i:]
+    return a:stl[:i-1] . "%{VimSexpStatus()}" . a:stl[i:]
 endfunction
 
-function! s:add_sexp_state_to_stl()
-    " Check to see whether user has put a %{VimSexpState()} flag in his 'stl'.
-    let stl = !empty(&l:stl) ? &l:stl : !empty(&g:stl) ? g:stl : ''
+function! s:add_sexp_mode_to_stl()
+    " Check to see whether user has put a %{VimSexpStatus()} flag in his 'stl'.
+    let stl = !empty(&l:stl) ? &l:stl : !empty(&g:stl) ? &g:stl : ''
     if empty(stl)
         " Start with default.
         let stl = '%<%f %h%m%r%=%-14.(%l,%c%V%) %P'
@@ -917,7 +925,7 @@ function! s:add_sexp_state_to_stl()
     let &l:stl = stl
 endfunction
 
-function! s:display_sexp_state(on)
+function! s:display_sexp_mode(on)
     " Force update of statusline.
     " TODO: Will this do it ro flag not in 'stl'?
     let &ro = &ro
@@ -925,17 +933,22 @@ endfunction
 
 " TODO: Eventually allow this to be list of toggles, or else support
 " key-chords some other way.
-function! s:get_sexp_state_toggle()
-    " TODO: Needs to default
-    return get(g:, 'sexp_state_toggle', s:sexp_state_toggle)
+function! s:get_sexp_mode_toggle()
+    return get(g:, 'sexp_mode_toggle', '')
 endfunction
 
 function! s:get_sexp_escape_key()
     return get(g:, 'sexp_escape_key', '')
 endfunction
 
+function! s:get_sexp_mode_initial_state()
+    return get(g:, 'sexp_mode_initial_state', 0)
+endfu
+
+" This function is called only when sexp mode is not supported: i.e., when a
+" toggle is not defined.
 function! s:sexp_create_non_insert_mappings()
-    let b:sexp_expert_mode = 0
+    unlet! b:sexp_mode_enabled
     let maps = s:get_sexp_maps(0)
     for cmd in s:build_sexp_map_cmds(maps, 0)
         exe cmd
@@ -943,17 +956,16 @@ function! s:sexp_create_non_insert_mappings()
 endfunction
 
 function! s:sexp_toggle_non_insert_mappings()
-    let b:sexp_expert_mode = 1
-    " Note: First toggle leaves us in non-sexp-state (OFF), defining only the
-    " permanent mappings.
-    let enabled = exists('b:sexp_state_enabled') && !b:sexp_state_enabled
-    let first_time = !exists('b:sexp_state_enabled')
-    if first_time
+    " Determine current state, taking care to enter the state indicated by
+    " g:sexp_mode_initial_state on first call.
+    let enabled = exists('b:sexp_mode_enabled')
+        \ ? !b:sexp_mode_enabled
+        \ : s:get_sexp_mode_initial_state()
+    let first_call = !exists('b:sexp_mode_enabled')
+    if first_call
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
         " TODO: Perhaps some validation: e.g., single key.
-        " TODO: Should we permit stuff like <LocalLeader>? If so, need to
-        " canonicalize case...
         let esc_key = s:get_sexp_escape_key()
 
         let sexp_maps = s:get_sexp_maps(1)
@@ -988,15 +1000,13 @@ function! s:sexp_toggle_non_insert_mappings()
         "echomsg "UM Exit esc: " . string(b:user_map_commands[0])
         "echomsg "UM Enter esc: " . string(b:user_map_commands[1])
     endif
-    " Record state change.
-    let b:sexp_state_enabled = enabled
-    if first_time
-        " Create the always-active commands once-only.
-        for cmd in b:sexp_map_commands[2]
-            exe cmd
-        endfor
-    else
-        " Perform entry/exit using buf-locally cached map commands.
+    " Record state change, both for subsequent calls and for statusline func.
+    let b:sexp_mode_enabled = enabled
+    " Handle map creation/deletion
+    if !first_call || enabled
+        " Perform entry/exit using buf-locally cached map commands to
+        " delete/restore user commands, create/delete sexp maps, and
+        " create/delete builtin escape commands.
         " Caveat: Order in which cmd groups are processed is significant: e.g.,
         " must delete user maps first on entry and restore them last on exit.
         let cmd_groups = [
@@ -1015,16 +1025,21 @@ function! s:sexp_toggle_non_insert_mappings()
             endfor
         endfor
     endif
-
+    if first_call
+        " Create the always-active commands once-only on first call.
+        for cmd in b:sexp_map_commands[2]
+            exe cmd
+        endfor
+    endif
     " Display visual indication of state.
-    call s:display_sexp_state(enabled)
+    call s:display_sexp_mode(enabled)
     " Note: Since toggle is meant to be always active, there's no need to
     " worry about conflict with existing user maps or global maps.
-    call s:create_sexp_state_toggle()
+    call s:create_sexp_mode_toggle()
 endfunction
 
 " Toggle between 'special' and non-special modes.
-function! s:toggle_sexp_state(...)
+function! s:toggle_sexp_mode(...)
     let mode = a:0 ? a:1 : ''
     call s:sexp_toggle_non_insert_mappings()
     if mode == 'v'
@@ -1033,7 +1048,7 @@ function! s:toggle_sexp_state(...)
 endfunction
 
 function! s:on_file_type()
-    " TODO: Perhaps eliminate vim_sexp_loaded, using sexp_expert_mode, or
+    " TODO: Perhaps eliminate vim_sexp_loaded, using sexp_mode_enabled, or
     " something else that has to be created anyways.
     if !exists('b:vim_sexp_loaded')
         let b:vim_sexp_loaded = 1
@@ -1041,13 +1056,16 @@ function! s:on_file_type()
     endif
 endfunction
 
-function! s:is_sexp_expert_mode_buffer()
-    return getbufvar('%', 'sexp_expert_mode', -1) == 1
+function! s:is_sexp_mode_buffer()
+    return exists('b:sexp_mode_enabled')
 endfunction
 
 " Buffer Number Designations: % is new buffer; <abuf> is buf being left.
 " Assumption: Called only for sexp expert mode buffers.
 function! s:OnBufWinLeave(...)
+    if !s:is_sexp_mode_buffer()
+        return
+    endif
     " Vim Idiosyncrasy: expand() returns a string, and since setbufvar() can
     " take one, there's no automatic conversion, which means a bufnr will be
     " interpreted as name if not forced to int.
@@ -1069,35 +1087,32 @@ function! s:OnBufWinLeave(...)
             unlet! s:laststatus_save
         endif
     endif
-    if getbufvar(bnr, 'sexp_state_enabled', 0)
-        " Experimental: Mark a buffer for toggle to non-sexp state whenever it's
-        " loaded.
-        call setbufvar(bnr, 'sexp_need_toggle_off', 1)
-    endif
 endfunction
 
 function! s:OnBufWinEnter()
-    if s:is_sexp_expert_mode_buffer()
-        " 'laststatus' logic
-        let s:loaded_buffer_map[bufnr('%')] = 1
-        if &laststatus != 2
-            let s:laststatus_save = &laststatus
-            set laststatus=2
-        endif
-        " Experimental: If we deferred toggling off in BufWinLeave handler,
-        " toggle off now.
-        if exists('b:sexp_need_toggle_off') && b:sexp_need_toggle_off
-            " TODO: Perhaps use lower-level function, and possibly add an
-            " argument to force desired state.
-            call s:toggle_sexp_state()
-        endif
+    if !s:is_sexp_mode_buffer()
+        return
+    endif
+    " 'laststatus' logic
+    let s:loaded_buffer_map[bufnr('%')] = 1
+    if &laststatus != 2
+        let s:laststatus_save = &laststatus
+        set laststatus=2
+    endif
+    " Make reappearance of a buffer work like first open.
+    " Assumption: Can't get here when not using sexp mode.
+    " Note: If we happen to get here on initial load,
+    " sexp_create_non_insert_mappings will have ensured that we're in sync,
+    " and toggle call is skipped.
+    if b:sexp_mode_enabled != s:get_sexp_mode_initial_state()
+        call s:toggle_sexp_mode()
     endif
 endfunction
 
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-    if !exists('g:sexp_expert_mode') || !g:sexp_expert_mode
+    if empty(s:get_sexp_mode_toggle())
         call s:sexp_create_non_insert_mappings()
     else
         " Question: Should we ignore file_type event? For expert mode only, or
@@ -1107,7 +1122,7 @@ function! s:sexp_create_mappings()
         " Note: Might want ability to toggle everything off for handling
         " BufWinLeave.
         call s:sexp_toggle_non_insert_mappings()
-        augroup sexp_expert_mode
+        augroup sexp_mode
             au!
             au BufWinEnter * call s:OnBufWinEnter()
             au BufWinLeave <buffer> call s:OnBufWinLeave()
@@ -1116,7 +1131,7 @@ function! s:sexp_create_mappings()
         " Jumpstart the mechanism.
         " TODO: !!!!!!! UNDER CONSTRUCTION !!!!!!!
         call s:OnBufWinEnter()
-        call s:add_sexp_state_to_stl()
+        call s:add_sexp_mode_to_stl()
     endif
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
@@ -1132,8 +1147,8 @@ function! s:sexp_create_mappings()
 endfunction
 
 """ Toggle Sexp-Mode {{{1
-DEFPLUG  nnoremap sexp_toggle_sexp_state :call <SID>toggle_sexp_state('n')<CR>
-DEFPLUG  xnoremap sexp_toggle_sexp_state <Esc>:<C-u>call <SID>toggle_sexp_state('v')<CR>
+DEFPLUG  nnoremap sexp_toggle_sexp_mode :call <SID>toggle_sexp_mode('n')<CR>
+DEFPLUG  xnoremap sexp_toggle_sexp_mode <Esc>:<C-u>call <SID>toggle_sexp_mode('v')<CR>
 
 """ Text Object Selections {{{1
 

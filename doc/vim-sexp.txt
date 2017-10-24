@@ -60,6 +60,71 @@ you can bind them manually in any filetype:
 Insert mode mappings are enabled by default and can be disabled with
 |g:sexp_enable_insert_mode_mappings|.
 
+SEXP MODE~
+                                                                  *sexp-mode*
+By default, non-insert mappings are created when you open a file listed in
+g:sexp_filetypes, and remain in effect until the buffer is deleted. However,
+if you've set |g:sexp_state_toggle| to a custom key sequence, you can use it
+to toggle the sexp mappings on and off. The state in which sexp mappings are
+active will be referred to hereafter as "sexp mode": a mode which is
+independent of Vim's modes, and something like a minor mode in emacs parlance.
+Vim-sexp allows you to override both builtin and user-defined commands: both
+are restored automatically upon exit from sexp mode. If you find the
+leader/meta/control keys in the default maps to be cumbersome, you can take
+advantage of this feature to define more convenenient sexp bindings.  For
+instance, I've mapped Vim's builtin word and WORD movement commands
+(w/W/b/B/e/E/ge/gE) to sexp's element and leaf movement commands. This
+lets me move as easily across elements in an s-expression as I would
+across words in a text document. Even when I'm editing lisp, however, there
+are times when movement by sexp is not convenient at all: in particular, when
+I'm editing comments or strings. Although you can always restore the ordinary
+meanings of all overridden commands by using the toggle, it is possible to
+execute a single builtin command without exiting sexp mode: simply prefix the
+builtin with the key sequence in |g:sexp_escape_key|. For instance, I've set
+the escape key to `,', which lets me hit `,w' to move forward by word instead
+of by element.
+Note: The escape mechanism works only for builtins; however, any overridden
+user-defined commands will be available as soon as you've exited sexp mode.
+
+                                                            *non-modal-maps*
+Vim-sexp allows you to designate a map as "always on" by prefixing its lhs in
+|g:sexp_mappings| with `<>'. (Mnemonic: available both in (<) and out (>) of
+sexp mode) Such "non modal" maps will be available anytime you're in one of
+the files listed in |g:sexp_filetypes|, regardless of whether you're currently
+in sexp mode. If a map's lhs presents no conflict or ambiguity with a builtin
+or user-defined map, there is no reason to limit its use to sexp mode:
+designating it as non-modal is a good way to reduce the need to toggle in and
+out of sexp mode.
+
+Example:~
+Here's a snippet of g:sexp_mappings that makes the sexp text object selection
+maps non-modal: 
+>
+        let g:sexp_mappings = {
+            \ 'sexp_outer_list':                '<>af',
+            \ 'sexp_inner_list':                '<>if',
+            \ 'sexp_outer_top_list':            '<>aF',
+            \ 'sexp_inner_top_list':            '<>iF',
+            \ 'sexp_outer_string':              '<>as',
+            \ 'sexp_inner_string':              '<>is',
+            \ 'sexp_outer_element':             '<>ae',
+            \ 'sexp_inner_element':             '<>ie',
+            .
+            .
+<
+Note: The advantage of these definitions is that you would never need to enter
+sexp mode to select or operate on a sexp object; the only disadvantage is that
+you would give up use of Vim's "sentence" text objects (is, as) in Lisp
+buffers.
+                                                            *sexp-statusline*
+|g:sexp_mode_initial_state|
+
+                                                            *sexp-statusline*
+Vim-sexp uses the Vim statusline to let the user know whether
+
+
+
+
 All mappings can be easily changed via |g:sexp_mappings|. Users who prefer
 more explicit, opt-in configuration should read |sexp-explicit-mappings|.
 
