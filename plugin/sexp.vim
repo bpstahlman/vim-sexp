@@ -937,8 +937,8 @@ function! s:get_sexp_mode_toggle()
     return get(g:, 'sexp_mode_toggle', '')
 endfunction
 
-function! s:get_sexp_escape_key()
-    return get(g:, 'sexp_escape_key', '')
+function! s:get_sexp_mode_escape()
+    return get(g:, 'sexp_mode_escape', '')
 endfunction
 
 function! s:get_sexp_mode_initial_state()
@@ -966,7 +966,7 @@ function! s:sexp_toggle_non_insert_mappings()
         " First time toggle ON for this buffer! Build and cache data
         " structures for future use.
         " TODO: Perhaps some validation: e.g., single key.
-        let esc_key = s:get_sexp_escape_key()
+        let esc_key = s:get_sexp_mode_escape()
 
         let sexp_maps = s:get_sexp_maps(1)
         "echomsg "sexp_maps: " . string(sexp_maps)
