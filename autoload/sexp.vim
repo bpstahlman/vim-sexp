@@ -72,8 +72,10 @@ function! s:macro_chars()
 endfunction
 
 " Make a 'very magic' character class from input characters.
-function! s:vm_cc(chars)
-    return '[' . substitute(a:chars, '[^[0-9a-zA-Z_]]', '\\&', 'g') . ']'
+function! s:vm_cc(chars, ...)
+    let neg = a:0 && !!a:1
+    return '[' . (neg ? '^' : '')
+        \ . substitute(a:chars, '[^[0-9a-zA-Z_]]', '\\&', 'g') . ']'
 endfunction
 
 """ QUERIES AT CURSOR {{{1
@@ -1095,6 +1097,260 @@ function! sexp#leaf_flow(mode, count, next, tail)
             call s:select_current_marks('v')
         endif
     endif
+endfunction
+
+" Return 0 on success, else number of chars *not* moved.
+function! s:move_by(chars)
+    let [cmd, chars] = a:chars > 0 ? ['l', a:chars] : ['h', -a:chars]
+    let move_cmd = 'normal! ' . cmd
+    while chars > 0
+        if cmd == 'h' && col('.') == 1
+            " Handle BOL moving backward specially.
+            if line('.') > 1
+                normal! k$
+            else
+                break " at BOB
+            endif
+        else
+            " Attempt to move 1 char in desired direction.
+            let col = col('.')
+            exe move_cmd
+            " Check for attempt to move past EOL.
+            " Caveat: 'virtualedit' permits cursor move past EOL.
+            if cmd == 'l' && (col == col('.') || col('.') >= col('$'))
+                if line('.') < line('$')
+                    normal! j0
+                else
+                    break
+                endif
+            endif
+        endif
+        let chars -= 1
+    endwhile
+    " Return # of chars *not* moved.
+    return chars
+endfunction
+
+function! sexp#element_flow(mode, count, next, tail)
+    " Is optimal destination near or far side of element?
+    let near = !!a:next != !!a:tail
+    let cnt = a:count ? a:count : 1
+    let cursor = getpos('.')
+    let cpos = []
+    " Get to position from which search can begin.
+    let isl = s:is_list(cursor[1], cursor[2])
+    if !isl
+        " Not on list. If on element, get to its far side.
+        let pos = s:move_to_current_element_terminal(a:next)
+        if pos[1] && pos != cursor
+            " Save acceptable pos.
+            let cpos = pos
+            if !near
+                let cnt -= 1
+            endif
+        endif
+    else
+        " Note: A list on which we start can't be acceptable target.
+        if isl == 1
+            " Get to head or tail of macro chars.
+            let pos = s:current_macro_character_terminal(a:next)
+            call s:setcursor(pos)
+            if a:next
+                " Move to open.
+                call s:move_by(1)
+            endif
+        elseif isl == 2 && !a:next
+            " See whether macro chars precede open.
+            call s:move_by(-1)
+            let pos = s:current_macro_character_terminal(0)
+            " Position on head of macro chars or return to open.
+            call s:setcursor(pos[1] ? pos : cursor)
+        endif
+    endif
+    " Build regex.
+    let re_list_head = '\v%(^|\s|' . s:bracket . ')@<='
+        \ . s:vm_cc(s:macro_chars()) . '*' . s:opening_bracket
+    let re_list_tail = s:closing_bracket
+    " TODO: Should we try to prevent matching head of macro chars?
+    let re_elem_head = '\v%(' . s:bracket . ')@!%(^|\s|' . s:bracket . ')@<=\S'
+    " Note: An elem can end with an escaped bracket.
+    " TODO: What about an escaped whitespace?
+    let re_elem_tail = '\v\S%($|\s|' . s:bracket . ')@='
+    let [g:re_l0, g:re_l1, g:re_e0, g:re_e1] = [re_list_head, re_list_tail, re_elem_head, re_elem_tail]
+    let re = a:next
+        \ ? re_list_head . '|' . re_elem_head
+        \ : re_list_tail . '|' . re_elem_tail
+    let g:re = re
+
+    while cnt > 0
+        " Search for next *candidate* element.
+        let l = search(re, 'W' . (a:next ? '' : 'b'))
+        if !l
+            break
+        endif
+        let isl = s:is_list(line('.'), col('.'))
+        if !a:next && (isl == 1 || isl == 2)
+            " Continue search from true head of list (i.e., head of macro
+            " chars if they exist).
+            call s:move_to_current_element_terminal(0)
+            continue
+        endif
+        let cpos = getpos('.')
+        if !isl && (cnt > 1 || !near)
+            let cpos = s:move_to_current_element_terminal(a:next)
+        endif
+        let cnt -= 1
+    endwhile
+
+    if empty(cpos)
+        " If cpos is invalid, return to original pos.
+        call s:setcursor(cursor)
+    endif
+endfunction
+
+" BPS TODO: Adding element flow, with an eye on combining the various flow
+" commands.
+function! sexp#element_flow_flawed(mode, count, next, tail)
+    " Is optimal destination near or far side of element?
+    let near = !!a:next != !!a:tail
+    let cnt = a:count ? a:count : 1
+    let cursor = getpos('.')
+    let cpos = []
+    let pos = [0, 0, 0, 0]
+    " Get to position from which search can begin.
+    let isl = s:is_list(cursor[1], cursor[2])
+    if !isl
+        " Not on list. If on element, get to its far side.
+        let pos = s:move_to_current_element_terminal(a:next)
+        if pos[1] && pos != cursor
+            " Save acceptable pos.
+            let [cpos, cisl] = [pos, 0]
+            if !near
+                let cnt -= 1
+            endif
+        endif
+    else
+        " Note: A list on which we start can't be acceptable target.
+        if isl == 1
+            " Get to head or tail of macro chars.
+            let pos = s:current_macro_character_terminal(a:next)
+            call s:setcursor(pos)
+            if a:next
+                " Move past open.
+                call s:move_by(2)
+            endif
+        elseif isl == 2 && !a:next
+            " See whether macro chars precede open.
+            call s:move_by(-1)
+            let pos = s:current_macro_character_terminal(0)
+            " Position on head of macro chars or return to open.
+            call s:setcursor(pos[1] ? pos : cursor)
+        elseif isl == 2 && a:next
+            " Move past open.
+            call s:move_by(1)
+        elseif isl == 3 && !a:next
+            " Move inside list.
+            call s:move_by(-1)
+        endif
+    endif
+
+    " Loop till all jumps accomplished.
+    " Assumption: We're at a spot from which we can use move_to_adjacent_element.
+    let atc = 0
+    while cnt > 0
+        " TODO: For now, setting pos to invalid position indicates the
+        " subsequent if must be entered. Find better way...
+        if atc
+            " An element we're on is acceptable (e.g., because we've just
+            " entered a list).
+            let isl = s:is_list(pos[1], pos[2])
+            if a:next && (isl == 1 || isl == 2)
+                let [cpos, cisl] = [pos, isl]
+            elseif !a:next && isl == 3
+                let [cpos, cisl] = [pos, isl]
+            elseif !isl
+                " Assumption: If we're on a non-list element, get to far side
+                " of it in preparation for subsequent search.
+                let pos = s:current_element_terminal(a:next)
+                let cpos = pos
+            else
+                let pos = [0, 0, 0, 0]
+            endif
+        else
+            let pos = [0, 0, 0, 0]
+        endif
+        if !pos[1]
+            " Find near side of adjacent element.
+            let prev_pos = pos
+            let pos = s:move_to_adjacent_element(a:next, !a:next, 0)
+            " Caveat: move_to_adjacent_element returns position of terminal
+            " closest to enclosing bracket when called from that position.
+            " Issue: This poses problem for the basic algorithm, which the
+            " test on prev_pos doesn't fix.
+            if !pos[1] || pos == prev_pos
+                " Unable to move further in current level. Try moving out.
+                let pos = s:move_to_nearest_bracket(a:next)
+                if pos[1]
+                    call s:move_by(a:next ? 1 : -1)
+                    if !a:next
+                        " Check for macro chars.
+                        let pos = s:current_macro_character_terminal(0)
+                        if pos[1]
+                            " Get to head of macro chars for subsequent search.
+                            call s:setcursor(pos)
+                        endif
+                    endif
+                    " Skip cnt increment
+                    continue
+                else
+                    " No containing list. Can't go any further.
+                    break
+                endif
+            else
+                " Save acceptable pos.
+                let cpos = pos
+                " Found another element. We'll need to know whether it's a list
+                " even if we've arrived at target.
+                let isl = s:is_list(pos[1], pos[2])
+                let cisl = isl
+                if cnt > 1
+                    " Not target. Position for subsequent search.
+                    if isl
+                        " On near side of list. Try to descend.
+                        if isl == 1
+                            " Move past macro chars to open.
+                            let pos = s:current_macro_character_terminal(1)
+                            call s:setcursor(pos)
+                            call s:move_by(1)
+                        endif
+                        " Move off the list open/close
+                        " Note: No guarantee the move will succeed, but it's ok if
+                        " it doesn't: we'll break when subsequent search fails.
+                        let pos = s:move_by(a:next ? 1 : -1)
+                        let atc = 1
+                    else
+                        " On near side of non-list element. Move to far side.
+                        let pos = s:move_to_current_element_terminal(a:next)
+                    endif
+                endif
+            endif
+        endif
+        let cnt -= 1
+    endwhile
+
+    if !empty(cpos)
+        if pos != cpos
+            " Return to last *acceptable* position.
+            call s:setcursor(cpos)
+            let pos = cpos
+        endif
+        if !cisl
+            if !near
+                call s:move_to_current_element_terminal(a:next)
+            endif
+        endif
+    endif
+
 endfunction
 
 " Move cursor to current list start or end and enter insert mode. Inserts
