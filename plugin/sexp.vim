@@ -94,8 +94,8 @@ let s:sexp_mappings = {
     \ 'sexp_insert_at_list_tail':       '<LocalLeader>l',
     \ 'sexp_splice_list':               '<LocalLeader>@',
     \ 'sexp_convolute':                 '<LocalLeader>?',
-    \ 'sexp_clone_before':              '<M-C>',
-    \ 'sexp_clone_after':               '<M-c>',
+    \ 'sexp_clone_list':                '<M-C>',
+    \ 'sexp_clone_element':             '<M-c>',
     \ 'sexp_raise_list':                '<LocalLeader>o',
     \ 'sexp_raise_element':             '<LocalLeader>O',
     \ 'sexp_swap_list_backward':        '<M-k>',
@@ -253,7 +253,7 @@ function! s:sexp_create_mappings()
                \ 'sexp_flow_to_prev_open',        'sexp_flow_to_next_close',
                \ 'sexp_flow_to_prev_leaf_head',   'sexp_flow_to_next_leaf_head',
                \ 'sexp_flow_to_prev_leaf_tail',   'sexp_flow_to_next_leaf_tail',
-               \ 'sexp_clone_before',             'sexp_clone_after',
+               \ 'sexp_clone_list',               'sexp_clone_element',
                \ 'sexp_indent',                   'sexp_indent_and_clean']
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
         if !empty(lhs)
@@ -443,10 +443,11 @@ Defplug  xnoremap sexp_raise_element sexp#docount(v:count, 'sexp#raise', 'v', ''
 DefplugN! nnoremap sexp_convolute sexp#convolute(v:count, 'n')
 
 " Clone
-DefplugN  nnoremap sexp_clone_before sexp#clone('n', v:count, 1)
-DEFPLUG   xnoremap sexp_clone_before <Esc>:<C-u>call sexp#clone('v', v:prevcount, 1)<CR>
-DefplugN  nnoremap sexp_clone_after sexp#clone('n', v:count, 0)
-DEFPLUG   xnoremap sexp_clone_after <Esc>:<C-u>call sexp#clone('v', v:prevcount, 0)<CR>
+" TODO: Should this be repeatable?
+DefplugN  nnoremap sexp_clone_list sexp#clone('n', v:count, 1)
+DEFPLUG   xnoremap sexp_clone_list <Esc>:<C-u>call sexp#clone('v', v:prevcount, 1)<CR>
+DefplugN  nnoremap sexp_clone_element sexp#clone('n', v:count, 0)
+DEFPLUG   xnoremap sexp_clone_element <Esc>:<C-u>call sexp#clone('v', v:prevcount, 0)<CR>
 
 
 " Splice list

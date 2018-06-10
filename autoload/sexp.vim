@@ -1842,8 +1842,11 @@ endfunction
 " Keys:
 "   vs, ve
 "   cursor
-"   at_end  TODO: If this is redundant with cursor and there's no compelling
-"           reason for the de-normalization, remove one or the other.
+"     Note: The following 2 flags are redundant with vs, ve, and cursor;
+"     they're provided only for convenience.
+"     TODO Consider removing them.
+"   at_start
+"   at_end
 " Note: No point in calling if there's not visual selection, but handle
 " gracefully if we're not.
 function! s:get_cursor_and_visual_info()
@@ -1885,8 +1888,11 @@ function! s:get_cursor_and_visual_info()
         " Note: When range begins past eol, exiting visual mode causes cursor to
         " fall back to last char on line (which is not actually *within* the
         " visual range). Note that this can happen at both start and end of range.
-        " Note: Default to at_end when '< == '>.
+        " Note: Given the possibility of single-char selections, at_start and
+        " at_end are not mutually exclusive.
+        let o.at_start = s:compare_pos(getpos('.'), vs) <= 0
         let o.at_end = s:compare_pos(getpos('.'), ve) >= 0
+        
         if mode !=? 'v'
             exe "normal! \<Esc>"
             call winrestview(wsv)
@@ -1895,7 +1901,7 @@ function! s:get_cursor_and_visual_info()
         let o.cursor = o.at_end ? ve : vs
     else
         " No selection has ever been made.
-        let [o.at_end, o.cursor] = [0, getpos('.')]
+        let [o.at_end, o.at_start, o.cursor] = [0, 0, getpos('.')]
     endif
     " Note: Marks could be invalid sentinels (i.e., [0, 0, 0, 0])
     let [o.vs, o.ve] = [vs, ve]
@@ -2125,8 +2131,6 @@ endfunction
 
 " Set visual marks around current element and enter visual mode.
 function! sexp#select_current_element(mode, inner, ...)
-    " TODO: Take actual command name into account, or create new command
-    " (e.g., select_current_elements).
     let cnt = a:0 ? a:1 ? a:1 : 1 : -1
     if cnt > 0
         \ && b:sexp_cmd_cache.name =~ 'sexp_\%(inner\|outer\)_element'
@@ -2134,7 +2138,7 @@ function! sexp#select_current_element(mode, inner, ...)
         let cnt -= 1
     endif
     call s:set_marks_around_current_element(a:mode, a:inner, cnt)
-    " TODO: Preserve cursor position.
+    " TODO: Does it make sense that we call this even if '< and '> are empty?
     return s:select_current_marks(a:mode, a:mode ==? 'v' ? b:sexp_cmd_cache.cvi.at_end : 1)
 endfunction
 
@@ -3150,11 +3154,32 @@ function! s:get_target_range(mode, next)
     endif
 endfunction
 
-function! sexp#clone(mode, count, before)
+function! sexp#clone(mode, count, list)
     let cursor = getpos('.')
     let wsv = winsaveview()
-    " Get region to be cloned.
-    let [start, end] = s:get_target_range(a:mode, !a:before)
+    " Determine target to be cloned and where to put copies.
+    " Note: Copies go before copied unless cursor is at end of target and not
+    " also at start (possible with single char targets).
+    if a:mode ==# 'v'
+        let before = b:sexp_cmd_cache.cvi.at_start
+            \ || !b:sexp_cmd_cache.cvi.at_end
+        " Get region to be cloned.
+        let [start, end] = s:get_target_range(a:mode, !before)
+    else
+        " Select list/element to be cloned.
+        " Assumption: Both select_current_list and select_current_element,
+        " when called in normal mode, return a null range when there's nothing
+        " to select.
+        if a:list
+            call sexp#select_current_list('n', 0, 0)
+        else
+            call sexp#select_current_element('n', 1)
+        endif
+        let [start, end] = [getpos("'<"), getpos("'>")]
+        if start[1]
+            let before = s:compare_pos(cursor, start) <= 0 || cursor != end
+        endif
+    endif
     if !start[1]
         " Nothing to clone.
         call s:warnmsg("Nothing to clone")
@@ -3164,25 +3189,25 @@ function! sexp#clone(mode, count, before)
     let top = s:at_top(start[1], start[2])
     let multi = start[1] != end[1]
     let copy = s:yankdel_range(start, end, 0, 1)
-    call s:setcursor(a:before ? start : end)
+    call s:setcursor(before ? start : end)
     let repl = multi
-        \ ? a:before ? [copy, "\n"] : ["\n", copy]
-        \ : a:before ? [copy, " "] : [" ", copy]
+        \ ? before ? [copy, "\n"] : ["\n", copy]
+        \ : before ? [copy, " "] : [" ", copy]
     let copy = join(repeat(repl, a:count ? a:count : 1), "")
 
     let lines_orig = line('$')
-    let cur_eol = multi && !a:before && cursor[1] == end[1]
+    let cur_eol = multi && !before && cursor[1] == end[1]
         \ ? s:offset_char(end, 1, 1)[2]
         \ : col([cursor[1], '$'])
     if a:mode ==? 'v'
-        let start_eol = multi && !a:before && start[1] == end[1]
+        let start_eol = multi && !before && start[1] == end[1]
             \ ? s:offset_char(end, 1, 1)[2]
             \ : col([start[1], '$'])
-        let end_eol = multi && !a:before
+        let end_eol = multi && !before
             \ ? s:offset_char(end, 1, 1)[2]
             \ : col([end[1], '$'])
     endif
-    silent call s:put_at(copy, a:before, 0, a:before ? start : end)
+    silent call s:put_at(copy, before, 0, before ? start : end)
     let lines_added = line('$') - lines_orig
     " Design Decision: Single line clone can't change indent.
     " Rationale: If it's wrong now, it was already wrong, as we haven't done
@@ -3211,7 +3236,7 @@ function! sexp#clone(mode, count, before)
             " may result in incorrect indentation.
             call sexp#indent('n', 0, isl > 1 ? 2 : 1, -1, 1)
         endif
-        if a:before
+        if before
             " Cursor has effectively moved.
             let wsv.lnum += lines_added
             " TODO: Decide whether it's better to keep view unchanged or to
@@ -3231,7 +3256,7 @@ function! sexp#clone(mode, count, before)
         endif
     endif
 
-    if need_indent || a:before
+    if need_indent || before
         " Caveat: wsv.col uses zero-based index.
         let wsv.col += col([wsv.lnum, '$']) - cur_eol
         if a:mode ==? 'v'
