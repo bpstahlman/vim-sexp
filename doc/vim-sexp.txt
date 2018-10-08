@@ -97,9 +97,8 @@ Vim-sexp allows you to designate a map as "always on" by prefixing its lhs in
 sexp mode) Such "non modal" maps will be available anytime you're in one of
 the files listed in |g:sexp_filetypes|, regardless of whether you're currently
 in sexp mode. If a map's lhs presents no conflict or ambiguity with a builtin
-or user-defined map, there is no reason to limit its use to sexp mode:
-designating it as non-modal is a good way to reduce the need to toggle in and
-out of sexp mode.
+or user-defined map, there is no reason to limit its use to sexp mode. Making
+it non-modal reduces the need to toggle in and out of sexp mode.
 
 Example:~
 Here's a snippet of g:sexp_mappings that makes the sexp text object selection
@@ -119,8 +118,7 @@ maps non-modal:
 <
 Note: The advantage of these definitions is that you would never need to enter
 sexp mode to select or operate on a sexp object; the only disadvantage is that
-you would give up use of Vim's "sentence" text objects (is, as) in Lisp
-buffers.
+you would have to forgo Vim's "sentence" text objects (is, as) in Lisp buffers.
 
                                                             *sexp-statusline*
 Vim-sexp uses the Vim statusline to let you know when sexp mode is active. By
@@ -141,7 +139,7 @@ Example~
                 \ : "Back in boring normal mode..."
         endfu
 <
-                                                          *sexp-mode-summary*
+                                                            *sexp-mode-usage*
 If you like the default vim-sexp mappings, there's no need for you to use
 "sexp mode" at all: simply leave |g:sexp_mode_toggle| unset and the default
 mappings (or customizations you've defined in |g:sexp_mappings|) will be
@@ -155,7 +153,7 @@ sexp functionality: e.g.,
 
         w    sexp_move_to_next_element_head
         b    sexp_move_to_prev_element_head
-        e    sexp_move_to_prev_element_head
+        e    sexp_move_to_next_element_tail
         j    sexp_flow_to_next_open
         k    sexp_flow_to_prev_open
 

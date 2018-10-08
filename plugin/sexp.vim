@@ -253,17 +253,17 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
-" TODO: Is this even needed now that it's in the key map? I think it should be
-" one or the other... If it needs special handling, probably just remove from
-" s:sexp_mappings.
+" Create the special sexp mode toggle.
 function! s:create_sexp_mode_toggle()
-    for mode in ['n', 'x']
-        execute mode . 'noremap <silent><buffer><nowait> '
-            \ . s:get_sexp_mode_toggle()
-            \ . ' <Esc>:<C-u>call <SID>toggle_sexp_mode('
-            \ . (mode == "n" ? "'n'" : "'v'")
-            \ . ')<CR>'
-    endfor
+    if !empty(s:get_sexp_mode_toggle())
+        for mode in ['n', 'x']
+            execute mode . 'noremap <silent><buffer><nowait> '
+                \ . s:get_sexp_mode_toggle()
+                \ . ' <Esc>:<C-u>call <SID>toggle_sexp_mode('
+                \ . (mode == "n" ? "'n'" : "'v'")
+                \ . ')<CR>'
+        endfor
+    endif
 endfunction
 
 " Split a somewhat canonicalized lhs string into a list of even more
@@ -306,14 +306,9 @@ function! s:split_and_canonicalize_lhs(lhs)
                 let c = get(g:, 'mapleader', '\')
             elseif c ==? '<LocalLeader>'
                 let c = get(g:, 'maplocalleader', '\')
-            elseif c !~ s:re_key_notation
-                let c = '<LT>'
-                " Let the rest be handled on subsequent iterations.
-                let ie = i + 1
             endif
         else
             " Definitely not key notation.
-            " TODO: Need to handle bare '<'.
             " Note: This match is guaranteed to succeed.
             let ie = matchend(s, '.', i)
             let c = s[i:ie-1]
@@ -333,6 +328,7 @@ function! s:split_and_canonicalize_lhs(lhs)
     endwhile
     return ret
 endfunction
+let g:Sacl = function('s:split_and_canonicalize_lhs')
 
 function! s:by_lhs_sort_fn(a, b)
     return a:a.lhs < a:b.lhs ? -1 : a:a.lhs > a:b.lhs ? 1 : 0
@@ -616,13 +612,13 @@ function! s:get_escape_maps(esc_key, sexp_maps)
     let escs = {}
     for sm in a:sexp_maps
         let lhs = s:split_and_canonicalize_lhs(sm.lhs)[0]
-	" TODO: Really ought to skip if lhs can't start a builtin, though
-	" doing so isn't catastrophic: worst-case is that we create a useless
-	" escape like <esc-key><leader> or <esc-key><M-a>, but even if that
-	" happens to correspond to a user mapping, our save/restore logic
-	" ensures it won't be clobbered, just unavailable in sexp mode.
-	" TODO: Perhaps maintain a map of all chars capable of starting a
-	" builtin. Or use a regex...
+        " TODO: Really ought to skip if lhs can't start a builtin, though
+        " doing so isn't catastrophic: worst-case is that we create a useless
+        " escape like <esc-key><leader> or <esc-key><M-a>, but even if that
+        " happens to correspond to a user mapping, our save/restore logic
+        " ensures it won't be clobbered, just unavailable in sexp mode.
+        " TODO: Perhaps maintain a map of all chars capable of starting a
+        " builtin. Or use a regex...
         " Combine modes.
         let escs[lhs] = s:or_modes(get(escs, lhs, ''), sm.modes)
     endfor
@@ -665,24 +661,38 @@ function! s:discard_conflicting_escape_maps(esc_maps, sexp_maps)
     return a:esc_maps
 endfunction
 
-" Merge the sorted input lists of dictionaries representing escape and sexp
-" maps.
-function! s:combine_escape_and_sexp_maps(esc_maps, sexp_maps)
+" Merge sorted input lists into a single list and return it.
+" Pre Condition: Input lists are pre-sorted
+function! s:merge_sorted_lists_on_key(key, ...)
     let ret = []
-    let [i, n] = [0, len(a:esc_maps)]
-    for sm in a:sexp_maps
-        " Optimization: Sorted lists obviate need to restart iteration.
-        while i < n
-            let em = a:esc_maps[i]
-            if em.lhs <= sm.lhs
-                call add(ret, em)
-            else
-                call add(ret, sm)
-                break
+    " Create list of iterators for the lists to be merged.
+    let lsts = map(copy(a:000), '{"idx": 0, "lst": v:val, "len": len(v:val)}')
+    " Loop until all lists have been fully merged.
+    while !empty(lsts)
+        " Find lowest-sorting element to merge.
+        let [idx, val] = [-1, '']
+        let i = 0
+        for iter in lsts
+            " Grab head element from current list...
+            let el = iter.lst[iter.idx]
+            " ...and see whether it's better than best so far.
+            if idx < 0 || el[a:key] <= val
+                " Remember which list contains the best value so far and cache
+                " the value for subsequent comparisons.
+                let [idx, val] = [i, el[a:key]]
             endif
             let i += 1
-        endwhile
-    endfor
+        endfor
+        " Merge the best value and advance idx in corresponding list, removing
+        " the list if it becomes empty.
+        let best = lsts[idx]
+        call add(ret, best.lst[best.idx])
+        let best.idx += 1
+        if best.idx >= best.len
+            " This list is exhausted.
+            call remove(lsts, idx)
+        endif
+    endwhile
     return ret
 endfunction
 
@@ -693,12 +703,12 @@ endfunction
 " Note: Deferring running maparg() till we know it's needed.
 " Order: by lhs (case-sensitive)
 " TODO: Could simply augment maparg() dict itself with 'script' flag.
-function! s:get_user_maps(esc_key, global)
+function! s:get_user_maps(global)
     let ret = []
     redir => maps
     " Note: Get nvo maps.
     " TODO: Discard modes we don't care about.
-    silent exe 'map ' . (a:global ? '' : '<buffer>') . ' ' . a:esc_key
+    silent exe 'map ' . (a:global ? '' : '<buffer>')
     redir END
     for map in split(maps, '\n')
         " Extract lhs and everything else (which may be needed later).
@@ -791,7 +801,7 @@ function! s:shadow_conflicting_usermaps(esc_key, maps)
     " Loop over buffer user maps.
     " Assumption: Global maps don't matter: we won't overwrite them, and
     " they can't shadow the buffer maps we create.
-    for umap in s:get_user_maps(a:esc_key, 0)
+    for umap in s:get_user_maps(0)
         " Extract some key values for convenience.
         " Note: umap.modes is an expanded value - not from maparg().
         let [ulhs, umodes, script] = [umap.lhs, umap.modes, umap.script]
@@ -922,6 +932,7 @@ function! s:add_sexp_mode_to_stl()
             let stl = s:get_optimal_stl(stl)
         endif
     endif
+    " Note: l:stl is buf-local.
     let &l:stl = stl
 endfunction
 
@@ -956,6 +967,7 @@ function! s:sexp_create_non_insert_mappings()
 endfunction
 
 function! s:sexp_toggle_non_insert_mappings()
+    let ts = reltime()
     " Determine current state, taking care to enter the state indicated by
     " g:sexp_mode_initial_state on first call.
     let enabled = exists('b:sexp_mode_enabled')
@@ -985,7 +997,7 @@ function! s:sexp_toggle_non_insert_mappings()
             " Combine sexp and esc maps into single, sorted list for
             " shadow_conflicting_usermaps.
             let sexp_maps =
-                \ s:combine_escape_and_sexp_maps(esc_maps, sexp_maps)
+                \ s:merge_sorted_lists_on_key('lhs', esc_maps, sexp_maps)
             "echomsg "esc_maps 2 :" . string(esc_maps)
             " Create the lists of escape map commands.
             let b:escape_map_commands = s:build_escape_map_cmds(esc_key, esc_maps)
@@ -1036,6 +1048,7 @@ function! s:sexp_toggle_non_insert_mappings()
     " Note: Since toggle is meant to be always active, there's no need to
     " worry about conflict with existing user maps or global maps.
     call s:create_sexp_mode_toggle()
+    echo "Toggle time: " . reltimestr(reltime(ts))
 endfunction
 
 " Toggle between 'special' and non-special modes.
@@ -1109,30 +1122,49 @@ function! s:OnBufWinEnter()
     endif
 endfunction
 
-" Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
-" s:sexp_mappings
-function! s:sexp_create_mappings()
-    if empty(s:get_sexp_mode_toggle())
-        call s:sexp_create_non_insert_mappings()
-    else
-        " Question: Should we ignore file_type event? For expert mode only, or
-        " both cases? If not, we'd need to take care, since if we're in sexp
-        " state, we'd probably need to toggle out (to restore user maps)
-        " before doing anything else. But is there any reason not to ignore?
-        " Note: Might want ability to toggle everything off for handling
-        " BufWinLeave.
-        call s:sexp_toggle_non_insert_mappings()
-        augroup sexp_mode
-            au!
-            au BufWinEnter * call s:OnBufWinEnter()
-            au BufWinLeave <buffer> call s:OnBufWinLeave()
-            let s:loaded_buffer_map = {bufnr('%'): 1}
-        augroup END
-        " Jumpstart the mechanism.
-        " TODO: !!!!!!! UNDER CONSTRUCTION !!!!!!!
-        call s:OnBufWinEnter()
-        call s:add_sexp_mode_to_stl()
-    endif
+let s:actions = {}
+" Safe to call if action not pending.
+" Note: This mechanism pulled from undotree
+fu! s:Cancel_action(fn)
+	if has_key(s:actions, a:fn)
+		call remove(s:actions, a:fn)
+	endif
+endfu
+fu! s:Defer_action(name, ...)
+	" Save the args under the desired function function name.
+	let s:actions[a:name] = a:000
+
+	if !exists('#sexp_actions#CursorHold') || !exists('#sexp_actions#CursorHoldI')
+		" Create global CursorHold autocmds for both normal and insert modes.
+		" Rationale: Gives us best chance of processing queue right away.
+		aug sexp_actions
+			au!
+			au CursorHold * call s:Do_deferred_actions()
+			au CursorHoldI * call s:Do_deferred_actions()
+		augroup END
+	endif
+
+	" Make sure we can restore old 'updatetime' once we're finished using it.
+	let s:updatetime_save = &updatetime
+	" Schedule queue processing as soon as possible.
+	set updatetime=1
+endfu
+fu! s:Do_deferred_actions()
+	" Shouldn't get here with s:updatetime_save unset, but just in case...
+	if exists('s:updatetime_save')
+		let &updatetime = s:updatetime_save
+		unlet! s:updatetime_save
+	endif
+	for [name, args] in items(s:actions)
+		call call(function('s:' . name), args)
+	endfor
+	let s:actions = {}
+	" Make sure we're not invoked again until something else is queued.
+	au! sexp_actions CursorHold
+	au! sexp_actions CursorHoldI
+endfu
+
+function! s:add_insert_mode_mappings()
     " Note: Insert-mode mappings are unaffected by sexp mode.
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
@@ -1143,6 +1175,46 @@ function! s:sexp_create_mappings()
         imap <silent><buffer> }    <Plug>(sexp_insert_closing_curly)
         imap <silent><buffer> "    <Plug>(sexp_insert_double_quote)
         imap <silent><buffer> <BS> <Plug>(sexp_insert_backspace)
+    endif
+endfunction
+
+function! s:init_sexp_mode()
+    " Question: Should we ignore file_type event? For expert mode only, or
+    " both cases? If not, we'd need to take care, since if we're in sexp
+    " state, we'd probably need to toggle out (to restore user maps)
+    " before doing anything else. But is there any reason not to ignore?
+    " Note: Might want ability to toggle everything off for handling
+    " BufWinLeave.
+    " Note: I'm thinking the question is referring to 'ft' changing.
+    call s:sexp_toggle_non_insert_mappings()
+    augroup sexp_mode
+        au!
+        au BufWinEnter * call s:OnBufWinEnter()
+        au BufWinLeave <buffer> call s:OnBufWinLeave()
+        let s:loaded_buffer_map = {bufnr('%'): 1}
+    augroup END
+    " Jumpstart the mechanism.
+    " TODO: !!!!!!! UNDER CONSTRUCTION !!!!!!!
+    call s:OnBufWinEnter()
+    call s:add_sexp_mode_to_stl()
+    call s:add_insert_mode_mappings()
+endfunction
+
+" Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
+" s:sexp_mappings
+function! s:sexp_create_mappings()
+    if empty(s:get_sexp_mode_toggle())
+        call s:sexp_create_non_insert_mappings()
+        call s:add_insert_mode_mappings()
+    else
+        " Wait till all non-sexp buf-local maps have been created.
+        " TODO: Design Decision Needed: Should we defer everything till first
+        " toggle or go ahead and cache stuff now? I'm thinking we don't want
+        " to defer everything since (eg) we'd probably want statusline setup
+        " right away... BUT - We could make it so that
+        " sexp_toggle_non_insert_mappings is never called unless we actually
+        " want to toggle.
+        call s:Defer_action('init_sexp_mode')
     endif
 endfunction
 
