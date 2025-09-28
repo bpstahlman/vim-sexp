@@ -357,6 +357,14 @@ endfunction
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
+
+    for plug in ['sexp_replace']
+        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
+        if !empty(lhs)
+            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+        endif
+    endfor
+
     for plug in ['sexp_outer_list',           'sexp_inner_list',
                \ 'sexp_outer_top_list',       'sexp_inner_top_list',
                \ 'sexp_outer_string',         'sexp_inner_string',
@@ -386,7 +394,10 @@ function! s:sexp_create_mappings()
     for plug in ['sexp_insert_at_list_head', 'sexp_insert_at_list_tail',
                \ 'sexp_convolute',           'sexp_splice_list',
                \ 'sexp_indent_top',          'sexp_indent_and_clean_top',
-               \ 'sexp_align_comments',      'sexp_align_comments_top']
+               \ 'sexp_align_comments',      'sexp_align_comments_top',
+               \ 'sexp_put_before',          'sexp_put_after',
+               \ 'sexp_put_at_head',         'sexp_put_at_tail',
+        ]
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
         if !empty(lhs)
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
@@ -646,6 +657,15 @@ Defplug! nnoremap sexp_capture_prev_element sexp#docount_stateful(v:count, 'sexp
 Defplug  xnoremap sexp_capture_prev_element sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 0, 1)
 Defplug! nnoremap sexp_capture_next_element sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 1, 1)
 Defplug  xnoremap sexp_capture_next_element sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 1, 1)
+
+" Replace with register
+DefplugN xnoremap sexp_replace sexp#replace('v', v:prevcount)
+" Put before/after from register
+DefplugN nnoremap sexp_put_before  sexp#put_at(v:count, 0)
+DefplugN nnoremap sexp_put_after   sexp#put_at(v:count, 1)
+" Put (into list) at head/tail
+DefplugN nnoremap sexp_put_at_head sexp#put_into(v:count, 0)
+DefplugN nnoremap sexp_put_at_tail sexp#put_into(v:count, 1)
 
 """ Insert mode mappings {{{1
 

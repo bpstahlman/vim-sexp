@@ -2948,6 +2948,59 @@ function! s:stackop_emit(last, spos, bpos)
     return a:last ? [nextpos, a:bpos] : [a:spos, nextpos]
 endfunction
 
+function! sexp#put_into(count, dir)
+endfunction
+
+" Return true iff a put in indicated direction at specified location of the contents of
+" register indicated by v:register should be multiline.
+" Note: Decision is not final: a check for paste ending in comment
+" Note: Ignore multi-line nature of the register itself, considering only whether it
+" contains *internal* newlines.
+" -- Logic - adapted from clone --
+" * either register or target is multiline
+" * register ends with a comment
+"   TODO: Decide best way to determine: direct analysis with heuristics or paste then
+"   check, adjusting afterwards if necessary? I don't like embedding expression parser.
+" * target is a comment
+" * target is on a line by itself, possibly followed by a trailing comment
+" * target is the first or last element of a list whose open and close brackets are not
+"   colinear, and none of the target's sibling elements (ignoring any trailing comment)
+"   are colinear with target
+" * target is at toplevel
+function! s:is_multiline_put(loc, dir)
+    let reg = getreg(v:register)
+    let ml_reg = reg =~ '\S.\{-}\n.\{-}\S'
+
+endfunction
+
+function! sexp#put_at(count, dir)
+    let [empty_list, empty_buffer] = [0, 0]
+    " Determine the target element.
+    let t = sexp#current_element_terminal(a:dir)
+    if !t[1]
+        " See if there's a next element.
+        let t = s:nearest_element_terminal(1, a:dir)
+        if !t[1]
+            " Fall back to prev element.
+            let t = s:nearest_element_terminal(0, a:dir)
+            if !t[1]
+                " Must be empty list; treat like put after with cursor on virtual element
+                " located at open bracket.
+                let t = s:nearest_bracket(0)
+                if t[1]
+                    let empty_list = 1
+                else
+                    " Empty buffer?
+                    let no_buffer = 1
+                    let t = getcurpos()
+                endif
+            endif
+        endif
+    endif
+    " Determine single vs multi-line context.
+
+endfunction
+
 " Swap current visual selection with adjacent element. If pairwise is true,
 " swaps with adjacent pair of elements. If mode is 'v', the newly moved
 " selection is reselected.

@@ -805,6 +805,12 @@ LIST MANIPULATION (normal, visual) ~
         automatic re-indent. If you dislike this behavior, see
         |sexp-auto-indent|.
 
+REGISTER PUT (PASTE) COMMANDS (normal, visual) ~
+
+<LocalLeader>W                          *<Plug>(sexp_round_head_wrap_element)*
+<LocalLeader>w                          *<Plug>(sexp_round_tail_wrap_element)*
+<LocalLeader>e[                        *<Plug>(sexp_square_head_wrap_element)*
+
 INSERT MODE MAPPINGS (insert, optional) ~
 
 (                                          *<Plug>(sexp_insert_opening_round)*
@@ -854,6 +860,7 @@ INSERT MODE MAPPINGS (insert, optional) ~
         regular expression, comment, or character atom.
 
         Normal backspace otherwise.
+
 
 AUTO INDENT                                                 *sexp-auto-indent*
 
