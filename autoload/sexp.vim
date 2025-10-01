@@ -562,6 +562,7 @@ endfunction
 " TODO: Currently, returns input position unmodified if no adjacent and no current. Is
 " this best approach? It's always worked like this, so changing it to (eg) null pos should
 " not be done without significant analysis/testing.
+" TODO: Rework to avoid use of throw/catch for nominal flow-control.
 function! s:nearest_element_terminal(next, tail, ...)
     let cursor = getpos('.')
     let pos = cursor
@@ -592,6 +593,8 @@ function! s:nearest_element_terminal(next, tail, ...)
         if adjacent[1] < 1 || s:compare_pos(pos, adjacent) == 0
             throw 'sexp-error'
         " Or we are at the head or tail of a list
+        " FIXME: This test is too simplistic; probably needs to account for ignored
+        " regions.
         elseif getline(l)[c - 1] =~ (a:next ? s:closing_bracket : s:opening_bracket)
             " TODO: Profile to measure the performance penalty for this. It's thrown a
             " lot...
@@ -2809,12 +2812,6 @@ function! s:insert_brackets_around_current_element(bra, ket, at_tail, headspace)
     call s:insert_brackets_around_visual_marks(a:bra, a:ket, a:at_tail, a:headspace)
 endfunction
 
-" Capture nearest non-comment sibling of current list, given the starting position of the
-" list's bracket minus any leading macro characters (spos) and the position of the bracket
-" itself (bpos).
-" Return: Pair [beg, end] representing modified range, else []
-" Note: For tail capture, spos == bpos.
-" Cursor Preservation: Caller handles.
 function! s:stackop_capture(last, spos, bpos)
     " Find position of matching bracket (needed only for returned range).
     call s:setcursor(a:bpos)
@@ -2845,6 +2842,19 @@ function! s:stackop_capture(last, spos, bpos)
             break
         endif
     endwhile
+    " Return the outer position.
+    return nextpos
+endfunction
+
+" Capture nearest non-comment sibling of current list, given the starting position of the
+" list's bracket minus any leading macro characters (spos) and the position of the bracket
+" itself (bpos).
+" Return: Pair [beg, end] representing modified range, else []
+" Note: For tail capture, spos == bpos.
+" Cursor Preservation: Caller handles.
+function! s:stackop_do_capture(last, spos, bpos)
+
+    " FIXME!!!! UNDER CONSTRUCTION
     " Get the bracket (and possibly leading macro chars) to be relocated.
     let reg_save = @b
     let @b = getline(a:spos[1])[a:spos[2] - 1 : a:bpos[2] - 1]
@@ -5261,6 +5271,140 @@ function! sexp#stackop__final(ex, state, mode, last, capture)
         else
             keepjumps call s:setcursor(a:state.curpos)
         endif
+    endif
+endfunction
+
+function! s:pstk_create()
+    let o = {'stk': [], 'idx': -1}
+    function! o.is_moving()
+        return self.idx >= 0
+    endfunction
+    function! o.push(spos, bpos) dict
+        call add(o.stk, [a:spos, a:bpos])
+    endfunction
+    function! o.move_next() dict
+        if self.idx < 0
+            throw 'sexp-error'
+        endif
+        let ret = self.stk[self.idx]
+        let self.idx -= 1
+        return ret
+    endfunction
+    function! o.start_moving() dict
+        let self.idx = len(self.stk) - 1
+    endfunction
+    function! o.adjust_positions(pos, delta)
+        for el in self.stk
+            let [spos, bpos] = [el.spos, el.bpos]
+            " FIXME!!!
+        endfor
+    endfunction
+    return o
+endfunction
+
+function! s:capture__build(count, mode, last)
+    " Move to nearest closing bracket (possibly current).
+    let pos = s:move_to_current_element_terminal(1)
+    if !pos[1]
+        " Not in element; move up?
+        echomsg "FIXME!"
+    endif
+    let isl = s:is_list(line('.'), col('.'))
+    if isl != 3
+        " not on closing bracket
+        let pos = s:move_to_nearest_bracket(1)
+        if !pos[1]
+            " No containing list; capture impossible
+            return []
+        endif
+    endif
+    if !a:last
+        let bpos = s:move_to_nearest_bracket(0)
+        " TODO: Do we need to test for balanced brackets?
+        let spos = s:current_element_terminal(0)
+    else
+        let [spos, bpos] = [pos, pos]
+    endif
+    " From initial bracket, begin capturing in loop...
+    " Enforce [count] >= 1
+    let n = a:count ? a:count : 1
+    let move_idx = 0
+    let opos = s:nullpos
+    let stk = [[spos, bpos]]
+    " Note: stklen updates only on capture.
+    let stklen = 0
+    while n > 0
+        let opos_prev = opos
+        " Get outer position of next capture.
+        " TODO: Consider adding flag to move_to_nearest_bracket() to cause nullpos to be
+        " returned if no adjacent. This is too much boilerplate.
+        let savepos = getpos('.')
+        let opos_next = s:move_to_adjacent_element(a:last, a:last, 0)
+        if s:compare_pos(opos_next, savepos) == 0
+            " Nothing else at current level. Attempt to move up.
+            let bpos = s:move_to_nearest_bracket(a:last)
+            if !bpos[1]
+                " Can't move up any more
+                break
+            endif
+            let spos = !a:last ? s:move_to_current_element_terminal(0) : bpos
+            " Push but don't update stklen yet until capture.
+            call add(stk, [spos, bpos])
+        else
+            let [opos_prev, opos] = [opos, opos_next]
+            " Successfully captured element whose outer position is opos.
+            " Move to captured element's outer edge.
+            call s:setcursor(opos)
+            let stklen = len(stk)
+            " Determine whether all or only a subset of the grouped brackets will capture
+            " the new element.
+            if n <= stklen
+                " Calculate location of the earliest (least recently pushed) pos on stack
+                " that will capture the found element; any earlier brackets will stay with
+                " previous capture.
+                let move_idx = stklen - n
+                break
+            else
+                " All brackets can move, but count still not exhausted.
+                let n -= stklen
+            endif
+            " The fact that we're continuing means nothing stays with opos_prev.
+            let opos_prev = s:nullpos
+        endif
+    endwhile
+    if stklen == 0
+        " Nothing captured; no brackets to move...
+        return []
+    endif
+    " Build list of up to 2 relocations.
+    let relocs = []
+    " Handle outer group first.
+    " Note: move_idx may still be 0.
+    call add(relocs, {'opos': opos, 'positions': stk[move_idx : stklen - 1]})
+    " Any earlier ones stay with preceding opos.
+    " Note: It's possible for brackets at head of stack not to be moved.
+    if move_idx > 0 && opos_prev[1]
+        call add(relocs, {'opos': opos_prev, 'positions': stk[0 : move_idx - 1]})
+    endif
+    return relocs
+endfunction
+
+function! sexp#capture(count, mode, last)
+    let state = {
+            \ 'multiline': 0,
+            \ 'range': [s:nullpos, s:nullpos],
+            \ 'curpos': getpos('.'),
+            \ 'marks': s:get_visual_marks()
+    \ }
+
+    let relocs = s:capture__build(a:count, a:mode, a:last)
+    echomsg string(relocs)
+
+    " Assumption: Capture/emit has positioned us on bracket of the target list.
+    " TODO: Could defer this till the *__final() callback.
+    " TODO: Determine extent to which we can use stackop__init() and stackop__final() for capture.
+    if a:mode ==? 'v'
+        call sexp#select_current_element('n', 1)
     endif
 endfunction
 

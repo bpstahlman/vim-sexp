@@ -642,10 +642,10 @@ Defplug! nnoremap sexp_emit_head_element    sexp#docount_stateful(v:count, 'sexp
 Defplug  xnoremap sexp_emit_head_element    sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 0, 0)
 Defplug! nnoremap sexp_emit_tail_element    sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 1, 0)
 Defplug  xnoremap sexp_emit_tail_element    sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 1, 0)
-Defplug! nnoremap sexp_capture_prev_element sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 0, 1)
-Defplug  xnoremap sexp_capture_prev_element sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 0, 1)
-Defplug! nnoremap sexp_capture_next_element sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 1, 1)
-Defplug  xnoremap sexp_capture_next_element sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 1, 1)
+Defplug! nnoremap sexp_capture_prev_element sexp#capture(v:count, 'n', 0)
+Defplug  xnoremap sexp_capture_prev_element sexp#capture(v:prevcount, 'v', 0)
+Defplug! nnoremap sexp_capture_next_element sexp#capture(v:count, 'n', 1)
+Defplug  xnoremap sexp_capture_next_element sexp#capture(v:prevcount, 'v', 1)
 
 """ Insert mode mappings {{{1
 
