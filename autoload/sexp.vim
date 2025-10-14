@@ -559,7 +559,7 @@ endfunction
 " Returns position of previous/next element's head/tail.
 " Returns current element's terminal if no adjacent element exists, unless optional
 " 'ignore_current' argument is set, in which case, return unmodified current position.
-" TODO: Currently, returns input position unmodified if no adjacent and no current. Is
+" TODO: Currently, returns initial position unmodified if no adjacent and no current. Is
 " this best approach? It's always worked like this, so changing it to (eg) null pos should
 " not be done without significant analysis/testing.
 function! s:nearest_element_terminal(next, tail, ...)
@@ -2948,9 +2948,6 @@ function! s:stackop_emit(last, spos, bpos)
     return a:last ? [nextpos, a:bpos] : [a:spos, nextpos]
 endfunction
 
-function! sexp#put_into(count, dir)
-endfunction
-
 " Return true iff a put in indicated direction at specified location of the contents of
 " register indicated by v:register should be multiline.
 " Note: Decision is not final: a check for paste ending in comment
@@ -2973,32 +2970,312 @@ function! s:is_multiline_put(loc, dir)
 
 endfunction
 
-function! sexp#put_at(count, dir)
-    let [empty_list, empty_buffer] = [0, 0]
+function! s:put__get_reginfo()
+    let regstr = getreg(v:register)
+    " Note: Processed text added later.
+    let ret = {
+        \ 'reg_s_is_com': 0, 'reg_e_is_com': 0, 'reg_is_com': 0, 'reg_is_ml': 0,
+    \ }
+    let ret.is_ml = regstr =~ '\n'
+    let ret.s_is_com = regstr =~ '^\s*;'
+    let ret.e_is_com = regstr =~ ';\s*$'
+    " TODO: Come up with less simple patterns that at least attempt to differentiate
+    " between string and non-string context.
+    " Flag indicating whether register is *only* a (potentially multi-line) comment.
+    let ret.has_com = regstr =~ ';'
+    " TODO: Decide whether this should be single line only, given use case.
+    " TODO: If this is not needed, remove!
+    let ret.is_com = regstr =~ '\(\_^\s*;.*\_$\)\+'
+    " Trim whitespace at both ends since we're adding deterministic amount.
+    " Design Decision: Putting this here ensures presence of NL in raw register text will
+    " influence 'is_ml'.
+    " Rationale: If user performs (eg) linewise yank on comment, respect that.
+    let ret.text = substitute(regstr, '^\s\+\|\s\+$', '', 'g')
+    return ret
+endfunction
+
+function! s:put__get_context(count, tail)
+    let ret = {
+        \ 'tgt': s:nullpos, 'adj': s:nullpos, 'adj_bracket': s:nullpos,
+        \ 'away': s:nullpos, 'away_bracket': s:nullpos,
+        \ 'tgt_is_first': 0, 'tgt_is_last': 0, 'tgt_is_alone': 0, 'tgt_is_ml': 0,
+        \ 'tgt_is_terminal': 0, 'tgt_is_head': 0, 'tgt_is_tail': 0,
+        \ 'adj_colinear': 0, 'adj_is_ml': 0,
+        \ 'empty_list': 0, 'empty_buffer': 0,
+        \ 'at_top': 0,
+    \ }
+    let count = a:count ? a:count : 1
     " Determine the target element.
-    let t = sexp#current_element_terminal(a:dir)
+    " Start with cursor position.
+    let t = sexp#current_element_terminal(a:tail)
     if !t[1]
-        " See if there's a next element.
-        let t = s:nearest_element_terminal(1, a:dir)
+        " Nothing under cursor; see if there's a next element.
+        let t = s:nearest_element_terminal(1, a:tail)
         if !t[1]
             " Fall back to prev element.
-            let t = s:nearest_element_terminal(0, a:dir)
+            let t = s:nearest_element_terminal(0, a:tail)
             if !t[1]
-                " Must be empty list; treat like put after with cursor on virtual element
-                " located at open bracket.
+                " Must be empty list; treat like 'put after' with cursor on virtual
+                " element located at open bracket.
                 let t = s:nearest_bracket(0)
                 if t[1]
-                    let empty_list = 1
+                    " Note: Could also name this flag put_into_empty.
+                    let ret.tgt_is_open = 1
+                    " TODO: Decide on name: keep only one.
+                    let ret.empty_list = 1
                 else
                     " Empty buffer?
-                    let no_buffer = 1
+                    let ret.empty_buffer = 1
+                    " Design Decision: Don't make caller look at several fields to find
+                    " put location.
                     let t = getcurpos()
                 endif
             endif
         endif
     endif
-    " Determine single vs multi-line context.
+    " Assumption: t is on desired (put) side of tgt.
+    let ret.tgt = t
+    if !ret.empty_list && !ret.empty_buffer
+        " Find near side of adjacent
+        " Note: Optional flag forces return of same position if no adjacent.
+        let adj = s:nearest_element_terminal(a:tail, !a:tail, 1)
+        if t != adj
+            " Found an adjacent element.
+            let ret.adj = adj
+            let ret.adj_colinear = ret.tgt[1] == ret.adj[1]
+            let adj_bracket = s:nullpos
+        else
+            " No adjacent; look for adjacent bracket (which won't exist at toplevel).
+            let ret.adj = s:nullpos
+            let adj_bracket = s:nearest_bracket(a:tail)
+        endif
+        " Check other (away) side of target, passing 'ignore_current' to ensure tgt
+        " position returned unmodified if no adjacent.
+        " TODO: Really need a flag that causes nullpos to be returned if no adjacent.
+        let away = s:nearest_element_terminal(!a:tail, a:tail, 1)
+        if ret.tgt == away
+            let away = s:nullpos
+        endif
+        " Note: Making this call unconditionally to obviate need for at_top() call.
+        let away_bracket = s:nearest_bracket(!a:tail)
+        let [ret.away, ret.away_bracket] = [away, away_bracket]
+        let ret.at_top = !away_bracket[1]
+        " Is tgt alone on its line, with possible exception of open or close (but not
+        " both)?
+        let ret.tgt_is_alone =
+            \ !(adj_bracket[1] && away_bracket[1] == adj_bracket[1])
+            \ && adj[1] != t[1] && away[1] != t[1]
+        " Is tgt head/tail of list (in direction of put)?
+        " Assumption: adj_bracket will be nullpos if adj is not. This is fine because the
+        " bracket is irrelevant if the intervening element exists.
+        let ret.tgt_is_terminal = !adj[1] && adj_bracket[1]
+    else
+        " Special Case: empty list or empty buffer
+        let ret.at_top = ret.empty_buffer
+    endif
+    return ret
+endfunction
 
+function! s:put__get_seps(tail, ctx, reg)
+    let ret = {'near_sep': '', 'far_sep': '', 'interior_sep': ''}
+    let [tail, ctx, reg] = [a:tail, a:ctx, a:reg]
+    let [NL, SPC, EMPTY] = ["\n", " ", ""]
+
+    " -- Near separator
+    " TODO: Consider reworking this logic such that it defaults to NL (in the else), with
+    " if/elseif's handling only the special cases.
+    " Rationale: Safer (and possibly simpler).
+    if ctx.empty_list
+        if reg.s_is_com
+            " TODO: Decide whether it should be NL or SPC.
+            let ret.near_sep = SPC
+        else
+            let ret.near_sep = EMPTY
+        endif
+    elseif ctx.empty_buffer
+        " Note: Separators are actually N/A for this case.
+        let ret.near_sep = EMPTY
+    " For the remaining cases, we have an actual target element.
+    elseif !ctx.tgt_is_alone && !reg.is_ml && (tail || !reg.e_is_com)
+        " Target isn't on line by itself and register is sl; additionally, we're not
+        " prepending a comment to the target. Note that it's ok to *append* a single line
+        " comment to target, since far separator logic will will insert NL *after* the
+        " comment if necessary.
+        let ret.near_sep = SPC
+    else
+        " Everything else defaults to NL.
+        " Rationale: Err on side of safety.
+        let ret.near_sep = NL
+    endif
+
+    " -- Far separator
+    " Logic: Default (else) to NL, with special cases requiring SPC/EMPTY in the
+    " if/elseifs.
+    if ctx.adj_colinear && !reg.is_ml
+        " Preserve colinearity unless pasted text is ml.
+        let ret.far_sep = SPC
+    elseif ctx.tgt_is_terminal 
+        \ && !(tail && reg.e_is_com || !tail && reg.s_is_com)
+        " Safe to butt register up against bracket
+        let ret.far_sep = EMPTY
+    elseif ctx.tgt_is_terminal && !tail && reg.s_is_com
+        " Start of comment can be separated from terminal by single space.
+        let ret.far_sep = SPC
+    else
+        " Everything else defaults to NL.
+        " Rationale: Err on side of safety.
+        let ret.far_sep = NL
+    endif
+
+    " -- Interior separator
+    " Note: We don't need to know count yet, since interior_sep is ignored if [count]=1.
+    let ret.interior_sep = reg.is_ml || reg.has_com ? NL : SPC
+    return ret
+endfunction
+
+function! s:put__get_reindent_range(tail, ctx, reg, sep)
+    let ret = [s:nullpos, s:nullpos]
+    let [ctx, reg, sep] = [a:ctx, a:reg, a:sep]
+    if ctx.empty_list
+    elseif ctx.empty_buffer
+    else
+        " Start of range
+        " Assumption: Arrival here guarantees presence of either adj or adj_bracket.
+        let ret[0] = a:tail ? ctx.tgt : ctx.adj[1] ? ctx.adj : ctx.adj_bracket
+        " End of range
+        " Assumption: SPC separator implies existence of adj/away element.
+        let extra_el = a:tail && sep.far_sep == ' '
+            \ ? ctx.adj
+            \ : !a:tail && sep.near_sep == ' '
+            \ ? ctx.away
+            \ : s:nullpos
+        if extra_el[1]
+            " Assumption: SPC sep implies actual adj element.
+            call s:setcursor(extra_el)
+            " Need far side of adj
+            let ret[1] = s:current_element_terminal(1)
+        else
+            " Don't need to indent extra element. If this is a tail put, leave at nullpos
+            " to have end of range taken from ']; otherwise, start of tgt marks end of
+            " range.
+            if !a:tail
+                let ret[1] = ctx.tgt
+            endif
+        endif
+    endif
+    return ret
+endfunction
+
+function! s:put__get_splice_info(count, tail, ctx, reg, sep, flags)
+    let ret = { 'range': [s:nullpos, s:nullpos], 'text': '', 'inc': 0}
+    let [ctx, reg, sep] = [a:ctx, a:reg, a:sep]
+
+    " Set the target-side splice position.
+    " Assumption: Currently, ctx.tgt is always set to something non-null.
+    " TODO: Decide whether put__get_context should allow nullpos tgt.
+    let ret.range[!a:tail] = ctx.tgt
+    call s:setcursor(ctx.tgt)
+    " Determine the range.
+    if ctx.empty_list
+        " TODO
+    elseif ctx.empty_buffer
+        " Just put in indicated direction.
+        " TODO: Should we eat whitespace?
+    else
+        " Nominal case: we have a target to put before/after.
+        let adj_pos = ctx.adj[1] ? ctx.adj : ctx.adj_bracket[1] ? ctx.adj_bracket : s:nullpos
+        if !adj_pos[1]
+            " No element or bracket in direction of put, so put to BOF or EOF.
+            let ret.range[a:tail] = a:tail
+                \ ? [0, line('$'), col([line('$'), '$']), 0]
+                \ : [0, 1, 1, 0]
+            " Use directed put (direction determined by inclusive end).
+            let ret.inc = a:tail ? [0, 1] : [1, 0]
+        else
+            " There's something adjacent to target to anchor splice at other end.
+            let ret.range[a:tail] = adj_pos
+            let [near_sep, far_sep] = [sep.near_sep, sep.far_sep]
+            if far_sep == "\n"
+                " Determine number of newlines to prepend/append on far side of put text,
+                " as function of number of blank lines between target and adjacent (taking
+                " options into account).
+                let gap = ret.range[1][1] - ret.range[0][1]
+                let num_nl = min([gap, g:sexp_cleanup_keep_empty_lines + 1])
+                let far_sep = repeat("\n", num_nl)
+            endif
+            " Build splice string.
+            " TODO: Refactor this into a function somehow, since something similar is used
+            " elsewhere (for cloning, I think).
+            " TODO: Do we need to consider 'collapse whitespace' option?
+            let t = repeat([reg.text], a:count)
+            let t = join(t, sep.interior_sep)
+            let t = a:tail ? near_sep . t . far_sep : far_sep . t . near_sep
+            let ret.text = t
+            let ret.inc = [0, 0]
+        endif
+    endif
+    return ret
+endfunction
+
+function! sexp#put(count, tail)
+    " Save/adjust visual marks.
+    let [vs, ve] = s:get_visual_marks()
+    let count = a:count ? a:count : 1
+    " Calculate the put.
+    let reg = s:put__get_reginfo()
+    let ctx = s:put__get_context(count, a:tail)
+    let sep = s:put__get_seps(a:tail, ctx, reg)
+    let irange = s:put__get_reindent_range(a:tail, ctx, reg, sep)
+    let spl = s:put__get_splice_info(count, a:tail, ctx, reg, sep, {})
+    if !spl.range[1][1]
+        " TODO: Consider handling this with simple p/P: i.e., without yankdel_range().
+        " Question: Do we need yankdel_range for position adjustments?
+        echoerr "FIXME: WIP!!!"
+    else
+        " TODO: Save/restore adjusted visual marks.
+        let ps = s:concat_positions(vs, ve, irange)
+        call s:yankdel_range(spl.range[0], spl.range[1], spl.text, spl.inc, ps, 1)
+        " Determine final cursor position.
+        let curpos = a:tail ? getpos("']") : getpos("'[")
+        if sep[a:tail ? 'far_sep' : 'near_sep'] != ''
+            " Need to back up to closest non-ws.
+            call s:setcursor(curpos)
+            " TODO: Consider adding stopline, but shouldn't be necessary.
+            let p = searchpos('\S', 'bW')
+            if !p[1]
+                " This shouldn't happen!
+                throw 'sexp-error'
+            endif
+            let curpos = [0, p[0], p[1], 0]
+        endif
+    endif
+    " FIXME: Make sure all branches above set curpos!
+    call add(ps, curpos)
+    " Determine affected range.
+    " Assumption: yankdel_range() sets [ ] marks.
+    " FIXME: Make this work for empty_buffer case too!
+    " Note: irange == nullpos indicates corresponding range end determined by put.
+    let irange[0] = irange[0][1] ? irange[0] : getpos("'[")
+    let irange[1] = irange[1][1] ? irange[1] : getpos("']")
+    if irange[0][1] != irange[1][1]
+        " Range spans multiple lines, so re-indent.
+        " TODO: Do we need an auto-indent option for put? I'm thinking not...
+        call s:set_visual_marks(irange)
+        " Note: Though we use visual marks, it's important that we be in normal mode.
+        call sexp#ensure_normal_mode()
+        " TODO: Adjust visual marks?
+        call sexp#indent('v', 0, 1, -1, 1, ps)
+    endif
+    call s:setcursor(curpos)
+endfunction
+
+function! sexp#put_child(count, tail)
+endfunction
+
+function! sexp#replace(mode, count, tail)
+endfunction
+
+function! sexp#replace_child(count, dir)
 endfunction
 
 " Swap current visual selection with adjacent element. If pairwise is true,
@@ -5035,26 +5312,49 @@ function! s:get_clone_target_range(mode, after, list)
     endif
 endfunction
 
-" Return a dict representing the clone context (single or multi) and position of eol
+" Return a dict representing the operation context (single or multi) and position of eol
 " comment iff it should be considered part of target by clone operation.
-" Logic: By default, clone will be multi-line if any of the following conditions holds:
+" Note: eol comments ignored if ignore_eolc flag is set
+" Logic: By default, operation will be multi-line if any of the following conditions
+" holds:
 " * target spans multiple lines
-" * target is on a line by itself, possibly followed by a trailing comment
+" * target is on a line by itself, possibly (if !ignore_eolc) followed by trailing
+"   comment)
 " * target is the first or last element of a list whose open and close brackets are not
 "   both colinear with target, and none of the target's sibling elements (ignoring any
-"   trailing comment) are colinear with target
+"   trailing comment if !ignore_eolc) are colinear with target
 " * target is at toplevel
 " * final (or only) element of target is an end-of-line comment
 " The default logic can be overridden by sl_ / ml_ command variants, but if target ends
 " with comment, we must always perform multi-line, and should probably warn if sl command
 " variant was used.
+" -- Args --
+"   start  position of start of operation target
+"   end    position of end of operation target
+"   flags  dict of flags:
+"          force_sl_or_ml:
+"            Non-empty to force a specific context, in which case, this function is called
+"            only for its eolc functionality (currently, needed only for clone operation).
+"            Values: '', 'sl', or 'ml' (default '')
+"          ignore_eolc:
+"            Set to ignore presence of trailing comment *after* target.
+"            Note: Whether target itself ends in trailing comment is always
+"            considered.
+"          ignore_top:
+"            Set to treat target at top-level like any other (default 0).
+"            If left unset, a top-level target will always have ml context.
 " Return Dict:
 "   multi:   1 iff multi-line context
 "   eolc:    {} if no eol comment to clone, else a dict with start/end keys containing
 "            VimPos4's delineating the eol comment
 " Cursor Preservation: None (caller expected to handle)
-function! s:get_clone_context(top, start, end, force_sl_or_ml)
+function! s:get_clone_context(start, end, flags)
     let [multi, eolc] = [0, {}]
+    let force_sl_or_ml = get(a:flags, 'force_sl_or_ml', '')
+    let ignore_eolc = get(a:flags, 'ignore_eolc', 0)
+    let ignore_top = get(a:flags, 'ignore_top', 0)
+    " Note: If ignoring top, set flag to 0 without calling s:at_top().
+    let top = ignore_top ? 0 : s:at_top(a:start[1], a:start[2])
     " Cache some information required by subsequent logic.
     let bol = s:at_bol(a:start[1], a:start[2])
     let eol = s:at_eol(a:end[1], a:end[2])
@@ -5064,23 +5364,23 @@ function! s:get_clone_context(top, start, end, force_sl_or_ml)
     let last = a:end == next
     if !last && next[1] == a:end[1]
         " There's a next sibling and it's colinear. Is it an eol comment?
-        if s:is_eol_comment(next[1], next[2])
+        if !ignore_eolc && s:is_eol_comment(next[1], next[2])
             " Note: Deferring decision on whether to clone the comment
             let eolc.start = next[:]
             let eolc.end = [0, next[1], col([next[1], '$']) - 1, 0]
         endif
     endif
     " Note: It's *always* possible to force a multi-line clone.
-    if a:force_sl_or_ml == 'm'
+    if force_sl_or_ml == 'm'
         let multi = 1
     elseif s:is_eol_comment(a:end[1], a:end[2])
         " Final (or only) element of target is an eol comment.
         " This is the only case in which default logic forces multi-line context.
         let multi = 1
     " If here, single-line context won't be overridden by default logic.
-    elseif a:force_sl_or_ml != 's'
+    elseif force_sl_or_ml != 's'
         " Use default selection logic.
-        if a:top || a:start[1] != a:end[1] || bol && (eol || !empty(eolc))
+        if top || a:start[1] != a:end[1] || bol && (eol || !empty(eolc))
             " One of the following conditions is met.
             "   * target spans multiple lines
             "   * target is toplevel
@@ -5096,7 +5396,7 @@ function! s:get_clone_context(top, start, end, force_sl_or_ml)
             let multi = first && (eol || !empty(eolc)) || last && bol
         endif
     endif
-    if multi && a:force_sl_or_ml == 's'
+    if multi && force_sl_or_ml == 's'
         " Warn user we're overriding _sl command
         call s:warnmsg("Overriding single-line clone command in multi-line context.")
     endif
@@ -5130,10 +5430,9 @@ function! sexp#clone(mode, count, list, after, force_sl_or_ml)
         let cursor = start[:]
     endif
     " Assumption: Prior logic guarantees start and end at same level.
-    let top = s:at_top(start[1], start[2])
     " Determine whether to perform single or multi-line clone, and whether eol comment
     " should be cloned along with the target.
-    let ctx = s:get_clone_context(top, start, end, a:force_sl_or_ml)
+    let ctx = s:get_clone_context(start, end, {'force_sl_or_ml': a:force_sl_or_ml})
     if ctx.multi && !empty(ctx.eolc)
         " Update end to include the eol comment.
         let end = ctx.eolc.end
@@ -5163,7 +5462,7 @@ function! sexp#clone(mode, count, list, after, force_sl_or_ml)
     " 'indent_does_clean' option is set.
     let need_indent = ctx.multi && !!g:sexp_clone_does_indent
     if need_indent
-        if top
+        if s:at_top(start[1], start[2])
             " At toplevel, there's no parent to constrain the indent, and we
             " may need to indent multiple toplevel forms, so select them all
             " and do visual mode indent.

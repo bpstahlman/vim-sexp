@@ -241,6 +241,11 @@ let s:sexp_mappings = {
     \ 'sexp_emit_tail_element':            '<M-S-k>',
     \ 'sexp_capture_prev_element':         '<M-S-h>',
     \ 'sexp_capture_next_element':         '<M-S-l>',
+    \ 'sexp_put_before':                   '<LocalLeader>P',
+    \ 'sexp_put_after':                    '<LocalLeader>p',
+    \ 'sexp_replace':                      '<LocalLeader><LocalLeader>p',
+    \ 'sexp_put_at_head':                  '<M-p>',
+    \ 'sexp_put_at_tail':                  '<M-P>',
     \ }
 
 if !empty(g:sexp_filetypes)
@@ -396,8 +401,7 @@ function! s:sexp_create_mappings()
                \ 'sexp_indent_top',          'sexp_indent_and_clean_top',
                \ 'sexp_align_comments',      'sexp_align_comments_top',
                \ 'sexp_put_before',          'sexp_put_after',
-               \ 'sexp_put_at_head',         'sexp_put_at_tail',
-        ]
+               \ 'sexp_put_at_head',         'sexp_put_at_tail']
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
         if !empty(lhs)
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
@@ -423,7 +427,8 @@ function! s:sexp_create_mappings()
                \ 'sexp_clone_list_sl',            'sexp_clone_element_sl',
                \ 'sexp_clone_list_ml',            'sexp_clone_element_ml',
                \ 'sexp_indent',                   'sexp_indent_and_clean',
-               \ 'sexp_align_comments']
+               \ 'sexp_align_comments',           'sexp_replace',
+               \ ]
         let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
         if !empty(lhs)
             execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
@@ -658,14 +663,19 @@ Defplug  xnoremap sexp_capture_prev_element sexp#docount_stateful(v:prevcount, '
 Defplug! nnoremap sexp_capture_next_element sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 1, 1)
 Defplug  xnoremap sexp_capture_next_element sexp#docount_stateful(v:prevcount, 'sexp#stackop', 'v', 1, 1)
 
+" Put register before/after
+DefplugN nnoremap sexp_put_before  sexp#put(v:count, 0)
+DefplugN nnoremap sexp_put_after   sexp#put(v:count, 1)
 " Replace with register
+DefplugN nnoremap sexp_replace sexp#replace('n', v:count)
 DefplugN xnoremap sexp_replace sexp#replace('v', v:prevcount)
-" Put before/after from register
-DefplugN nnoremap sexp_put_before  sexp#put_at(v:count, 0)
-DefplugN nnoremap sexp_put_after   sexp#put_at(v:count, 1)
-" Put (into list) at head/tail
-DefplugN nnoremap sexp_put_at_head sexp#put_into(v:count, 0)
-DefplugN nnoremap sexp_put_at_tail sexp#put_into(v:count, 1)
+" Put register at child index
+DefplugN nnoremap sexp_put_at_head sexp#put_child(v:count, 0)
+DefplugN nnoremap sexp_put_at_tail sexp#put_child(v:count, 1)
+" Replace child with register
+DefplugN nnoremap sexp_replace_at_head sexp#replace_child(v:count, 0)
+DefplugN nnoremap sexp_replace_at_tail sexp#replace_child(v:count, 1)
+" TODO: Consider creating an operator version of replace with register.
 
 """ Insert mode mappings {{{1
 
