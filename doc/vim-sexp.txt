@@ -176,35 +176,40 @@ ie                                                *<Plug>(sexp_inner_element)*
         An element always includes leading macro characters.
 
 Outer Element whitespace selection logic ~
+                                          *sexp-outer-element-selection-logic*
                                            *sexp-surrounding-whitespace-rules*
-        Inner motion does not include surrounding whitespace, but the outer
-        motion attempts to include all the whitespace you would wish to delete
-        if you were using the text object to delete element(s).
+        Inner element/motion does not include surrounding whitespace, but the
+        outer element/motion attempts to include all the whitespace you would
+        wish to delete if you were using the text object to delete element(s).
 
         Algorithm Description:  ~
         Select as much surrounding whitespace as possible without violating
-        the following constraints, some of which are user configurable.
+        the following constraints, some of which are user-configurable.
         Note: The constraints are applied to the hypothetical buffer state
-        that would be produced by deleting the outer element selection.
+        produced by deletion of the outer element selection.
 
+            * append element following selection to line containing the
+              element preceding the selection.
+              (See |g:sexp_cleanup_join_affinity| to enable such joins in
+              certain scenarios.)
             * increase the length of the line containing the start of the
-              selection beyond a configurable limit.
-              See |g:sexp_cleanup_join_textwidth| to configure limit.
-              See |g:sexp_cleanup_join_affinity| to enable join selectively.
+              selection beyond a limit determined by
+              |g:sexp_cleanup_join_textwidth|.
             * select whitespace on lines above the first element of the
               selection (unless |g:sexp_cleanup_join_backwards| is set).
-            * pull a comment onto the end of an earlier line (unless
-              |g:sexp_cleanup_join_comments| is set).
+            * append a comment to the line containing the element preceding
+              the selection (unless |g:sexp_cleanup_join_comments| is set).
               Rationale: Comments are often element-specific.
             * pull the element following the selection into an end of line
               comment
             * remove all whitespace separating adjacent siblings
             * leave trailing blank lines unless
               |g:sexp_cleanup_keep_empty_lines| is set to a value >= 1,
-              representing the maximum number of blanks you'd like to keep.
+              representing the maximum number of blanks to keep.
 
         The rules may sound complex, but the results mostly obey Ruby's
-        "Principle of Least Surprise" and Perl's "Do What I Mean"...
+        "Principle of Least Surprise" and Perl's "Do What I Mean"
+        philosophy.
 
                                                    *sexp-cleanup-vs-extension*
         These text objects can be used to "clean up" the current selection
@@ -1054,7 +1059,11 @@ thus, please report any issues you believe are fixed by setting this option.
         let g:sexp_prefer_legacy_syntax = 0
 <
                                              *g:sexp_cleanup_keep_empty_lines*
-When there are multiple consecutive empty lines, preserve up to this many.
+Determines the number of consecutive empty lines to keep when performing any
+sort of cleanup. (Applies to both whitespace cleanup and OUTER ELEMENT
+selection.)
+  -1   never delete empty lines
+  >=0  maximum number of consecutive empty lines to keep
 >
         " Default
         let g:sexp_cleanup_keep_empty_lines = 1
@@ -1083,13 +1092,13 @@ second element of a list: e.g., with the default setting...
 <
 ...dae on "foo" would pull "bar baz" onto the start
 line, but dae on "baz" would *not* pull "blammo" onto the same line as "bar".
-
-Related options: ~
-        |g:sexp_cleanup_join_textwidth|, |g:sexp_cleanup_join_multiline|
 >
         " Default
         let g:sexp_cleanup_join_affinity = 1
 <
+Related options: ~
+        |g:sexp_cleanup_join_textwidth|, |g:sexp_cleanup_join_multiline|
+
                                                *g:sexp_cleanup_join_textwidth*
 Line length constraint applied to outer selection cleanup logic, which avoids
 making selections whose deletion would result in a line longer than the
@@ -1127,7 +1136,7 @@ When all other join conditions are met, allow an outer element selection whose
 deletion would result in a comment being appended to a non-empty line.
 >
         " Default
-        let g:sexp_cleanup_join_comments = 1
+        let g:sexp_cleanup_join_comments = 0
 <
                                                *g:sexp_cleanup_join_backwards*
 When all other join conditions are met, allow an outer element selection whose

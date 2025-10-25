@@ -1112,8 +1112,20 @@ function! s:can_join(start, end)
     return 1
 endfunction
 
-" More like original, but not the same...
-" TODO: Updated function comment before merge...
+" Given start and end positions, returns new positions [start', end'] reflecting start/end
+" of OUTER ELEMENT selection.
+" Logic: There are 3 basic categories of 'join' implemented by this function:
+" 1. Full join: selection is bounded on one side with a bracket and on the other with
+"    something that can be directly adjacent to the bracket.
+" 2. Half join: element following selection can be pulled back to the start of the first
+"    element in outer element selection.
+"    Note: This type of join is the least visually disconcerting on delete since the
+"    element following the selection appears to replace the first deleted element, with
+"    cursor position remaining at the start of the replaced element.
+" 3. No join: element following selection cannot be appended to line containing start of
+"    selection, though we may be able to delete some trailing blank lines (in accordance
+"    with g:sexp_cleanup_keep_empty_lines) as long as we preserve indent of line
+"    containing element following selection.
 function! s:terminals_with_whitespace(start, end)
     let [start, end] = [a:start, a:end]
     " Note: These functions ignore newlines, but will return the position of the NUL at
@@ -1152,9 +1164,10 @@ function! s:terminals_with_whitespace(start, end)
         " Select back to colinear prev.
         let start[2] = ws_start[2]
         " Calculate line whose newline should be excluded from selection.
-        let endline = max([
-            \ eff_nextl - g:sexp_cleanup_keep_empty_lines - 1,
-            \ end[1]])
+        " Note: keep_empty_lines == -1 yields original behavior (no empty line cleanup).
+        let endline = g:sexp_cleanup_keep_empty_lines < 0
+            \ ? end[1]
+            \ : max([ eff_nextl - g:sexp_cleanup_keep_empty_lines - 1, end[1]])
         " Select up to but not including the newline.
         " Caveat: Must account for fact that col 1 (or 0) of empty line selects the
         " newline we wish to exclude!
@@ -3104,7 +3117,7 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
                 \ && s:range_has_non_ws(start, end, 1)
             call s:warnmsg("yankdel_range: Refusing to modify non-whitespace!"
                         \ . " Is sexp tree malformed?")
-            return
+            return ''
         endif
         " Special Case: Treat splice of certain types of null replacement
         " regions as a put.
@@ -4497,13 +4510,16 @@ function! s:cleanup_ws(start, ps, ...)
                 " conditions holds true for the gap between prev and next:
                 " * # of blank lines > g:sexp_cleanup_keep_empty_lines
                 " * (else) trailing whitespace on prev line (remove trailing ws)
+                " Note: Treating negative 'keep_empty_lines' as infinity ensures removal
+                " of non-NL whitespace at EOL.
                 let precedes_com = next[1] && s:is_comment(next[1], next[2])
                 if gap > g:sexp_cleanup_keep_empty_lines + 1
                     \ || getline(eff_prev[1])[eff_prev[2] - 1:] =~ '.\s\+$'
                     " Replace gap with number of newlines determined by existing line gap
                     " and g:sexp_cleanup_keep_empty_lines option, followed by original
-                    " whitespace on eff_next's line:
-                    let spl = repeat("\n", min([gap, g:sexp_cleanup_keep_empty_lines + 1]))
+                    " whitespace on eff_next's line.
+                    let spl = repeat("\n", g:sexp_cleanup_keep_empty_lines < 0
+                        \ ? gap : min([gap, g:sexp_cleanup_keep_empty_lines + 1]))
                 endif
             " Single-line (whitespace between colinear elements)
             " If next isn't comment and there are multiple whitespace chars between
