@@ -17,6 +17,47 @@ if exists('g:sexp_loaded')
 endif
 let g:sexp_loaded = 1
 
+""" Helper functions {{{1
+" Echo warning to message history if any of the option variables in the input list have
+" been set globally.
+"   optnames: list of option names without the g: prefix
+"   obsolete: 1=obsolete, 0=deprecated
+"   helphint: help hint to display after the warning
+function! s:deprecate_options(optnames, obsolete, helphint)
+    " Build list of opts requiring warning.
+    let opts = []
+    for opt in a:optnames
+        if exists('g:' . opt)
+            call add(opts, opt)
+        endif
+    endfor
+    if len(opts)
+        " Warn!
+        echohl ErrorMsg
+        echomsg printf("Warning: The following sexp option%s been %s:",
+            \ len(opts) > 1 ? "s have" : " has",
+            \ a:obsolete ? "removed" : "deprecated")
+        echomsg "  " . join(map(opts, "'g:' . v:val"), ", ")
+        echomsg printf("Remove the corresponding assignment%s"
+                    \ . " (e.g., from your vimrc) to disable this warning.",
+                    \ len(opts) > 1 ? "s" : "")
+        if len(a:helphint)
+            " Display the provided help hint.
+            echomsg "  " . a:helphint
+        endif
+        echohl None
+    endif
+endfunction
+
+" Note: The following options were introduced by PR #34 and removed in PR #51. Hopefully,
+" not many users have overridden them, but just in case...
+" TODO: Remove this after a few releases.
+call s:deprecate_options([
+            \ 'sexp_cleanup_lineshift_limit',
+            \ 'sexp_cleanup_colshift',
+            \ 'sexp_cleanup_colshift_slope'],
+            \ 1, ":help sexp-outer-element-selection-logic")
+
 """ Global State {{{1
 
 if !exists('g:sexp_filetypes')

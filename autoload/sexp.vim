@@ -803,7 +803,8 @@ endfunction
 " completely characterize it, with the goal of supporting the logic in
 " s:terminals_with_whitespace() that determines the optimal visual selection for an outer
 " element.
-" TODO: Remove this!!!!!!
+" !!! Obsolete function !!!
+" TODO: Remove this after verifying it will no longer be needed!
 function! s:terminals_with_whitespace_info(start, end, leading)
     let cursor = getpos('.')
     let o = {}
@@ -1144,7 +1145,7 @@ function! s:terminals_with_whitespace(start, end)
         \ || s:is_list_terminal(end, 1) && !s:is_adjacent_to_comment(start, 0)
         " Full join: select everything between open or close bracket and the nearest
         " non-ws, which we've already determined can be safely juxtaposed to the bracket.
-        " Extra logic is needed to pull in a newline adjacent to the open/close.
+        " Extra logic is needed to pull in a newline adjacent to (and inside) the bracket.
         let start = ws_start[2] == 1 && ws_start[1] > 1
             \ ? [0, ws_start[1] - 1, col([ws_start[1] - 1, '$']), 0]
             \ : ws_start
