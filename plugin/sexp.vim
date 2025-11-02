@@ -305,6 +305,8 @@ function! s:defplug(flags, mapmode, name, ...)
 	" maps defined with DEFPLUG would even work correctly.
 	" TODO: Consider removing DEFPLUG and simplifying this function accordingly: e.g.,
 	" the prefix/postfix assignments could be inlined below.
+    " CAVEAT!: This path does not invoke {pre,post}_op(), which means it may actually be
+    " broken, since pre_op() is what ensures correct settings of options like 've'.
         execute lhs . ' ' . rhs
         return 1
     endif

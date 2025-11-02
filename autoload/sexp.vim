@@ -565,10 +565,10 @@ endfunction
 function! s:nearest_element_terminal(next, tail, ...)
     let cursor = getpos('.')
     let pos = cursor
-    " If optional flag is set, keep original position if no adjacent element (as opposed
-    " to returning current terminal in desired direction).
+    " If optional flag is set, current element's terminal is not a valid target: return
+    " nullpos if no adjacent in desired direction.
     let ignore_current = a:0 && a:1
-
+    let nullpos_on_fail = a:0 > 1 && a:1
     try
         let terminal = sexp#current_element_terminal(a:next)
 
@@ -613,7 +613,7 @@ function! s:nearest_element_terminal(next, tail, ...)
     catch /sexp-error/
     finally
         call s:setcursor(cursor)
-        return pos
+        return ignore_current && pos == cursor ? s:nullpos : pos
     endtry
 endfunction
 
@@ -1007,7 +1007,7 @@ function! s:is_list_head(pos)
         call s:setcursor(a:pos)
         " Attempt to find previous element.
         let p = s:nearest_element_terminal(0, 1, 1)
-        if p != a:pos
+        if p[1]
             " Previous element implies not head of list.
             " Note: In many cases, this allows short-circuiting a test for top-level.
             return 0
@@ -1826,12 +1826,11 @@ endfunction
 "
 " If no such adjacent element exists, moves to beginning or end of element
 " respectively. Analogous to native w, e, and b commands.
-" TODO: Consider an optional flag requesting return of s:nullpos if no adjacent.
-" FIXME: Move this (or the api sexp#move_to_adjacent_element we're trying to deconflict)
-" and get rid of the kludgy suffix.
-function! s:move_to_adjacent_element(next, tail, top)
+" Optional Arg: If optional 'ignore_current' flag is set, return nullpos without moving
+" cursor if no adjacent.
+function! s:move_to_adjacent_element(next, tail, top, ...)
     let cursor = getpos('.')
-
+    let ignore_current = a:0 && a:1
     if a:top
         let top = s:move_to_top_bracket(a:next)
 
@@ -1840,10 +1839,10 @@ function! s:move_to_adjacent_element(next, tail, top)
         if !a:next && top[1] > 0 && s:compare_pos(top, cursor) != 0
             let pos = top
         else
-            let pos = s:nearest_element_terminal(a:next, a:tail)
+            let pos = s:nearest_element_terminal(a:next, a:tail, ignore_current)
         endif
     else
-        let pos = s:nearest_element_terminal(a:next, a:tail)
+        let pos = s:nearest_element_terminal(a:next, a:tail, ignore_current)
     endif
 
     if pos[1] > 0 | call s:setcursor(pos) | endif
@@ -2970,6 +2969,8 @@ function! s:is_multiline_put(loc, dir)
 
 endfunction
 
+" Build and return a dict characterizing the text in the put register and canonicalize the
+" register contents.
 function! s:put__get_reginfo()
     let regstr = getreg(v:register)
     " Note: Processed text added later.
@@ -2994,12 +2995,30 @@ function! s:put__get_reginfo()
     return ret
 endfunction
 
+" Build and return dict characterizing the context in which a register put occurs.
+" Field Descriptions:
+"   tgt:             the put side of the target element, else curpos if no such element
+"   adj:             the target side of the element adjacent to target on put side, else
+"                    nullpos
+"   adj_bracket:     if target is terminal element, position of bracket on put side of
+"                    target, else nullpos
+"   away:            the target side of the element adjacent to target on side opposite
+"                    put, else nullpos
+"   away_bracket:    if target is terminal element, position of bracket on side of target
+"                    away from put, else nullpos
+"   tgt_is_alone:    target is alone on its line, with possible exception of open or
+"                    close, but not both
+"   tgt_is_terminal: target is head or tail of list in put direction
+"   adj_colinear:    element adjacent to target on put side is colinear with target
+"   empty_list:      putting into empty list
+"   empty_buffer:    putting into empty buffer
+" Note: Skipping documentation of several of the more obvious flags. 
+"         
 function! s:put__get_context(count, tail)
     let ret = {
         \ 'tgt': s:nullpos, 'adj': s:nullpos, 'adj_bracket': s:nullpos,
         \ 'away': s:nullpos, 'away_bracket': s:nullpos,
-        \ 'tgt_is_first': 0, 'tgt_is_last': 0, 'tgt_is_alone': 0, 'tgt_is_ml': 0,
-        \ 'tgt_is_terminal': 0, 'tgt_is_head': 0, 'tgt_is_tail': 0,
+        \ 'tgt_is_alone': 0, 'tgt_is_ml': 0, 'tgt_is_terminal': 0,
         \ 'adj_colinear': 0, 'adj_is_ml': 0,
         \ 'empty_list': 0, 'empty_buffer': 0,
         \ 'at_top': 0,
@@ -3017,6 +3036,8 @@ function! s:put__get_context(count, tail)
             if !t[1]
                 " Must be empty list; treat like 'put after' with cursor on virtual
                 " element located at open bracket.
+                " Note: This type of put would be more likely to use the "put into list"
+                " put variant.
                 let t = s:nearest_bracket(0)
                 if t[1]
                     " Note: Could also name this flag put_into_empty.
@@ -3035,13 +3056,15 @@ function! s:put__get_context(count, tail)
     endif
     " Assumption: t is on desired (put) side of tgt.
     let ret.tgt = t
+    call s:setcursor(ret.tgt)
     if !ret.empty_list && !ret.empty_buffer
         " Find near side of adjacent
         " Note: Optional flag forces return of same position if no adjacent.
         let adj = s:nearest_element_terminal(a:tail, !a:tail, 1)
-        if t != adj
+        if adj[1]
             " Found an adjacent element.
             let ret.adj = adj
+            " TODO: Consider not adding easily expressible flags like this.
             let ret.adj_colinear = ret.tgt[1] == ret.adj[1]
             let adj_bracket = s:nullpos
         else
@@ -3049,16 +3072,14 @@ function! s:put__get_context(count, tail)
             let ret.adj = s:nullpos
             let adj_bracket = s:nearest_bracket(a:tail)
         endif
-        " Check other (away) side of target, passing 'ignore_current' to ensure tgt
-        " position returned unmodified if no adjacent.
-        " TODO: Really need a flag that causes nullpos to be returned if no adjacent.
+        let ret.adj_bracket = adj_bracket
+        " Check other (away) side of target, passing 'ignore_current' to ensure nullpos
+        " returned if no adjacent.
         let away = s:nearest_element_terminal(!a:tail, a:tail, 1)
-        if ret.tgt == away
-            let away = s:nullpos
-        endif
-        " Note: Making this call unconditionally to obviate need for at_top() call.
+        " Note: Making this call unconditionally (even if away is not nullpos) to obviate
+        " need for at_top() call; however, put nullpos in return dict if away is non-null.
         let away_bracket = s:nearest_bracket(!a:tail)
-        let [ret.away, ret.away_bracket] = [away, away_bracket]
+        let [ret.away, ret.away_bracket] = [away, away[1] ? s:nullpos : away_bracket]
         let ret.at_top = !away_bracket[1]
         " Is tgt alone on its line, with possible exception of open or close (but not
         " both)?
@@ -3076,14 +3097,26 @@ function! s:put__get_context(count, tail)
     return ret
 endfunction
 
+" Return a dict containing 3 types of separators required for the put indicated by the
+" inputs.
+" Args:
+"   tail: put direction
+"   ctx:  put context dict
+"   reg:  register characterization dict
+" Return Dict:
+"   near_sep:     text to put between target and register contents
+"   far_sep:      text to put between register contents and element that *was* adjacent to
+"                 target
+"   interior_sep: text to join the individual instances of register contents in case of a
+"                 [count]
 function! s:put__get_seps(tail, ctx, reg)
     let ret = {'near_sep': '', 'far_sep': '', 'interior_sep': ''}
     let [tail, ctx, reg] = [a:tail, a:ctx, a:reg]
     let [NL, SPC, EMPTY] = ["\n", " ", ""]
 
     " -- Near separator
-    " TODO: Consider reworking this logic such that it defaults to NL (in the else), with
-    " if/elseif's handling only the special cases.
+    " Logic: Default (else) to NL, with special cases requiring SPC/EMPTY in the
+    " if/elseifs.
     " Rationale: Safer (and possibly simpler).
     if ctx.empty_list
         if reg.s_is_com
@@ -3133,6 +3166,13 @@ function! s:put__get_seps(tail, ctx, reg)
     return ret
 endfunction
 
+" Calculate and return (unadjusted) range that will need to be re-indented after the put
+" described by the inputs is performed.
+" Note: The returned range will need to be adjusted to account for the put.
+" Return:
+"   [pos]        position of bracket for list to indent
+"   [start, end] start/end of range to adjust
+" TODO: OBSOLETE!!! Remove if not needed.
 function! s:put__get_reindent_range(tail, ctx, reg, sep)
     let ret = [s:nullpos, s:nullpos]
     let [ctx, reg, sep] = [a:ctx, a:reg, a:sep]
@@ -3141,6 +3181,9 @@ function! s:put__get_reindent_range(tail, ctx, reg, sep)
     else
         " Start of range
         " Assumption: Arrival here guarantees presence of either adj or adj_bracket.
+        " NO!!! Could be a single element in buffer: i.e., tgt but !adj
+        " Also Note: In theory, pasting at head of list can necessitate re-indent of
+        " parent.
         let ret[0] = a:tail ? ctx.tgt : ctx.adj[1] ? ctx.adj : ctx.adj_bracket
         " End of range
         " Assumption: SPC separator implies existence of adj/away element.
@@ -3153,7 +3196,7 @@ function! s:put__get_reindent_range(tail, ctx, reg, sep)
             " Assumption: SPC sep implies actual adj element.
             call s:setcursor(extra_el)
             " Need far side of adj
-            let ret[1] = s:current_element_terminal(1)
+            let ret[1] = sexp#current_element_terminal(1)
         else
             " Don't need to indent extra element. If this is a tail put, leave at nullpos
             " to have end of range taken from ']; otherwise, start of tgt marks end of
@@ -3164,6 +3207,151 @@ function! s:put__get_reindent_range(tail, ctx, reg, sep)
         endif
     endif
     return ret
+endfunction
+
+" Starting at current position, return the outside terminal position of the most distant
+" sibling that can be reached without crossing line break between elements.
+function! s:last_colinear_sibling(tail)
+    let curpos = getpos('.')
+    let pos = curpos
+    try
+        " At loop termination, pos will be the position we're seeking.
+        while 1
+            let next = s:move_to_adjacent_element(a:tail, a:tail, 0)
+            if pos == next
+                " No more elements
+                break
+            else
+                if next[1] > pos[1]
+                    " Found non-colinear sibling; use prior element.
+                    break
+                endif
+                " Move to other end and continue.
+                let next = s:move_to_current_element_terminal(a:tail)
+            endif
+            let pos = next
+        endwhile
+    finally
+        call s:setcursor(curpos)
+    endtry
+    return pos
+endfunction
+
+" Reindent range affected by sexp#put.
+" Logic:
+" -- Put into empty list --
+"   Re-indent the list
+" -- Put into empty buffer --
+"   Re-indent the put text
+" -- Head --
+"   if put into list head context
+"     Re-indent parent
+"   else
+"     Adjacent element never requires reindent.
+"     Target element requires reindent iff not separated by NL from put text.
+"     Away element requires reindent iff target element requires reindent AND away element
+"     not separated by NL from target, and so on, recursively to close bracket.
+"     Question: Would it be better just to reindent parent in this case (or possibly just
+"     use close bracket), given that the traversal of siblings could end up taking longer
+"     than the time saved?
+" -- Tail --
+"   Assumption: Put into list head handled separately.
+"   Target and away elements never require reindent.
+"   Put text always requires reindent.
+"   Immediately adjacent element always requires reindent.
+"   Rationale: Even if it's separated by NL from put text and was properly indented before
+"   the put, NL may have replaced all its leading indent.
+"   Adjacent to adjacent requires reindent iff not separated from immediate adjacent, and
+"   so on, recursively to close bracket.
+"   Rationale: Head is not changing, so put text shouldn't be able to change indent
+"   context of subsequent, non-colinear forms.
+"   Assumption: Adjacent text was aligned correctly before the put!
+"   TODO: Should we assume this?
+" Important TODO!!! Create more generic (non-put-specific) function to subsume a lot of
+" this logic!!!
+function! s:put__reindent(tail, ctx, reg, sep, ps)
+    let [NL, SPC, EMPTY] = ["\n", " ", ""]
+    let [tail, ctx, reg, sep] = [a:tail, a:ctx, a:reg, a:sep]
+    let irange = [s:nullpos, s:nullpos]
+    let indent_parent = 0
+    if ctx.empty_list
+        let indent_parent = 1
+        let irange[0] = ctx.tgt
+    elseif ctx.empty_buffer
+        " TODO: Do we need to take this range as input arg, or is it safe to use marks?
+        let [irange[0], irange[1]] = [getpos("'["), getpos("']")]
+    elseif tail
+        " Put after
+        " Starting at end of put text (first possible endpoint), find end of colinear
+        " siblings.
+        let irange[0] = getpos("'[")
+        let pos = ctx.adj
+        if sep.far_sep != NL
+            call s:setcursor(pos)
+            let pos = s:last_colinear_sibling(1)
+        endif
+        let irange[1] = pos
+    else
+        " Put before
+        if ctx.tgt_is_terminal
+            " Put into head context; re-indent parent
+            let indent_parent = 1
+            let irange[0] = ctx.tgt
+        else
+            " Head not changing; need NL between elements to establish 'clean point'.
+            " Note: The call to s:last_colinear_sibling() could probably be used to
+            " short-circuit a lot of the logic below. It's done this way only to use
+            " information we already have whenever possible.
+            let irange[0] = getpos("'[")
+            if sep.near_sep != NL
+                " At least target requires reindent, maybe more...
+                let pos = ctx.tgt
+                call s:setcursor(pos)
+                " TODO: Consider storing ranges rather than positions to obviate need for
+                " this here.
+                let pos = s:move_to_current_element_terminal(1)
+                " We're at away end of target.
+                if !ctx.away[1]
+                    " No away element; use bracket if it exists.
+                    if ctx.away_bracket[1]
+                        let irange[1] = ctx.away_bracket
+                    else
+                        " Nothing on away side, not even bracket, so just use tgt.
+                        let irange[1] = pos
+                    endif
+                elseif ctx.away[1] > ctx.tgt[1]
+                    " Safe to stop with away side of target since away is not colinear
+                    let irange[1] = pos
+                else
+                    " Can't stop with near side of away because it's colinear with target.
+                    " Look for a line break between siblings (or end of list).
+                    call s:setcursor(ctx.away)
+                    call s:move_to_current_element_terminal(1)
+                    let irange[1] = s:last_colinear_sibling(1)
+                endif
+            else
+                " No need to go past away edge of target
+                " TODO: Consider storing both sides in a range in the context function.
+                call s:setcursor(ctx.tgt)
+                let irange[1] = sexp#current_element_terminal(1)
+            endif
+        endif
+    endif
+
+    " Skip single-line indents.
+    if indent_parent || irange[0][1] != irange[1][1]
+        if indent_parent
+            " Assumption: Cursor is positioned on parent list bracket.
+            let mode = 'n'
+        else
+            let mode = 'v'
+            " Range spans multiple lines, so re-indent.
+            call s:set_visual_marks(irange)
+            " Note: Though we use visual marks, it's important that we be in normal mode.
+            call sexp#ensure_normal_mode()
+        endif
+        call sexp#indent(mode, 0, 1, -1, 1, a:ps)
+    endif
 endfunction
 
 function! s:put__get_splice_info(count, tail, ctx, reg, sep, flags)
@@ -3225,20 +3413,24 @@ function! sexp#put(count, tail)
     let reg = s:put__get_reginfo()
     let ctx = s:put__get_context(count, a:tail)
     let sep = s:put__get_seps(a:tail, ctx, reg)
-    let irange = s:put__get_reindent_range(a:tail, ctx, reg, sep)
+    " TODO: Review the reindent range calculation logic.
+    "let irange = s:put__get_reindent_range(a:tail, ctx, reg, sep)
     let spl = s:put__get_splice_info(count, a:tail, ctx, reg, sep, {})
     if !spl.range[1][1]
         " TODO: Consider handling this with simple p/P: i.e., without yankdel_range().
         " Question: Do we need yankdel_range for position adjustments?
         echoerr "FIXME: WIP!!!"
     else
-        " TODO: Save/restore adjusted visual marks.
-        let ps = s:concat_positions(vs, ve, irange)
+        " TODO: Consider having put__get_context() build the position list.
+        let ps = s:concat_positions(vs, ve,
+            \ ctx.tgt, ctx.adj, ctx.away, ctx.adj_bracket, ctx.away_bracket)
         call s:yankdel_range(spl.range[0], spl.range[1], spl.text, spl.inc, ps, 1)
         " Determine final cursor position.
-        let curpos = a:tail ? getpos("']") : getpos("'[")
+        " Design Decision: Analogously to builtin p and P, always position at end;
+        " however, unlike the builtins, always position on last non-ws at end.
+        let curpos = getpos("']")
         if sep[a:tail ? 'far_sep' : 'near_sep'] != ''
-            " Need to back up to closest non-ws.
+            " Need to back '] up to closest non-ws (i.e., final put element).
             call s:setcursor(curpos)
             " TODO: Consider adding stopline, but shouldn't be necessary.
             let p = searchpos('\S', 'bW')
@@ -3247,26 +3439,14 @@ function! sexp#put(count, tail)
                 throw 'sexp-error'
             endif
             let curpos = [0, p[0], p[1], 0]
+            call setpos("']", curpos)
         endif
     endif
     " FIXME: Make sure all branches above set curpos!
-    call add(ps, curpos)
-    " Determine affected range.
-    " Assumption: yankdel_range() sets [ ] marks.
-    " FIXME: Make this work for empty_buffer case too!
-    " Note: irange == nullpos indicates corresponding range end determined by put.
-    let irange[0] = irange[0][1] ? irange[0] : getpos("'[")
-    let irange[1] = irange[1][1] ? irange[1] : getpos("']")
-    if irange[0][1] != irange[1][1]
-        " Range spans multiple lines, so re-indent.
-        " TODO: Do we need an auto-indent option for put? I'm thinking not...
-        call s:set_visual_marks(irange)
-        " Note: Though we use visual marks, it's important that we be in normal mode.
-        call sexp#ensure_normal_mode()
-        " TODO: Adjust visual marks?
-        call sexp#indent('v', 0, 1, -1, 1, ps)
-    endif
+    call s:put__reindent(a:tail, ctx, reg, sep, [ps, curpos])
+    " !!!!! WIP !!!!!
     call s:setcursor(curpos)
+    call s:set_visual_marks([vs, ve])
 endfunction
 
 function! sexp#put_child(count, tail)
