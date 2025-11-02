@@ -2914,6 +2914,8 @@ function! s:yankdel_range__preadjust_range_start(start, inc)
             let ret[2] = 1
         else
             " EOF
+            " Question: Should we return start of nonexistent line past end (analogous to
+            " position before BOF returned by *_range_end())?
             let ret = getpos([line('$'), '$'])
         endif
     elseif a:inc != 1 " 0 or 2
@@ -2972,101 +2974,239 @@ function! s:yankdel_range__preadjust_range_end(end, inc)
     return ret
 endfunction
 
+" Build and return a dict with information required to adjust arbitrary buffer positions
+" after yank/splice/del has been performed.
+" Return Dict:
+"   start:     start of inclusive range for operation (N/A for directed put)
+"   end:       end of inclusive range for operation (N/A for directed put)
+"   pos:       target position for a directed put (else nullpos)
+"   text:      text for a splice (else empty string)
+"              Note: This function can modify this text in one special case.
+"   cmd:       One of the following characters, indicating the operation to be performed:
+"              used to perform the operation: <none> p P s y d
+"              Note: May or may not equal the actual Vim command used.
+"   err:       1 iff inputs are invalid
+"   errmsg:    error description iff err == 1, else ""
+function! s:yankdel_range__preadjust_range(start, end, del_or_spl, inc)
+    if s:compare_pos(a:start, a:end) > 0
+        " Shouldn't happen! How to handle? Internal error?
+        " 'err' flag with msg?
+        return {'err': 1, 'errmsg': 'Invalid (reversed) range'}
+    endif
+    " If here, range was sane.
+    let start = s:yankdel_range__preadjust_range_start(a:start, a:inc[0])
+    let end = s:yankdel_range__preadjust_range_end(a:end, a:inc[1])
+    " Note: Initial setting of 'cmd' flag will never indicate directed put.
+    let [is_str, is_num] =
+        \ [type(a:del_or_spl) == type(''), type(a:del_or_spl) == type(0)]
+    let ret = {
+        \ 'start': s:nullpos, 'end': s:nullpos, 'pos': s:nullpos,
+        \ 'text': is_str ? a:del_or_spl : '',
+        \ 'cmd': is_num ? a:del_or_spl ? 'd' : 'y' : 's', 
+        \ 'err': 0, 'errmsg': ''
+    \ }
+    " Is adjusted (inclusive) range empty?
+    if s:compare_pos(start, end) > 0
+        " Adjusted start/end are reversed, yielding empty target region.
+        " Treat *non-empty* splice as either a directed put or (EOL-exclusive case only)
+        " a splice, everything else as NO-OP.
+        if ret.cmd != 's' || len(ret.text) == 0
+            " Empty range is NO-OP for all but non-empty splice!
+            let ret.cmd = ''
+            return ret
+        endif
+        " We have a non-empty splice.
+        let [i0, i1] = a:inc
+        if i0 == 1 || i1 == 1
+            if i0 == 2 || i1 == 2
+                " EOL-exclusive is disallowed when the other end is inclusive and range is
+                " reversed.
+                " Rationale: ambiguous intent
+                return {'err': 1, 'errmsg': 'invalid EOL-exclusive range'}
+            endif
+            " By convention, empty range with one side inclusive requests a directed put
+            " with direction given by the inclusive side.
+            let [ret.pos, ret.cmd] = i0 == 1 ? [start, 'P'] : [end, 'p']
+        else
+            " Both sides exclusive
+            " Convert pointless EOL-exclusive to (simpler) normal-exclusive.
+            let i0 = i0 == 0 || a:start[1] == start[1] ? 0 : 2
+            let i1 = i1 == 0 || a:end[1] == end[1] ? 0 : 2
+            " EOL-exclusive should never be used with colinear start/end.
+            " Design Decision: Defer validation till after simplifying pointless
+            " EOL-exclusive to normal-exclusive.
+            if (i0 == 2 || i1 == 2) && a:end[1] <= a:start[1]
+                " Invalid!
+                return {'err': 1, 'errmsg': 'Invalid EOL-exclusive range'}
+            endif
+            if i0 == 2 || i1 == 2
+                " At least one end is (still) EOL-exclusive, so we know a:start and a:end
+                " are separated by at least a NL, guaranteeing our ability to determine
+                " non-empty splice range (even if only a NL). Handle as a splice using
+                " corresponding normal-exclusive range, with NL's prepended/appended to
+                " the splice text as required.
+                let [pre_nl, post_nl] = ['', '']
+                if i0 == 2
+                    let start = s:yankdel_range__preadjust_range_start(a:start, 0)
+                    let pre_nl = "\n"
+                endif
+                if i1 == 2
+                    let end = s:yankdel_range__preadjust_range_end(a:end, 0)
+                    let post_nl = "\n"
+                endif
+                " Treat like splice, with adjusted splice text.
+                let [ret.start, ret.end] = [start, end]
+                let ret.text = pre_nl . ret.text . post_nl
+            else
+                " Both ends normal-exclusive implies original a:start/a:end were adjacent.
+                " Directed put from unadjusted start
+                let [ret.pos, ret.cmd] = [a:start, 'p']
+            endif
+        endif
+    else
+        " Adjusted range non-empty; no need to adjust cmd, which is one of [yds]. (All
+        " directed puts handled in the if above.)
+        let [ret.start, ret.end] = [start, end]
+    endif
+    return ret
+endfunction
+
 " Return a dict recording the following:
-" * total # of bytes in the file
-" * byte offset of start relative to BOF
-" * byte offset of end relative to start
-" * list of byte offsets of each of the provided positions relative to start
-" * the positions themselves (indices correspond to indices in byte_offs[])
-" Explanation: After delete/splice, this information can be used to adjust the positions
-" to account for added/deleted text.
+" ps:            list of positions requiring adjustment
+" op:            dict returned by s:yankdel_range__preadjust_range()
+" anchor:        anchor position (start of range for splice/delete, else position at which
+"                directed put is performed)
+" anchor_byte:   bytes offset of anchor relative to BOF
+" end_off:       (optional) byte offset of end of range relative to anchor
+"                N/A for directed put
+" bytes_in_file: total # of bytes in the file
+" byte_offs:     list of byte offsets of each of the provided positions relative to anchor
+" delta:         signed byte offset indicating how much the end of file is moved by the
+"                operation for which we're adjusting.
+" Motivation: After delete/splice, this information can be used to adjust the positions to
+" account for added/deleted text.
 " Caveat: Because callers generally maintain references to the position tuples in the
 " input list, it's vital that we never delete or replace the tuple references: i.e., when
-" adjustments are made, the line/col elements are modified directly.
+" adjustments are made, the line/col values are modified directly.
 " Alternative Approach: This preadjustment step isn't strictly necessary, since number of
 " bytes to be deleted could be calculated analytically (even before any buffer
 " modifications have occurred) using pos2byte etc on start/end; however, that approach is
 " significantly more complex: much simpler/safer to do it using byte2pos after the
 " deletion has occurred.
-function! s:yankdel_range__preadjust_positions(start, end, ps)
+function! s:yankdel_range__preadjust_positions(op, ps)
     " Pre-op position adjustment
-    let ret = {'ps': a:ps, 'byte_offs': [], 'start': a:start}
-    " Total # of bytes in file used to calculate delta later.
+    let ret = {'ps': a:ps, 'op': a:op, 'byte_offs': [],
+                \ 'anchor': s:nullpos,
+                \ 'anchor_byte': -1, 'end_off': -1, 'delta': 0}
+    let ret.anchor = a:op.cmd =~? 'p' ? a:op.pos : a:op.start
+    " Total # of bytes in file is used to calculate delta later.
+    " TODO: Calculate delta up-front (using range and splice text if applicable) to
+    " obviate need for bytes_in_file.
     let ret.bytes_in_file = s:total_bytes_in_file()
-    " Calculate byte offset of start wrt BOF and end wrt start.
-    let ret.start_byte = s:pos2byte(a:start)
-    " Note: Considered making e_off reflect position just *past* end, so that when
-    " position is deleted, it falls forward *out of* the deleted range (i.e., into first
-    " non-deleted text).
-    " Decision: I think it's best to position *at* original end.
-    " Rationale: If splice text is non-empty, it looks best for cursor to move
-    " to end of spliced text; if splice is empty (i.e., splice is actually
-    " delete), end position will correspond to first char past deletion
-    " naturally.
-    let ret.end_off = s:pos2byte(a:end) - ret.start_byte
+    " Calculate byte offset of anchor pos wrt BOF and (if not directed put) end wrt anchor
+    " pos (i.e., start).
+    let ret.anchor_byte = s:pos2byte(ret.anchor)
+    " Note: end_off is N/A for directed put.
+    if a:op.cmd !~? 'p'
+        let ret.end_off = s:pos2byte(a:op.end) - ret.anchor_byte
+    endif
+    " Calculate delta.
+    " TODO: Once this approach to delta calculation has been thoroughly vetted, remove
+    " 'bytes_in_file' and associated code (both here and in postadjust function).
+    let ret.delta = a:op.cmd =~? '[sp]' ? len(a:op.text) : 0
+    if a:op.cmd =~ '[sd]'
+        " Assumption: We have a non-empty range.
+        " Note: Use position *past* end to account for bytes in final char of range.
+        let ret.delta -=
+            \ (s:pos2byte(s:offset_char(a:op.end, 1)) - s:pos2byte(a:op.start))
+    endif
     " Calculate and store offsets of positions of interest wrt start of range.
     for p in a:ps
-        call add(ret.byte_offs, s:pos2byte(p) - ret.start_byte)
+        " Decision Decision: Add even the negative offsets, which require no adjustment.
+        " Rationale: Discarding them would entail removing elements from a:ps to avoid
+        " breaking index correlation.
+        call add(ret.byte_offs, s:pos2byte(p) - ret.anchor_byte)
     endfor
     return ret
 endfunction
 
-" Adjust the positions in adj (assumed to be dict built by
+" Adjust the positions in the input dict, assumed to have been built by
 " yankdel_range__preadjust_positions()) to reflect the text added/removed by a
 " splice/delete operation.
-function! s:yankdel_range__postadjust_positions(adj, spl)
+function! s:yankdel_range__postadjust_positions(adj)
     " Post-op position adjustment
     " Calculate net byte delta (added (+) / deleted (-))
+    " FIXME: Remove this after validating the new (preferred) approach (i.e., calculating
+    " delta in preadjust function).
     let delta = s:total_bytes_in_file() - a:adj.bytes_in_file
-    let [ps, offs] = [a:adj.ps, a:adj.byte_offs]
-    let [s, s_byte, e_off] = [a:adj.start, a:adj.start_byte, a:adj.end_off]
-    " Get adjusted e_off, which will be used within the loop.
-    let e_off_adj = e_off + delta
-    let e_adj = s:byte2pos(s_byte + e_off_adj)
+    if delta != a:adj.delta
+        throw "Mismatch in calculated deltas: post-delta=" . delta . " pre-delta=" . a:adj.delta
+    endif
+    let [op, ps, offs] = [a:adj.op, a:adj.ps, a:adj.byte_offs]
+    let [anchor, anchor_byte] = [a:adj.anchor, a:adj.anchor_byte]
+    if op.cmd !~? 'p'
+        " Perform end offset processing (not applicable to directed puts).
+        " Get adjusted e_off, which will be used within the loop.
+        let e_off = a:adj.end_off
+        let e_off_adj = e_off + delta
+        let e_adj = s:byte2pos(anchor_byte + e_off_adj)
+        if s:compare_pos(anchor, e_adj) > 0
+            " Ensure that if range is completely deleted (either with empty splice or
+            " delete), positions don't fall backwards past the original start, but forward
+            " to first char of non-deleted text.
+            let e_adj = anchor
+        endif
+    endif
     " Iterate parallel lists ps and offs.
     for i in range(len(offs))
         let [o, p] = [offs[i], ps[i]]
-        if o > 0
-            " Important Note: There are 3 possible cases for the position being adjusted:
+        " Distinction: For 'put before' case, adjustments required for all positions >=
+        " start (o >= 0); for all other cases (including put after), only positions
+        " *after* start (o > 0) require adjustment.
+        if o > (op.cmd ==# 'P' ? -1 : 0)
+            " Important Note: For non-directed put (i.e., splice or delete), there are 3
+            " possible cases for the position being adjusted:
             " 1. original position within both original and adjusted ranges
             " 2. original position within original but not adjusted range
             " 3. original position past original range (and thus, also past adjusted
             "    range)
-            " Originally, used position calculated from original byte offset for case 1,
-            " but this is problematic because converting whitespace (e.g., trailing
-            " spaces) to newlines can result in an adjusted position on a different line,
-            " even when the original line still exists. A better approach for cases 1 & 2
-            " is to try to use the original line/col (limiting col to '$'-1), falling back
-            " to the adjusted end position if the aforementioned position is past adjusted
-            " end.
+            " Both put before and put after can be handled as case #3; the only difference
+            " between the two is the offset threshold (checked above).
+            " Design Decision: Originally, used position calculated from original byte
+            " offset for case 1, but this is problematic because cleaning up whitespace
+            " (e.g., trailing spaces) can result in an adjusted position on a different
+            " line, even when the original line still exists. A better approach for cases
+            " 1 & 2 is to try to use the original line/col (limiting col to '$'-1),
+            " falling back to the adjusted end position if the aforementioned position is
+            " past adjusted end.
             " Caveat: Because callers may hold references to the position lists, it's
-            " vital that we replace the list elements *without* replacing the list
+            " *vital* that we replace the list elements *without* replacing the list
             " references.
-            if o <= e_off
+            if op.cmd !=? 'p' && o <= e_off
                 " Case 1 or 2
                 if s:compare_pos(p, e_adj) >= 0
-                    " Don't allow position to escape from adjusted range.
+                    " Case 2: Don't allow position to escape from adjusted range.
                     let [p[1], p[2]] = e_adj[1:2]
                 else
-                    " Should be able to use col-constrained original position.
+                    " Case 1: Attempt to use original position, but limit col to the
+                    " current line length, which could differ from the original.
                     let ecol = col([p[1], '$'])
                     if p[2] >= ecol
                         let p[2] = max([1, ecol - 1]) " max() needed to handle blank lines
                     endif
                 endif
             else
-                " Case 3
-                let [p[1], p[2]] = s:byte2pos(s_byte + o + delta)[1:2]
+                " Case 3 *and* directed puts
+                let [p[1], p[2]] = s:byte2pos(anchor_byte + o + delta)[1:2]
             endif
         endif
     endfor
 endfunction
 
-" Yank, delete or splice text in range defined by start/end, returning any
-" deleted text, and optionally adjusting input positions to account for deletions.
-" Splice Note: If a string (rather than a boolean flag) is supplied for
-" del_or_spl, the range will be *replaced* by the provided text and the
-" deleted text will be returned.
+" Yank, delete or splice text in range defined by start/end, returning any deleted text,
+" and optionally adjusting input positions to account for deletions.
+" Splice Note: If a string (rather than a boolean flag) is supplied for del_or_spl, the
+" range will be *replaced* by the provided text and the replaced text will be returned.
 " -- Optional Args --
 " a:1  range inclusivity
 "      Enum:
@@ -3100,6 +3240,8 @@ endfunction
 " non-whitespace.
 " Cursor Positioning: Let cursor position fall where it naturally would after
 " yank/put/delete.
+" TODO: In lieu of optional args, use replace everything beyond 'end' with a dict of
+" optional key/value pairs. This will help make call sites more self-documenting.
 function! s:yankdel_range(start, end, del_or_spl, ...)
     let ret = ''
     " TODO: Probably stop saving and adjusting cursor.
@@ -3111,107 +3253,94 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
     try
         let inc = a:0 ? type(a:1) == 3 ? a:1 : [1, a:1] : [1, 0]
         let failsafe_override = g:sexp_inhibit_failsafe || (a:0 > 2 ? a:3 : 0)
-        let start = s:yankdel_range__preadjust_range_start(a:start, inc[0])
-        let end = s:yankdel_range__preadjust_range_end(a:end, inc[1])
-        " See header comment on failsafe mechanism for purpose of this test.
-        if !failsafe_override && (type(a:del_or_spl) == type("") || a:del_or_spl)
-                \ && s:range_has_non_ws(start, end, 1)
-            call s:warnmsg("yankdel_range: Refusing to modify non-whitespace!"
-                        \ . " Is sexp tree malformed?")
-            return ''
+        " Canonicalize start/end/range.
+        let op = s:yankdel_range__preadjust_range(a:start, a:end, a:del_or_spl, inc)
+        if op.err
+            call s:warnmsg("yankdel_range: Internal error detected: " . op.errmsg)
+            return
+        elseif empty(op.cmd)
+            " NO-OP
+            return
         endif
-        " Special Case: Treat splice of certain types of null replacement
-        " regions as a put.
-        " Design Decision: Only *just empty* regions will be treated this way: e.g., start
-        " == end and either end (but not both) exclusive (=== 0). Though there are simpler
-        " ways to accomplish it, you could use such null regions to perform a simple put,
-        " whose direction is determined by the inclusive side (inclusive start => put
-        " before).
-        " Design Decision: If del_or_spl === 1 (in lieu of splice text), the
-        " aforementioned 'just empty' null regions result in NOPs.
-        let cmp = s:compare_pos(a:start, a:end)
-        " Caveat: Vim 7.3 didn't have xor() function so do it manually.
-        " Note: spl_put is true iff splice can be performed by a "directed put".
-        let spl_put = type(a:del_or_spl) == 1 && !cmp
-            \ && (!inc[0] && inc[1] == 1 || inc[0] == 1 && !inc[1])
-        if spl_put || s:compare_pos(start, end) <= 0
-            " Either splice is a directional put (spl_put) or the adjusted region is
-            " non-empty.
-            " Note: end adjustment may have returned non-physical location; if so, fix
-            " now...
-            if start[2] < 0 | let start[2] = 1 | endif
-            " non-empty region to be spliced/deleted...
-            " Note: Since splice also deletes, del will be set for either.
-            let [del, spl, spl_text] = type(a:del_or_spl) == 1
-                \ ? [1, 1, a:del_or_spl]
-                \ : [!!a:del_or_spl, 0, '']
-
-            if del
-                " Pre-op position adjustment
-                " End: Treat deletion and non-null splice differently: for a
-                " deletion, end should be *past* the deleted text, but for a
-                " non-empty splice, use the end of the spliced area.
-                " Rationale: Looks best to keep cursor within replacement area
-                " (typically whitespace) when text is spliced, but to let it
-                " fall forward into undeleted text when deleting.
-                " Start: If we're doing a put before, pre-adjustment needs to
-                " use a start position prior to a:start; otherwise, the
-                " original start position will not be adjusted, despite coming
-                " after the put text.
-                " Note: Both 0 and 2 inc values are exclusive.
-                let adj = s:yankdel_range__preadjust_positions(
-                    \ spl_put && inc[0] ? s:offset_char(start, 0) : start,
-                    \ !spl
-                        \ ? inc[1] != 1 ? a:end : s:offset_char(end, 1)
-                        \ : end,
-                    \ a:0 > 1 ? s:concat_positions(a:2, cursor) : [cursor])
+        " See header comment on failsafe mechanism.
+        " Note: Failsafe doesn't apply to a directed put.
+        if !failsafe_override && op.cmd =~# '[ds]' && s:range_has_non_ws(op.start, op.end, 1)
+            call s:warnmsg("yankdel_range: Internal error detected: refusing to modify non-whitespace!")
+            return
+        endif
+        " Perform splice, directed put, delete or yank.
+        if op.cmd != 'y'
+            " Buffer is being changed...
+            " Perform pre-op position adjustment
+            " Start: If we're doing a put before, pre-adjustment needs to use a start
+            " position prior to a:start; otherwise, the original start position will
+            " not be adjusted, despite coming after the put text.
+            " End: Treat deletion and non-null splice differently: for a deletion, end
+            " should be *past* the deleted text, but for a non-empty splice, use the end
+            " of the spliced area.
+            " TODO: Decide whether *past* means newline or beginning of next line.
+            " Rationale: Looks best to keep cursor within replacement area (typically
+            " whitespace) when text is spliced, but to let it fall forward into undeleted
+            " text when deleting.
+            " TODO: Don't use a:0 this far into function! Rework...
+            " TODO: Evaluate the special logic here. Is it necessary? Correct since refactor?
+            let adj = s:yankdel_range__preadjust_positions(op,
+                \ a:0 > 1 ? s:concat_positions(a:2, cursor) : [cursor])
+        endif
+        " Perform cursor positioning or visual selection for yank/del/splice.
+        if op.cmd =~? 'p'
+            " directed put
+            call s:setcursor(op.pos)
+        else
+            " Select text to be yanked/deleted/spliced
+            call s:set_visual_marks([op.start, op.end])
+            call s:select_current_marks('v')
+        endif
+        if op.cmd =~# '[spP]'
+            " Splice or directed put
+            let @a = op.text
+            " Caveat: Need to treat splice text ending in newline specially to inhibit
+            " linewise put.
+            let linewise = @a[-1:] == "\n"
+            if linewise
+                " Make the register non-linewise.
+                let @a .= ' '
             endif
-            " Perform the yank/del/splice.
-            if spl_put
-                call s:setcursor(a:start)
-            else
-                " Select text to be yanked/deleted
-                call s:set_visual_marks([start, end])
-                call s:select_current_marks('v')
+            " Note: We can be in either visual or normal mode at this point. Action to
+            " perform depends on op.cmd:
+            "   [pP]: directed put from cursor pos
+            "   s: splice over visual selection (implemented with visual `p').
+            silent! exe 'normal! "a' . (op.cmd ==# 'P' ? 'P' : 'p')
+            if linewise
+                " Delete the space we appended to inhibit linewise put.
+                " Save [ and ] marks for restoration after space deletion.
+                " Note: Using [gs]etpos() with the [ and ] marks is problematic, as it
+                " always sets/gets '[ and '] (not `[ and `]).
+                " Solution: Use getpos('.') to obtain positions reached by `[ and `], then
+                " m[ and m] to set `[ and `] to those positions after the deletion.
+                execute 'normal! `[' | let smark = getpos('.')
+                execute 'normal! `]' | let emark = getpos('.')
+                " Cleanup the space that was appended to inhibit linewise put.
+                normal! `]"_x
+                " Restore the [ and ] marks, which are clobbered by normal
+                " x, even when lockmarks is used.
+                call s:setcursor(smark) | normal! m[
+                call s:setcursor(emark) | normal! m]
+                let @" = @"[:-2]
             endif
-            if spl
-                let @a = spl_text
-                " Caveat: Need to treat splice text ending in newline
-                " specially to inhibit linewise put.
-                let linewise = @a[-1:] == "\n"
-                if linewise
-                    " Make the register non-linewise.
-                    let @a .= ' '
-                endif
-                " Replace selection with splice text.
-                silent! exe 'normal! "a' . (spl_put && inc[0] ? 'P' : 'p')
-                if linewise
-                    " Save [ and ] marks for restoration after space deletion.
-                    let [smark, emark] =
-                        \ [getpos("'["), [0, line("']") - 1, col([line("']") - 1, '$']) - 1, 0]]
-                    " Cleanup the space that was appended to inhibit linewise put.
-                    normal! `]"_x
-                    " Restore the [ and ] marks, which are clobbered by normal
-                    " x, even when lockmarks is used.
-                    call setpos("'[", smark)
-                    call setpos("']", emark)
-                    " Position cursor on end of put text.
-                    " TODO: Currently, we're restoring at end of function, but I don't
-                    " think callers rely on that, and this is probably better...
-                    call s:setcursor(emark)
-                    let @" = @"[:-2]
-                endif
-                if !spl_put
-                    let ret = @"
-                endif
-            else
-                silent! exe 'normal! ' . '"a' . (del ? 'd' : 'y')
-                let ret = @a
+            if op.cmd ==# 's'
+                " Return the spliced-over text.
+                let ret = @"
             endif
-            if del " Both delete and splice set this flag
-                " Post-op position adjustment
-                call s:yankdel_range__postadjust_positions(adj, spl)
-            endif
+        else
+            " Perform yank or delete.
+            silent! exe 'normal! ' . '"a' . op.cmd
+            " Return the deleted/yanked text.
+            let ret = @a
+        endif
+        if op.cmd !=# 'y'
+            " Post-op position adjustment (required whenever buffer changes).
+            call s:yankdel_range__postadjust_positions(adj)
         endif
     finally
         " Restore options/regs/cursor...
@@ -3219,7 +3348,6 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
         " TODO: Decide on this.
         "call s:setcursor(cursor)
     endtry
-
     return ret
 endfu
 "let Ydr = function('s:yankdel_range')
