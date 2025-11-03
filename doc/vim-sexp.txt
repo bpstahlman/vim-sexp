@@ -176,29 +176,40 @@ ie                                                *<Plug>(sexp_inner_element)*
         An element always includes leading macro characters.
 
 Outer Element whitespace selection logic ~
+                                          *sexp-outer-element-selection-logic*
                                            *sexp-surrounding-whitespace-rules*
-        Inner motion does not include surrounding whitespace, but the outer
-        motion attempts to include all the whitespace you would wish to delete if
-        you were using the text object to delete element(s). The algorithm is
-        complex, but can be expressed roughly as follows: select as many
-        surrounding whitespace characters (including newlines) as possible,
-        while ensuring that a subsequent deletion of the selection will not do
-        any of the following:
+        Inner element/motion does not include surrounding whitespace, but the
+        outer element/motion attempts to include all the whitespace you would
+        wish to delete if you were using the text object to delete element(s).
 
-            * increase the length of the line preceding the selection beyond a
-              configurable limit (by combining it with the line past the
-              selection)
-            * pull a comment onto the end of an earlier line
+        Algorithm Description:  ~
+        Select as much surrounding whitespace as possible without violating
+        the following constraints, some of which are user-configurable.
+        Note: The constraints are applied to the hypothetical buffer state
+        produced by deletion of the outer element selection.
+
+            * append element following selection to line containing the
+              element preceding the selection.
+              (See |g:sexp_cleanup_join_affinity| to enable such joins in
+              certain scenarios.)
+            * increase the length of the line containing the start of the
+              selection beyond a limit determined by
+              |g:sexp_cleanup_join_textwidth|.
+            * select whitespace on lines above the first element of the
+              selection (unless |g:sexp_cleanup_join_backwards| is set).
+            * append a comment to the line containing the element preceding
+              the selection (unless |g:sexp_cleanup_join_comments| is set).
+              Rationale: Comments are often element-specific.
             * pull the element following the selection into an end of line
               comment
-              Rationale: Comments are often line/element-specific.
             * remove all whitespace separating adjacent siblings
-            * remove all blank lines between elements when
+            * leave trailing blank lines unless
               |g:sexp_cleanup_keep_empty_lines| is set to a value >= 1,
-              representing the maximum number of blanks you'd like to keep.
-        Note: The rules may sound complex, but they mostly follow Ruby's
-        "Principle of Least Surprise" and Perl's "Do What I Mean"...
+              representing the maximum number of blanks to keep.
 
+        The rules may sound complex, but the results mostly obey Ruby's
+        "Principle of Least Surprise" and Perl's "Do What I Mean"
+        philosophy.
 
                                                    *sexp-cleanup-vs-extension*
         These text objects can be used to "clean up" the current selection
@@ -449,7 +460,7 @@ CLONE COMMANDS (normal, visual) ~
         selected lists and elements so that structural integrity is
         maintained.
 
-                                                 *single-vs-multi-line-clone*
+                                                            *sexp-clone-logic*
         A "multi-line" clone is one in which the copies of the target are
         separated from the target (and from each other) by a newline. The
         default logic selects multi-line operation whenever any of the
@@ -795,9 +806,55 @@ LIST MANIPULATION (normal, visual) ~
 <M-S-k>                                       *<Plug>(sexp_emit_tail_element)*
 <M-S-h>                                    *<Plug>(sexp_capture_prev_element)*
 <M-S-l>                                    *<Plug>(sexp_capture_next_element)*
-        Emit [count] terminal elements of the current list, or capture [count]
-        elements adjacent to the current list. A list will never emit its last
-        element and can not capture its parent.
+        Emit  ~
+        Emit [count] terminal non-comment elements (along with surrounding
+        comments) from the current list (or nearest ancestor with elements to
+        emit).
+
+        Capture  ~
+        Capture [count] non-comment elements from parent list (or nearest
+        ancestor with elements to capture), skipping over comments as
+        necessary to find the next capturable element.
+
+        In the absence of a [count], each emit/capture operation moves a
+        single element one level up or down, respectively. As long as there
+        are elements to capture/emit at higher levels of the sexp tree, the
+        operation will not block.
+
+                                                      *sexp-emit-cursor-logic*
+        Cursor Positioning (Emit)  ~
+        To prevent loss of editing context, vim-sexp attempts to keep the
+        cursor position unchanged relative to the current element, even when
+        that element is emitted from its containing list. When the cursor
+        "escapes" a list in this way, a subsequent emit will operate on the
+        parent list. Although this behavior seems quite natural when
+        successive emit operations are triggered manually, it could be
+        surprising when a [count] is used. Thus, a future version of vim-sexp
+        may prevent cursor emission for an emit with a [count] (or may provide
+        an option governing this behavior). To ensure the cursor is never
+        emitted from its list, simply set |g:sexp_emitting_bracket_is_sticky|
+        to have the cursor stick to the emitting list bracket when the bracket
+        passes over it.
+
+                                                   *sexp-capture-cursor-logic*
+        Cursor Positioning (Capture)  ~
+        The default capture logic also attempts to preserve cursor position
+        relative to the current element, but what if the cursor is positioned
+        not on an element, but on the capturing bracket itself? By default, it
+        stays put in this case, since that's how Paredit works; however, if
+        you would prefer that the cursor move with the capturing bracket in
+        this scenario, simply set |g:sexp_capturing_bracket_is_sticky|.
+
+        Heuristic: If the cursor touches a "sticky" capturing/emitting bracket
+        (either because the bracket is passing over it (emit) or because the
+        cursor started out on the bracket (capture)), it will move with the
+        bracket.
+        
+        Visual Selection  ~
+        In visual mode, the list doing the capturing or emitting will be
+        selected after the operation. Note that selecting the list effectively
+        prevents "cursor escape", thereby ensuring that successive emits in
+        visual mode operate on the same list, regardless of "sticky" options.
 
         These commands are similar to "barfage" and "slurpage" in paredit.el.
 
@@ -805,11 +862,41 @@ LIST MANIPULATION (normal, visual) ~
         automatic re-indent. If you dislike this behavior, see
         |sexp-auto-indent|.
 
+        Capture Examples:  ~
+>
+        (((|foo) bar) baz)
+        (((|foo bar)) baz)
+        (((|foo bar) baz))
+        (((|foo bar baz)))
+<
+        Emit Examples:  ~
+
+        -- g:sexp_emitting_bracket_is_sticky == 0 --  ~
+>
+        (((foo |bar)))
+        (((foo) |bar))
+        (((foo)) |bar)
+<
+        -- g:sexp_emitting_bracket_is_sticky == 1 --  ~
+>
+        (((foo |bar)))
+        (((foo|) bar))
+        (((|) foo bar))
+        (((|) foo) bar)
+        (((|)) foo bar)
+        ((|) () foo bar)
+        ((|) () foo) bar
+        ((|) ()) foo bar
+        ((|)) () foo bar
+        (|) () () foo bar
+<
 REGISTER PUT (PASTE) COMMANDS (normal, visual) ~
 
-<LocalLeader>W                          *<Plug>(sexp_round_head_wrap_element)*
-<LocalLeader>w                          *<Plug>(sexp_round_tail_wrap_element)*
-<LocalLeader>e[                        *<Plug>(sexp_square_head_wrap_element)*
+TODO  ~
+Add smart register paste section...
+
+<LocalLeader>P                          *<Plug>(sexp_put_before)*
+<LocalLeader>p                          *<Plug>(sexp_put_after)*
 
 INSERT MODE MAPPINGS (insert, optional) ~
 
@@ -956,6 +1043,20 @@ See also |sexp-auto-indent|.
         " Default
         let g:sexp_raise_does_indent = 1
 <
+Set this flag to force cursor to remain with its list, even when the element
+under it is emitted. Default behavior matches Paredit.
+See also |sexp-emit-cursor-logic|.
+>
+        " Default
+        let g:sexp_emitting_bracket_is_sticky = 0
+<
+Set this flag to force cursor to stick to a capturing bracket positioned
+beneath it at capture command invocation. Default behavior matches Paredit.
+See also |sexp-capture-cursor-logic|.
+>
+        " Default
+        let g:sexp_capturing_bracket_is_sticky = 0
+<
                                                  *g:sexp_prefer_legacy_syntax*
 Prefer using Vim's legacy syntax engine to determine element boundaries, even
 when the Treesitter library is available. (Applies only to Neovim users.)
@@ -966,19 +1067,21 @@ thus, please report any issues you believe are fixed by setting this option.
         let g:sexp_prefer_legacy_syntax = 0
 <
                                              *g:sexp_cleanup_keep_empty_lines*
-When there are multiple consecutive empty lines, preserve up to this many.
+Determines the number of consecutive empty lines to keep when performing any
+sort of cleanup. (Applies to both whitespace cleanup and OUTER ELEMENT
+selection.)
+  -1   never delete empty lines
+  >=0  maximum number of consecutive empty lines to keep
 >
         " Default
         let g:sexp_cleanup_keep_empty_lines = 1
 <
-
                                           *g:sexp_cleanup_collapse_whitespace*
 Collapse all adjacent whitespace between elements to a single space, provided
 it's not within a comment or string or immediately preceding a comment.
 >
         " Default
         let g:sexp_cleanup_collapse_whitespace = 0
-
 <
                                                 *g:sexp_cleanup_join_affinity*
 Determines scenarios in which outer selection attempts to ensure that a
@@ -997,19 +1100,28 @@ second element of a list: e.g., with the default setting...
 <
 ...dae on "foo" would pull "bar baz" onto the start
 line, but dae on "baz" would *not* pull "blammo" onto the same line as "bar".
-Related options: ~
-        |g:sexp_cleanup_join_textwidth|, |g:sexp_cleanup_join_multiline|
 >
         " Default
         let g:sexp_cleanup_join_affinity = 1
 <
+Related options: ~
+        |g:sexp_cleanup_join_textwidth|, |g:sexp_cleanup_join_multiline|
+
                                                *g:sexp_cleanup_join_textwidth*
 Line length constraint applied to outer selection cleanup logic, which avoids
 making selections whose deletion would result in a line longer than the
-specified length.
+specified length. The value can take either of the following forms:
+Integer:  ~
   -1  use &tw
    0  ignore line length
   >0  max line width to create with join
+Float:  ~
+  >0  Fraction of original line length used to validate join.
+      For instance, a value of 1.5 would prohibit joins that increased line
+      length by more than 50%.
+
+Note: This option has no effect if |g:sexp_cleanup_join_affinity| is 0.
+
 Related options ~
         |g:sexp_cleanup_join_affinity|, |g:sexp_cleanup_join_multiline|
 >
@@ -1027,77 +1139,20 @@ Related options: ~
         " Default
         let g:sexp_cleanup_join_multiline = 0
 <
-                                              *g:sexp_cleanup_lineshift_limit*
-Threshold at which outer element cleanup logic switches from preserving
-leading indent to prioritizing the removal of leading empty lines. (Takes
-|g:sexp_cleanup_keep_empty_lines| into account.)
-   0  Allow any number of leading empty lines to be left behind by cleanup, if
-      required to preserve leading indent: i.e., whether to preserve leading
-      indent or remove leading blanks is determined solely by the colshift
-      options described below.
- >=1  Prioritize removal of leading whitespace if doing so would remove at
-      least this many empty lines.
-      Note: This option is considered an upper limit, which takes precedence
-      over the colshift options below.
-
-Example: >
-        (foo
-
-
-          bar baz)
-<
-With cursor on bar, the value of this option determines whether 'dae' cleans
-up the leading blank lines or preserves the leading indent on the final line.
-
-        g:sexp_cleanup_lineshift_limit == 0: ~
-        (foo
-
-
-          baz)
-<
-        g:sexp_cleanup_lineshift_limit == 1: ~
-        (foo
- baz)
-<
+                                                *g:sexp_cleanup_join_comments*
+When all other join conditions are met, allow an outer element selection whose
+deletion would result in a comment being appended to a non-empty line.
 >
         " Default
-        let g:sexp_cleanup_lineshift_limit = 2
+        let g:sexp_cleanup_join_comments = 0
 <
-                                                     *g:sexp_cleanup_colshift*
-The number of columns of leading indent that can be sacrificed to clean up
-leading blank lines is calculated by the following expression...
->
-  columns = (leading_blanks - 1) * sexp_cleanup_colshift_slope + sexp_cleanup_colshift
-<
-...where leading_blanks is the number of blank lines the normal cleanup logic
-would remove if unconstrained by the need to preserve leading indent.
-*Rationale*: For the type of outer element selection to which this option
-applies, it is impossible both to preserve leading indent *and* to remove
-leading blank lines: a choice must be made, and the relevant "opportunity
-cost" is highly subjective. This and the subsequent option permit the user to
-customize the behavior to his preference.
-  0            Leading indent threshold depends only on the number of blank
-               lines susceptible to cleanup in leading whitespace.
-  1..v:maxcol  If sexp_cleanup_colshift_slope == 0, sets a constant leading
-               indent threshold; if sexp_cleanup_colshift_slope > 0, sets the
-               minimum leading indent threshold, with the actual value
-               increasing linearly with the number of leading blank lines
-               susceptible to removal.
+                                               *g:sexp_cleanup_join_backwards*
+When all other join conditions are met, allow an outer element selection whose
+deletion would remove one or more preceding newlines, thereby moving the
+cursor to an earlier line.
 >
         " Default
-        let g:sexp_cleanup_colshift = 4
-<
-                                               *g:sexp_cleanup_colshift_slope*
-The rate at which the leading indent threshold (see |g:sexp_cleanup_colshift|)
-increases with the number of empty lines susceptible to removal.
-  0            Leading indent threshold is constant, given by
-               g:sexp_cleanup_colshift.
-  1..v:maxcol  Rate at which leading indent threshold grows with number of
-               blank lines in leading whitespace.
-               (For details, see |g:sexp_cleanup_colshift|.)
->
-        " Default
-        let g:sexp_cleanup_colshift_slope = 8
+        let g:sexp_cleanup_join_backwards = 1
 <
                                                *g:sexp_indent_aligns_comments*
 Align end-of-line comments automatically after performing an indent.

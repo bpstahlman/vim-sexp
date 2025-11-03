@@ -135,6 +135,7 @@ endfunction
 " Rationale: Deferring the echomsg call is preferable because it greatly increases the
 " probability it will be seen by the user before being overwritten (e.g., by an already
 " pending redraw).
+" TODO: Support printf-style formatting.
 function! s:warnmsg(s, ...)
     let hl = a:0 && a:1 ? 'ErrorMsg' : 'WarningMsg'
     if exists('s:msg_q')
@@ -776,7 +777,7 @@ function! s:adjacent_whitespace_terminal(pos, trailing)
 
     let [_b, termline, termcol, _o] = a:pos
 
-    " FIXME: This is an inefficient way to do this! Fix it!
+    " FIXME: Construct a single regex for this.
     while 1
         " Include empty lines
         let [line, col] = s:findpos('\v\_.', a:trailing)
@@ -802,6 +803,8 @@ endfunction
 " completely characterize it, with the goal of supporting the logic in
 " s:terminals_with_whitespace() that determines the optimal visual selection for an outer
 " element.
+" !!! Obsolete function !!!
+" TODO: Remove this after verifying it will no longer be needed!
 function! s:terminals_with_whitespace_info(start, end, leading)
     let cursor = getpos('.')
     let o = {}
@@ -1000,14 +1003,19 @@ function! s:terminals_with_whitespace_info(start, end, leading)
     return o
 endfunction
 
-" Return 1 iff element at specified position is head of list.
-function! s:is_list_head(pos)
+" Return 1 iff element at specified position is in head/tail list context: i.e., on or
+" outside head/tail element.
+" TODO: Consider renaming to in_terminal_context() or something that emphasizes fact that
+" we don't need to be on the terminal, and can't be *inside* it. Rename would also help
+" avoid confusion with "is list bracket".
+" TODO: Consider making these helpers not save/restore cursor.
+function! s:is_list_terminal(pos, tail)
     let save_cursor = getpos('.')
     try
         call s:setcursor(a:pos)
         " Attempt to find previous element.
-        let p = s:nearest_element_terminal(0, 1, 1)
-        if p[1]
+        let p = s:nearest_element_terminal(a:tail, !a:tail, 1)
+        if p != a:pos
             " Previous element implies not head of list.
             " Note: In many cases, this allows short-circuiting a test for top-level.
             return 0
@@ -1019,10 +1027,24 @@ function! s:is_list_head(pos)
     endtry
 endfunction
 
-" Using options and the input object produced by s:terminals_with_whitespace_info(),
-" return true iff selection should be adjusted to ensure that, upon delete, the element
-" following selection will be appended to the element before the selection.
-" Note: Take all relevant options into account.
+" Return 1 iff input position is adjacent to comment in specified direction.
+" TODO: Consider making these helpers not save/restore cursor.
+function! s:is_adjacent_to_comment(pos, tail)
+    let save_cursor = getpos('.')
+    try
+        let p = s:nearest_element_terminal(a:tail, !a:tail, 1)
+        return p != a:pos && s:is_comment(p[1], p[2])
+    finally
+        call s:setcursor(save_cursor)
+    endtry
+    return 0
+endfunction
+
+" Return 1 iff making both sides of the input positions colinear would not violate any
+" constraints.
+" Considering relevant options and surrounding buffer context, return 1 iff deleting range
+" start..end would not cause a constraint-violating join.
+" Relevant Options:
 " join_affinity:
 "     0 = never join
 "     1 = append only to head of list
@@ -1032,150 +1054,128 @@ endfunction
 "     0 = allow append of single line elements only
 "     1 = allow append of both single and multi-line elements
 " join_tw
-"     0 = disables checking (as with 'tw')
-"     -1 use &tw
+"     <floatnr> fraction of original line length
+"     0         disables checking (as with 'tw')
+"     -1        use &tw
 "     else override &tw
-function! s:outer_element_can_append(twwi)
-    let o = a:twwi
-    let tw = g:sexp_cleanup_join_textwidth < 0 ? (&tw ? &tw : 80) : g:sexp_cleanup_join_textwidth
-    let [affinity, ml] =
-        \ [g:sexp_cleanup_join_affinity, g:sexp_cleanup_join_multiline]
+" Cursor Positioning: No need to preserve
+function! s:can_join(start, end)
+    let [start, end] = [a:start, a:end]
+    if has('float') && type(g:sexp_cleanup_join_textwidth) == 5
+        " Treat 'textwidth' as fraction of original start line length.
+        let tw = float2nr(g:sexp_cleanup_join_textwidth * col([start[1], '$']))
+    else
+        let tw = g:sexp_cleanup_join_textwidth < 0
+            \ ? (&tw ? &tw : 80) : g:sexp_cleanup_join_textwidth
+    endif
+    let [affinity, ml] = [g:sexp_cleanup_join_affinity, g:sexp_cleanup_join_multiline]
+    " Get prev/next.
+    " TODO: Desperately need to rework s:nearest_element_terminal() and
+    " s:move_to_adjacent_element() to support request for nullpos return if no such
+    " element. The 'ignore_current' flag was a step in the right direction, but
+    " insufficient.
+    " TODO: Consider hiding this block in a function called get_surrounding_elements() or
+    " perhaps get_surrounding_context() (in which case, it should put the elements and
+    " more in a returned dict).
+    keepjumps call s:setcursor(end)
+    let p = s:nearest_element_terminal(1, 0, 1)
+    let next_s = p == end ? s:nullpos : p
+    let next_e = next_s[1] ? s:nearest_element_terminal(1, 1, 1) : s:nullpos
+    keepjumps call s:setcursor(start)
+    let p = s:nearest_element_terminal(0, 0, 1)
+    let prev_s = p == start ? s:nullpos : p
+    let prev_e = prev_s[1] ? s:nearest_element_terminal(0, 1, 1) : s:nullpos
+
     " Note: affinity shouldn't be less than zero, but err on side of disabling...
-    if affinity <= 0 || !o.next_s[1]
+    if affinity <= 0 || !next_s[1]
         " Joining disabled or no next element to append.
         return 0
     endif
-    " Is join precluded by context?
-    " Logic:
-    " * Don't append to an element that wasn't already followed by an element on its line.
-    " * Don't join elements that were separated by a comment
-    " * Don't append a comment to anything or anything to a comment
-    if o.bol || o.is_com || o.precedes_com || o.follows_com
-        return 0
-    endif
     " Is join precluded by line length constraint?
-    if tw > 0 && tw < o.prev_e[2] + col([o.next_s[1], '$']) - o.next_s[2]
+    if tw > 0 && tw < prev_e[2] + col([next_s[1], '$']) - next_s[2]
         return 0
     endif
-    if !ml && o.next_s[1] != o.next_e[1]
+    if !ml && (next_s[1] != next_e[1] || prev_s[1] != prev_e[1])
         " Only single-line joins permitted.
+        " TODO: Original logic considered only next; should we consider both the element
+        " joined and joined to?
         return 0
     endif
     " Apply affinity constraints.
-    if affinity == 1 && !s:is_list_head(o.prev_e)
+    if affinity == 1 && !s:is_list_terminal(prev_e, 0)
         " Affinity is for appends to list head, but prev element is not list head.
         return 0
     endif
     " Now that all other checks have passed, do top-level check only if necessary.
-    if affinity < 3 && s:at_top(o.start[1], o.start[2])
+    if affinity < 3 && s:at_top(start[1], start[2])
         return 0
     endif
     return 1
 endfunction
 
-" Return 1 to prioritize preservation of leading indent, 0 to prioritize removal of
-" leading whitespace.
-function! s:prioritize_leading_indent(twwi)
-    let o = a:twwi
-    let [cs, css, lsl] =
-            \ [g:sexp_cleanup_colshift, g:sexp_cleanup_colshift_slope, g:sexp_cleanup_lineshift_limit]
-    " Short-circuit in left-margin case.
-    if o.start[2] == 1 | return 0 | endif
-    " Short-circuit in top-level case.
-    if s:at_top(o.start[1], o.start[2]) | return 0 | endif
-    " Short-circuit if removal of leading whitespace wouldn't remove any lines.
-    if o.ws_si[1] >= o.start[1] | return 1 | endif
-    " Short-circuit if options preclude possibility of preferring leading blanks.
-    if !cs && !css && !lsl | return 1 | endif
-    " Guarantee: At least one nonzero option value needs to be considered.
-    " Since g:sexp_cleanup_leading_newlines takes precedence, consider it first.
-    let lshift = o.start[1] - o.ws_si[1]
-    if lsl > 0 &&  lshift >= lsl
-        " Prioritize leading whitespace removal.
-        return 0
-    endif
-    " Calculate col shift threshold according to linear eq.
-    let cshift = cs + css * lshift
-    " Short-circuit if zero cshift precludes need for comparison.
-    if !cshift | return 1 | endif
-    " Use leading indent (in screen width) of start of selection to make final decision.
-    " Note: The -2 offset accounts for 1-to-0-based index conversion and excludes the
-    " start char itself from the calculation (since we're calculating width of what
-    " precedes it).
-    return strdisplaywidth(getline(o.start[1])[:o.start[2] - 2]) >= cshift
-endfunction
-
-" Given start and end positions, returns new positions [start', end'],
-" according to logic described below.
-" TODO: Review this comment to make sure it's still correct...
-" If (bos or eos) and !(precedes_com || follows_com)
-" 	Include *all* leading and trailing whitespace.
-" ElseIf eol
-" 	If !bol
-" 	  If next element isn't multiline and joining it to start line wouldn't violate 'textwidth'
-" 	    end' includes all trailing whitespace up to the next element
-" 	  Else
-"       start' includes all leading whitespace
-"       end' includes all trailing whitespace up to the end of line preceding next element.
-"   Else
-"     " Rationale: Don't delete leading indent, as it could discombobulate
-"     If precedes_com
-"       end' includes all trailing whitespace up to the end of line preceding next element.
-"     Else
-"       end' includes the trailing whitespace up to the next element (or EOB)
-" Else " Element follows on same line
-"   end' includes trailing whitespace
-"
-" This behavior diverges from the behavior of the native text object aw in
-" that it allows multiline whitespace selections.
+" Given start and end positions, returns new positions [start', end'] reflecting start/end
+" of OUTER ELEMENT selection.
+" Logic: There are 3 basic categories of 'join' implemented by this function:
+" 1. Full join: selection is bounded on one side with a bracket and on the other with
+"    something that can be directly adjacent to the bracket.
+" 2. Half join: element following selection can be pulled back to the start of the first
+"    element in outer element selection.
+"    Note: This type of join is the least visually disconcerting on delete since the
+"    element following the selection appears to replace the first deleted element, with
+"    cursor position remaining at the start of the replaced element.
+" 3. No join: element following selection cannot be appended to line containing start of
+"    selection, though we may be able to delete some trailing blank lines (in accordance
+"    with g:sexp_cleanup_keep_empty_lines) as long as we preserve indent of line
+"    containing element following selection.
 function! s:terminals_with_whitespace(start, end)
     let [start, end] = [a:start, a:end]
-
-    " TODO: Rename as get_ctx or some such...
-    let o = s:terminals_with_whitespace_info(start, end, [])
-    if (o.bos || o.eos) && (!o.precedes_com && !o.follows_com)
-        " No need to preserve any whitespace adjacent to bracket; include *all*
-        " leading/trailing whitespace.
-        " Note: s:outer_element_can_append() is the only other place we require special
-        " handling for comments and begin/end of sexp.
-        let [start, end] = [o.ws_vs, o.ws_ve]
-    elseif o.eol
-        " Consider join, but only if it won't violate option-dependent constraints.
-        " Note: Comment constraints are applied by outer_element_can_append().
-        if s:outer_element_can_append(o)
-            " Note: Ideally, we would select all trailing ws, excluding leading ws to
-            " preserve alignment of next element; however, in pathological scenario in
-            " which there's only trailing ws, exclude it to ensure a subsequent delete
-            " won't result in spurious join.
-            let end = o.start == o.ws_s && o.end != o.ws_e ? o.ws_ei : o.ws_ve
-        elseif !o.bol
-            " Decided not to append.
-            let [start, end] = [o.ws_vs, o.ws_ei]
-        else " eol && bol
-            " ws_si/ws_ei are not independent: terminals_with_whitespace_info() has set
-            " them correctly.
-            let [start, end] = [o.ws_si, o.ws_ei]
-        endif
-    else " !eol
-        if !o.bol
-            " Note: bos/eos case handled elsewhere; no need to consider here...
-            " No choice about join, but leave original whitespace at head to ensure next
-            " element is aligned with selection start after delete.
-            " Special Case: In pathological case of no whitespace at head, try to leave it
-            " at tail to prevent spurious join.
-            let end = start == o.ws_e ? o.ws_ei : o.ws_ve
-        else " o.bol
-            " Select all trailing ws to pull next element back to selection start.
-            let end = o.ws_ve
-            " Use options and selection context to decide whether to pull in leading
-            " whitespace.
-            " Rationale: Pulling in leading whitespace entails the loss of leading indent
-            " before start, which can be disorienting to user, especially when there was a
-            " lot of it (e.g., inside deeply-nested form).
-            if !s:prioritize_leading_indent(o)
-                let start = o.ws_si
-            endif
-        endif
+    " Note: These functions ignore newlines, but will return the position of the NUL at
+    " the start of a blank line.
+    let ws_end = s:adjacent_whitespace_terminal(end, 1)
+    let ws_start = s:adjacent_whitespace_terminal(start, 0)
+    " Get line containing the last non-newline char before start of whitespace.
+    let eff_prevl = ws_start[2] == 1 && ws_start[1] > 0 ? ws_start[1] - 1 : ws_start[1]
+    " Get line containing the first non-newline char past end of whitespace.
+    let eff_nextl = ws_end[2] == col([ws_end[1], '$']) - 1
+            \ ? ws_end[1] + 1 : ws_end[1]
+    " Determine join type.
+    if (g:sexp_cleanup_join_backwards || eff_prevl == start[1])
+        \ && s:is_list_terminal(start, 0)
+        \ && (g:sexp_cleanup_join_comments || !s:is_adjacent_to_comment(end, 1))
+        \ || s:is_list_terminal(end, 1) && !s:is_adjacent_to_comment(start, 0)
+        " Full join: select everything between open or close bracket and the nearest
+        " non-ws, which we've already determined can be safely juxtaposed to the bracket.
+        " Extra logic is needed to pull in a newline adjacent to (and inside) the bracket.
+        let start = ws_start[2] == 1 && ws_start[1] > 1
+            \ ? [0, ws_start[1] - 1, col([ws_start[1] - 1, '$']), 0]
+            \ : ws_start
+        let end = eff_nextl > ws_end[1]
+            \ ? [0, ws_end[1], col([ws_end[1], '$']), 0]
+            \ : ws_end
+    elseif end[1] == eff_nextl || s:at_bol(start[1], start[2]) || s:can_join(start, end)
+        " Half join (at end only): select up to next non-ws, leaving start as-is to
+        " prevent loss of indent.
+        let end = ws_end
+    else
+        " No join: selecting all the way to next non-ws would result in an illegal join;
+        " accordingly, select all colinear whitespace and some (but not all) of the
+        " trailing newlines, taking care to respect options related to number of blank
+        " lines to keep.
+        " Assumption: Arrival here guarantees !bol and eol
+        " Select back to colinear prev.
+        let start[2] = ws_start[2]
+        " Calculate line whose newline should be excluded from selection.
+        " Note: keep_empty_lines == -1 yields original behavior (no empty line cleanup).
+        let endline = g:sexp_cleanup_keep_empty_lines < 0
+            \ ? end[1]
+            \ : max([ eff_nextl - g:sexp_cleanup_keep_empty_lines - 1, end[1]])
+        " Select up to but not including the newline.
+        " Caveat: Must account for fact that col 1 (or 0) of empty line selects the
+        " newline we wish to exclude!
+        let endcol = col([endline, '$']) - 1
+        let end = endcol > 0
+            \ ? [0, endline, endcol, 0]
+            \ : [0, endline - 1, col([endline - 1, '$']), 0]
     endif
     return [start, end]
 endfunction
@@ -2808,145 +2808,6 @@ function! s:insert_brackets_around_current_element(bra, ket, at_tail, headspace)
     call s:insert_brackets_around_visual_marks(a:bra, a:ket, a:at_tail, a:headspace)
 endfunction
 
-" Capture nearest non-comment sibling of current list, given the starting position of the
-" list's bracket minus any leading macro characters (spos) and the position of the bracket
-" itself (bpos).
-" Return: Pair [beg, end] representing modified range, else []
-" Note: For tail capture, spos == bpos.
-" Cursor Preservation: Caller handles.
-function! s:stackop_capture(last, spos, bpos)
-    " Find position of matching bracket (needed only for returned range).
-    call s:setcursor(a:bpos)
-    let other_bpos = s:nearest_bracket(!a:last)
-    if !other_bpos[1]
-        " Note: Should happen only if there are unmatched brackets.
-        return []
-    endif
-    " Position on bracket to be moved.
-    call s:setcursor(a:spos)
-    let nextpos = a:spos
-    " Move outwards, landing on successive elements' outer edges, looking for a
-    " non-comment element, which will become the new terminal.
-    while 1
-        let prevpos = nextpos
-        " Move to outside edge of adjacent element.
-        let nextpos = s:move_to_adjacent_element(a:last, a:last, 0)
-        " Make sure the call above actually moved us to a different element.
-        " Note: s:move_to_adjacent_element() returns terminal position of *current* element
-        " if no next element exists, and we started on the outside edge of an element
-        " (i.e., the terminal position we'll end up on when there's no adjacent element).
-        if !nextpos[1] || s:compare_pos(prevpos, nextpos) == 0
-            " Nothing to capture
-            return []
-        endif
-        if !s:is_comment(nextpos[1], nextpos[2])
-            " Found a capturable (non-comment) element.
-            break
-        endif
-    endwhile
-    " Get the bracket (and possibly leading macro chars) to be relocated.
-    let reg_save = @b
-    let @b = getline(a:spos[1])[a:spos[2] - 1 : a:bpos[2] - 1]
-    let blen = len(@b)
-
-    " Insertion and deletion must be done from the bottom up to avoid
-    " recalculating our marks
-    " Post-Condition: Leave cursor on relocated bracket.
-    if a:last
-        call s:setcursor(nextpos)
-        execute 'silent! normal! "bp'
-        call s:setcursor(a:spos)
-        execute 'silent! normal! "_d' . blen . 'l'
-        " Position on relocated bracket, whose new col offset relative to nextpos depends
-        " on whether deletion was colinear with nextpos.
-        " Implicit Assumption: No multibyte brackets.
-        let nextpos = s:pos_with_col_offset(nextpos, 1 + -(a:spos[1] == nextpos[1]))
-        call s:setcursor(nextpos)
-    else
-        call s:setcursor(a:spos)
-        execute 'silent! normal! "_d' . blen . 'l'
-        call s:setcursor(nextpos)
-        execute 'silent! normal! "bP'
-    endif
-
-    let @b = reg_save
-    " Return modified range.
-    return a:last ? [a:bpos, nextpos] : [nextpos, a:spos]
-endfunction
-
-" Emit outermost non-comment element from current list, given the starting position of the
-" list's bracket minus any leading macro characters (spos) and the position of the bracket
-" itself (bpos).
-" Return: Pair [beg, end] representing modified range, else []
-" Constraint: Never emit the final non-comment from the list.
-" Note: For tail capture, spos == bpos.
-" Design Decision: Although we could allow comment as terminal, provided we inserted a
-" newline before bracket, let's stick as closely to original behavior as possible, and
-" also do what was agreed upon in Github issue #13.
-" Cursor Preservation: Caller handles.
-function! s:stackop_emit(last, spos, bpos)
-    " Start on the list bracket.
-    call s:setcursor(a:bpos)
-
-    " Move inwards onto the terminal element's outer edge.
-    " Note: If emit occurs, this element will definitely be emitted.
-    let [l, c] = s:findpos('\v\S', !a:last)
-    if l < 1 | return 0 | endif
-    let nextpos = [0, l, c, 0]
-    call s:setcursor(nextpos)
-
-    " Continue inwards, landing on successive elements' outer edges, looking for a
-    " non-comment element, which can become the new terminal.
-    while 1
-        let prevpos = nextpos
-        " Move to outside edge of adjacent element.
-        let nextpos = s:move_to_adjacent_element(!a:last, a:last, 0)
-        if nextpos[1] < 1 | return [] | end
-
-        " Make sure we actually moved to a new element, and the element is contained.
-        " Note: The sexp#current_element_terminal() call is needed to ensure we moved to a
-        " new element, but I don't believe the containment test is necessary, since
-        " s:move_to_adjacent_element() should guarantee containment. Perhaps it was
-        " intended to deal with unbalanced forms? TODO: Consider removal.
-        if s:compare_pos(sexp#current_element_terminal(a:last), prevpos) == 0
-            \ || s:compare_pos(nextpos, s:nearest_bracket(!a:last)) != (a:last ? 1 : -1)
-            return []
-        endif
-        if !s:is_comment(nextpos[1], nextpos[2])
-            " Found non-comment element that can serve as terminal.
-            break
-        endif
-    endwhile
-
-    " Get the bracket (and possibly leading macro chars) to be relocated.
-    let reg_save = @b
-    let @b = getline(a:spos[1])[a:spos[2] - 1 : a:bpos[2] - 1]
-    let blen = len(@b)
-
-    " Insertion and deletion must be done from the bottom up to avoid
-    " recalculating our marks.
-    " Post-Condition: Leave cursor on relocated bracket.
-    if a:last
-        call s:setcursor(a:spos)
-        execute 'silent! normal! "_d' . blen . 'l'
-        call s:setcursor(nextpos)
-        " Note: Put will leave cursor on bracket.
-        execute 'silent! normal! "bp'
-    else
-        execute 'silent! normal! "bP'
-        call s:setcursor(a:spos)
-        execute 'silent! normal! "_d' . blen . 'l'
-        " Position on relocated bracket, whose new col offset relative to nextpos depends
-        " on whether deletion was colinear with nextpos.
-        let nextpos = a:spos[1] == nextpos[1] ? s:pos_with_col_offset(nextpos, -1) : nextpos
-        call s:setcursor(nextpos)
-    endif
-
-    let @b = reg_save
-    " Return modified range.
-    return a:last ? [nextpos, a:bpos] : [a:spos, nextpos]
-endfunction
-
 " Return true iff a put in indicated direction at specified location of the contents of
 " register indicated by v:register should be multiline.
 " Note: Decision is not final: a check for paste ending in comment
@@ -3564,6 +3425,8 @@ function! s:yankdel_range__preadjust_range_start(start, inc)
             let ret[2] = 1
         else
             " EOF
+            " Question: Should we return start of nonexistent line past end (analogous to
+            " position before BOF returned by *_range_end())?
             let ret = getpos([line('$'), '$'])
         endif
     elseif a:inc != 1 " 0 or 2
@@ -3622,101 +3485,239 @@ function! s:yankdel_range__preadjust_range_end(end, inc)
     return ret
 endfunction
 
+" Build and return a dict with information required to adjust arbitrary buffer positions
+" after yank/splice/del has been performed.
+" Return Dict:
+"   start:     start of inclusive range for operation (N/A for directed put)
+"   end:       end of inclusive range for operation (N/A for directed put)
+"   pos:       target position for a directed put (else nullpos)
+"   text:      text for a splice (else empty string)
+"              Note: This function can modify this text in one special case.
+"   cmd:       One of the following characters, indicating the operation to be performed:
+"              used to perform the operation: <none> p P s y d
+"              Note: May or may not equal the actual Vim command used.
+"   err:       1 iff inputs are invalid
+"   errmsg:    error description iff err == 1, else ""
+function! s:yankdel_range__preadjust_range(start, end, del_or_spl, inc)
+    if s:compare_pos(a:start, a:end) > 0
+        " Shouldn't happen! How to handle? Internal error?
+        " 'err' flag with msg?
+        return {'err': 1, 'errmsg': 'Invalid (reversed) range'}
+    endif
+    " If here, range was sane.
+    let start = s:yankdel_range__preadjust_range_start(a:start, a:inc[0])
+    let end = s:yankdel_range__preadjust_range_end(a:end, a:inc[1])
+    " Note: Initial setting of 'cmd' flag will never indicate directed put.
+    let [is_str, is_num] =
+        \ [type(a:del_or_spl) == type(''), type(a:del_or_spl) == type(0)]
+    let ret = {
+        \ 'start': s:nullpos, 'end': s:nullpos, 'pos': s:nullpos,
+        \ 'text': is_str ? a:del_or_spl : '',
+        \ 'cmd': is_num ? a:del_or_spl ? 'd' : 'y' : 's', 
+        \ 'err': 0, 'errmsg': ''
+    \ }
+    " Is adjusted (inclusive) range empty?
+    if s:compare_pos(start, end) > 0
+        " Adjusted start/end are reversed, yielding empty target region.
+        " Treat *non-empty* splice as either a directed put or (EOL-exclusive case only)
+        " a splice, everything else as NO-OP.
+        if ret.cmd != 's' || len(ret.text) == 0
+            " Empty range is NO-OP for all but non-empty splice!
+            let ret.cmd = ''
+            return ret
+        endif
+        " We have a non-empty splice.
+        let [i0, i1] = a:inc
+        if i0 == 1 || i1 == 1
+            if i0 == 2 || i1 == 2
+                " EOL-exclusive is disallowed when the other end is inclusive and range is
+                " reversed.
+                " Rationale: ambiguous intent
+                return {'err': 1, 'errmsg': 'invalid EOL-exclusive range'}
+            endif
+            " By convention, empty range with one side inclusive requests a directed put
+            " with direction given by the inclusive side.
+            let [ret.pos, ret.cmd] = i0 == 1 ? [start, 'P'] : [end, 'p']
+        else
+            " Both sides exclusive
+            " Convert pointless EOL-exclusive to (simpler) normal-exclusive.
+            let i0 = i0 == 0 || a:start[1] == start[1] ? 0 : 2
+            let i1 = i1 == 0 || a:end[1] == end[1] ? 0 : 2
+            " EOL-exclusive should never be used with colinear start/end.
+            " Design Decision: Defer validation till after simplifying pointless
+            " EOL-exclusive to normal-exclusive.
+            if (i0 == 2 || i1 == 2) && a:end[1] <= a:start[1]
+                " Invalid!
+                return {'err': 1, 'errmsg': 'Invalid EOL-exclusive range'}
+            endif
+            if i0 == 2 || i1 == 2
+                " At least one end is (still) EOL-exclusive, so we know a:start and a:end
+                " are separated by at least a NL, guaranteeing our ability to determine
+                " non-empty splice range (even if only a NL). Handle as a splice using
+                " corresponding normal-exclusive range, with NL's prepended/appended to
+                " the splice text as required.
+                let [pre_nl, post_nl] = ['', '']
+                if i0 == 2
+                    let start = s:yankdel_range__preadjust_range_start(a:start, 0)
+                    let pre_nl = "\n"
+                endif
+                if i1 == 2
+                    let end = s:yankdel_range__preadjust_range_end(a:end, 0)
+                    let post_nl = "\n"
+                endif
+                " Treat like splice, with adjusted splice text.
+                let [ret.start, ret.end] = [start, end]
+                let ret.text = pre_nl . ret.text . post_nl
+            else
+                " Both ends normal-exclusive implies original a:start/a:end were adjacent.
+                " Directed put from unadjusted start
+                let [ret.pos, ret.cmd] = [a:start, 'p']
+            endif
+        endif
+    else
+        " Adjusted range non-empty; no need to adjust cmd, which is one of [yds]. (All
+        " directed puts handled in the if above.)
+        let [ret.start, ret.end] = [start, end]
+    endif
+    return ret
+endfunction
+
 " Return a dict recording the following:
-" * total # of bytes in the file
-" * byte offset of start relative to BOF
-" * byte offset of end relative to start
-" * list of byte offsets of each of the provided positions relative to start
-" * the positions themselves (indices correspond to indices in byte_offs[])
-" Explanation: After delete/splice, this information can be used to adjust the positions
-" to account for added/deleted text.
+" ps:            list of positions requiring adjustment
+" op:            dict returned by s:yankdel_range__preadjust_range()
+" anchor:        anchor position (start of range for splice/delete, else position at which
+"                directed put is performed)
+" anchor_byte:   bytes offset of anchor relative to BOF
+" end_off:       (optional) byte offset of end of range relative to anchor
+"                N/A for directed put
+" bytes_in_file: total # of bytes in the file
+" byte_offs:     list of byte offsets of each of the provided positions relative to anchor
+" delta:         signed byte offset indicating how much the end of file is moved by the
+"                operation for which we're adjusting.
+" Motivation: After delete/splice, this information can be used to adjust the positions to
+" account for added/deleted text.
 " Caveat: Because callers generally maintain references to the position tuples in the
 " input list, it's vital that we never delete or replace the tuple references: i.e., when
-" adjustments are made, the line/col elements are modified directly.
+" adjustments are made, the line/col values are modified directly.
 " Alternative Approach: This preadjustment step isn't strictly necessary, since number of
 " bytes to be deleted could be calculated analytically (even before any buffer
 " modifications have occurred) using pos2byte etc on start/end; however, that approach is
 " significantly more complex: much simpler/safer to do it using byte2pos after the
 " deletion has occurred.
-function! s:yankdel_range__preadjust_positions(start, end, ps)
+function! s:yankdel_range__preadjust_positions(op, ps)
     " Pre-op position adjustment
-    let ret = {'ps': a:ps, 'byte_offs': [], 'start': a:start}
-    " Total # of bytes in file used to calculate delta later.
+    let ret = {'ps': a:ps, 'op': a:op, 'byte_offs': [],
+                \ 'anchor': s:nullpos,
+                \ 'anchor_byte': -1, 'end_off': -1, 'delta': 0}
+    let ret.anchor = a:op.cmd =~? 'p' ? a:op.pos : a:op.start
+    " Total # of bytes in file is used to calculate delta later.
+    " TODO: Calculate delta up-front (using range and splice text if applicable) to
+    " obviate need for bytes_in_file.
     let ret.bytes_in_file = s:total_bytes_in_file()
-    " Calculate byte offset of start wrt BOF and end wrt start.
-    let ret.start_byte = s:pos2byte(a:start)
-    " Note: Considered making e_off reflect position just *past* end, so that when
-    " position is deleted, it falls forward *out of* the deleted range (i.e., into first
-    " non-deleted text).
-    " Decision: I think it's best to position *at* original end.
-    " Rationale: If splice text is non-empty, it looks best for cursor to move
-    " to end of spliced text; if splice is empty (i.e., splice is actually
-    " delete), end position will correspond to first char past deletion
-    " naturally.
-    let ret.end_off = s:pos2byte(a:end) - ret.start_byte
+    " Calculate byte offset of anchor pos wrt BOF and (if not directed put) end wrt anchor
+    " pos (i.e., start).
+    let ret.anchor_byte = s:pos2byte(ret.anchor)
+    " Note: end_off is N/A for directed put.
+    if a:op.cmd !~? 'p'
+        let ret.end_off = s:pos2byte(a:op.end) - ret.anchor_byte
+    endif
+    " Calculate delta.
+    " TODO: Once this approach to delta calculation has been thoroughly vetted, remove
+    " 'bytes_in_file' and associated code (both here and in postadjust function).
+    let ret.delta = a:op.cmd =~? '[sp]' ? len(a:op.text) : 0
+    if a:op.cmd =~ '[sd]'
+        " Assumption: We have a non-empty range.
+        " Note: Use position *past* end to account for bytes in final char of range.
+        let ret.delta -=
+            \ (s:pos2byte(s:offset_char(a:op.end, 1)) - s:pos2byte(a:op.start))
+    endif
     " Calculate and store offsets of positions of interest wrt start of range.
     for p in a:ps
-        call add(ret.byte_offs, s:pos2byte(p) - ret.start_byte)
+        " Decision Decision: Add even the negative offsets, which require no adjustment.
+        " Rationale: Discarding them would entail removing elements from a:ps to avoid
+        " breaking index correlation.
+        call add(ret.byte_offs, s:pos2byte(p) - ret.anchor_byte)
     endfor
     return ret
 endfunction
 
-" Adjust the positions in adj (assumed to be dict built by
+" Adjust the positions in the input dict, assumed to have been built by
 " yankdel_range__preadjust_positions()) to reflect the text added/removed by a
 " splice/delete operation.
-function! s:yankdel_range__postadjust_positions(adj, spl)
+function! s:yankdel_range__postadjust_positions(adj)
     " Post-op position adjustment
     " Calculate net byte delta (added (+) / deleted (-))
+    " FIXME: Remove this after validating the new (preferred) approach (i.e., calculating
+    " delta in preadjust function).
     let delta = s:total_bytes_in_file() - a:adj.bytes_in_file
-    let [ps, offs] = [a:adj.ps, a:adj.byte_offs]
-    let [s, s_byte, e_off] = [a:adj.start, a:adj.start_byte, a:adj.end_off]
-    " Get adjusted e_off, which will be used within the loop.
-    let e_off_adj = e_off + delta
-    let e_adj = s:byte2pos(s_byte + e_off_adj)
+    if delta != a:adj.delta
+        throw "Mismatch in calculated deltas: post-delta=" . delta . " pre-delta=" . a:adj.delta
+    endif
+    let [op, ps, offs] = [a:adj.op, a:adj.ps, a:adj.byte_offs]
+    let [anchor, anchor_byte] = [a:adj.anchor, a:adj.anchor_byte]
+    if op.cmd !~? 'p'
+        " Perform end offset processing (not applicable to directed puts).
+        " Get adjusted e_off, which will be used within the loop.
+        let e_off = a:adj.end_off
+        let e_off_adj = e_off + delta
+        let e_adj = s:byte2pos(anchor_byte + e_off_adj)
+        if s:compare_pos(anchor, e_adj) > 0
+            " Ensure that if range is completely deleted (either with empty splice or
+            " delete), positions don't fall backwards past the original start, but forward
+            " to first char of non-deleted text.
+            let e_adj = anchor
+        endif
+    endif
     " Iterate parallel lists ps and offs.
     for i in range(len(offs))
         let [o, p] = [offs[i], ps[i]]
-        if o > 0
-            " Important Note: There are 3 possible cases for the position being adjusted:
+        " Distinction: For 'put before' case, adjustments required for all positions >=
+        " start (o >= 0); for all other cases (including put after), only positions
+        " *after* start (o > 0) require adjustment.
+        if o > (op.cmd ==# 'P' ? -1 : 0)
+            " Important Note: For non-directed put (i.e., splice or delete), there are 3
+            " possible cases for the position being adjusted:
             " 1. original position within both original and adjusted ranges
             " 2. original position within original but not adjusted range
             " 3. original position past original range (and thus, also past adjusted
             "    range)
-            " Originally, used position calculated from original byte offset for case 1,
-            " but this is problematic because converting whitespace (e.g., trailing
-            " spaces) to newlines can result in an adjusted position on a different line,
-            " even when the original line still exists. A better approach for cases 1 & 2
-            " is to try to use the original line/col (limiting col to '$'-1), falling back
-            " to the adjusted end position if the aforementioned position is past adjusted
-            " end.
+            " Both put before and put after can be handled as case #3; the only difference
+            " between the two is the offset threshold (checked above).
+            " Design Decision: Originally, used position calculated from original byte
+            " offset for case 1, but this is problematic because cleaning up whitespace
+            " (e.g., trailing spaces) can result in an adjusted position on a different
+            " line, even when the original line still exists. A better approach for cases
+            " 1 & 2 is to try to use the original line/col (limiting col to '$'-1),
+            " falling back to the adjusted end position if the aforementioned position is
+            " past adjusted end.
             " Caveat: Because callers may hold references to the position lists, it's
-            " vital that we replace the list elements *without* replacing the list
+            " *vital* that we replace the list elements *without* replacing the list
             " references.
-            if o <= e_off
+            if op.cmd !=? 'p' && o <= e_off
                 " Case 1 or 2
                 if s:compare_pos(p, e_adj) >= 0
-                    " Don't allow position to escape from adjusted range.
+                    " Case 2: Don't allow position to escape from adjusted range.
                     let [p[1], p[2]] = e_adj[1:2]
                 else
-                    " Should be able to use col-constrained original position.
+                    " Case 1: Attempt to use original position, but limit col to the
+                    " current line length, which could differ from the original.
                     let ecol = col([p[1], '$'])
                     if p[2] >= ecol
                         let p[2] = max([1, ecol - 1]) " max() needed to handle blank lines
                     endif
                 endif
             else
-                " Case 3
-                let [p[1], p[2]] = s:byte2pos(s_byte + o + delta)[1:2]
+                " Case 3 *and* directed puts
+                let [p[1], p[2]] = s:byte2pos(anchor_byte + o + delta)[1:2]
             endif
         endif
     endfor
 endfunction
 
-" Yank, delete or splice text in range defined by start/end, returning any
-" deleted text, and optionally adjusting input positions to account for deletions.
-" Splice Note: If a string (rather than a boolean flag) is supplied for
-" del_or_spl, the range will be *replaced* by the provided text and the
-" deleted text will be returned.
+" Yank, delete or splice text in range defined by start/end, returning any deleted text,
+" and optionally adjusting input positions to account for deletions.
+" Splice Note: If a string (rather than a boolean flag) is supplied for del_or_spl, the
+" range will be *replaced* by the provided text and the replaced text will be returned.
 " -- Optional Args --
 " a:1  range inclusivity
 "      Enum:
@@ -3729,6 +3730,7 @@ endfunction
 "      | [start_inclusive, end_inclusive]
 "      Defaults to inclusive start, exclusive end (i.e., [1, 0].
 " a:2  list of positions to adjust
+"      Note: As a convenience to caller, will be passed through s:concat_positions().
 " a:3  failsafe_override - unless this flag is set, function will not delete
 "      non-whitespace. (defaults to 0)
 " Position Adjustment: Any provided list of positions is modified in-place to account for
@@ -3747,8 +3749,13 @@ endfunction
 " plugin logic.
 " Note: Currently, plugin logic never sets it because there are no commands that modify
 " non-whitespace.
+" Cursor Positioning: Let cursor position fall where it naturally would after
+" yank/put/delete.
+" TODO: In lieu of optional args, use replace everything beyond 'end' with a dict of
+" optional key/value pairs. This will help make call sites more self-documenting.
 function! s:yankdel_range(start, end, del_or_spl, ...)
     let ret = ''
+    " TODO: Probably stop saving and adjusting cursor.
     let cursor = getpos('.')
     " Assumption: 'virtualedit' has been set to onemore (by pre-op handler).
     " Rationale: Need to be able to select (visually) past EOL in certain
@@ -3757,111 +3764,101 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
     try
         let inc = a:0 ? type(a:1) == 3 ? a:1 : [1, a:1] : [1, 0]
         let failsafe_override = g:sexp_inhibit_failsafe || (a:0 > 2 ? a:3 : 0)
-        let start = s:yankdel_range__preadjust_range_start(a:start, inc[0])
-        let end = s:yankdel_range__preadjust_range_end(a:end, inc[1])
-        " See header comment on failsafe mechanism for purpose of this test.
-        if !failsafe_override && (type(a:del_or_spl) == type("") || a:del_or_spl)
-                \ && s:range_has_non_ws(start, end, 1)
+        " Canonicalize start/end/range.
+        let op = s:yankdel_range__preadjust_range(a:start, a:end, a:del_or_spl, inc)
+        if op.err
+            call s:warnmsg("yankdel_range: Internal error detected: " . op.errmsg)
+            return
+        elseif empty(op.cmd)
+            " NO-OP
+            return
+        endif
+        " See header comment on failsafe mechanism.
+        " Note: Failsafe doesn't apply to a directed put.
+        if !failsafe_override && op.cmd =~# '[ds]' && s:range_has_non_ws(op.start, op.end, 1)
             call s:warnmsg("yankdel_range: Internal error detected: refusing to modify non-whitespace!")
             return
         endif
-        " Special Case: Treat splice of certain types of null replacement
-        " regions as a put.
-        " Design Decision: Only *just empty* regions will be treated this way: e.g., start
-        " == end and either end (but not both) exclusive (=== 0). Though there are simpler
-        " ways to accomplish it, you could use such null regions to perform a simple put,
-        " whose direction is determined by the inclusive side (inclusive start => put
-        " before).
-        " Design Decision: If del_or_spl === 1 (in lieu of splice text), the
-        " aforementioned 'just empty' null regions result in NOPs.
-        let cmp = s:compare_pos(a:start, a:end)
-        " Caveat: Vim 7.3 didn't have xor() function so do it manually.
-        " Note: spl_put is true iff splice can be performed by a "directed put".
-        let spl_put = type(a:del_or_spl) == 1 && !cmp
-            \ && (!inc[0] && inc[1] == 1 || inc[0] && !inc[1] == 1)
-        if spl_put || s:compare_pos(start, end) <= 0
-            " Either splice is a directional put (spl_put) or the adjusted region is
-            " non-empty.
-            " Note: end adjustment may have returned non-physical location; if so, fix
-            " now...
-            if start[2] < 0 | let start[2] = 1 | endif
-            " non-empty region to be spliced/deleted...
-            " Note: Since splice also deletes, del will be set for either.
-            let [del, spl, spl_text] = type(a:del_or_spl) == 1
-                \ ? [1, 1, a:del_or_spl]
-                \ : [!!a:del_or_spl, 0, '']
-
-            if del
-                " Pre-op position adjustment
-                " End: Treat deletion and non-null splice differently: for a
-                " deletion, end should be *past* the deleted text, but for a
-                " non-empty splice, use the end of the spliced area.
-                " Rationale: Looks best to keep cursor within replacement area
-                " (typically whitespace) when text is spliced, but to let it
-                " fall forward into undeleted text when deleting.
-                " Start: If we're doing a put before, pre-adjustment needs to
-                " use a start position prior to a:start; otherwise, the
-                " original start position will not be adjusted, despite coming
-                " after the put text.
-                " Note: Both 0 and 2 inc values are exclusive.
-                let adj = s:yankdel_range__preadjust_positions(
-                    \ spl_put && inc[0] ? s:offset_char(start, 0) : start,
-                    \ !spl
-                        \ ? inc[1] != 1 ? a:end : s:offset_char(end, 1)
-                        \ : end,
-                    \ a:0 > 1 ? s:concat_positions(a:2, cursor) : [cursor])
+        " Perform splice, directed put, delete or yank.
+        if op.cmd != 'y'
+            " Buffer is being changed...
+            " Perform pre-op position adjustment
+            " Start: If we're doing a put before, pre-adjustment needs to use a start
+            " position prior to a:start; otherwise, the original start position will
+            " not be adjusted, despite coming after the put text.
+            " End: Treat deletion and non-null splice differently: for a deletion, end
+            " should be *past* the deleted text, but for a non-empty splice, use the end
+            " of the spliced area.
+            " TODO: Decide whether *past* means newline or beginning of next line.
+            " Rationale: Looks best to keep cursor within replacement area (typically
+            " whitespace) when text is spliced, but to let it fall forward into undeleted
+            " text when deleting.
+            " TODO: Don't use a:0 this far into function! Rework...
+            " TODO: Evaluate the special logic here. Is it necessary? Correct since refactor?
+            let adj = s:yankdel_range__preadjust_positions(op,
+                \ a:0 > 1 ? s:concat_positions(a:2, cursor) : [cursor])
+        endif
+        " Perform cursor positioning or visual selection for yank/del/splice.
+        if op.cmd =~? 'p'
+            " directed put
+            call s:setcursor(op.pos)
+        else
+            " Select text to be yanked/deleted/spliced
+            call s:set_visual_marks([op.start, op.end])
+            call s:select_current_marks('v')
+        endif
+        if op.cmd =~# '[spP]'
+            " Splice or directed put
+            let @a = op.text
+            " Caveat: Need to treat splice text ending in newline specially to inhibit
+            " linewise put.
+            let linewise = @a[-1:] == "\n"
+            if linewise
+                " Make the register non-linewise.
+                let @a .= ' '
             endif
-            " Perform the yank/del/splice.
-            if spl_put
-                call s:setcursor(a:start)
-            else
-                " Select text to be yanked/deleted
-                call s:set_visual_marks([start, end])
-                call s:select_current_marks('v')
+            " Note: We can be in either visual or normal mode at this point. Action to
+            " perform depends on op.cmd:
+            "   [pP]: directed put from cursor pos
+            "   s: splice over visual selection (implemented with visual `p').
+            silent! exe 'normal! "a' . (op.cmd ==# 'P' ? 'P' : 'p')
+            if linewise
+                " Delete the space we appended to inhibit linewise put.
+                " Save [ and ] marks for restoration after space deletion.
+                " Note: Using [gs]etpos() with the [ and ] marks is problematic, as it
+                " always sets/gets '[ and '] (not `[ and `]).
+                " Solution: Use getpos('.') to obtain positions reached by `[ and `], then
+                " m[ and m] to set `[ and `] to those positions after the deletion.
+                execute 'normal! `[' | let smark = getpos('.')
+                execute 'normal! `]' | let emark = getpos('.')
+                " Cleanup the space that was appended to inhibit linewise put.
+                normal! `]"_x
+                " Restore the [ and ] marks, which are clobbered by normal
+                " x, even when lockmarks is used.
+                call s:setcursor(smark) | normal! m[
+                call s:setcursor(emark) | normal! m]
+                let @" = @"[:-2]
             endif
-            " FIXME: Add test to ensure nothing but whitespace is deleted by
-            " del/splice!!!!!!
-            if spl
-                let @a = spl_text
-                " Caveat: Need to treat splice text ending in newline
-                " specially to inhibit linewise put.
-                let linewise = @a[-1:] == "\n"
-                if linewise
-                    " Make the register non-linewise.
-                    let @a .= ' '
-                endif
-                " Replace selection with splice text.
-                silent! exe 'normal! "a' . (spl_put && inc[0] ? 'P' : 'p')
-                if linewise
-                    " Save [ and ] marks for restoration after space deletion.
-                    let [smark, emark] =
-                        \ [getpos("'["), [0, line("']") - 1, col([line("']"), '$']) - 1, 0]]
-                    " Cleanup the space that was appended to inhibit linewise put.
-                    normal! `]"_x
-                    " Restore the [ and ] marks, which are clobbered by normal
-                    " x, even when lockmarks is used.
-                    call setpos("'[", smark)
-                    call setpos("']", emark)
-                    let @" = @"[:-2]
-                endif
-                if !spl_put
-                    let ret = @"
-                endif
-            else
-                silent! exe 'normal! ' . '"a' . (del ? 'd' : 'y')
-                let ret = @a
+            if op.cmd ==# 's'
+                " Return the spliced-over text.
+                let ret = @"
             endif
-            if del " Both delete and splice set this flag
-                " Post-op position adjustment
-                call s:yankdel_range__postadjust_positions(adj, spl)
-            endif
+        else
+            " Perform yank or delete.
+            silent! exe 'normal! ' . '"a' . op.cmd
+            " Return the deleted/yanked text.
+            let ret = @a
+        endif
+        if op.cmd !=# 'y'
+            " Post-op position adjustment (required whenever buffer changes).
+            call s:yankdel_range__postadjust_positions(adj)
         endif
     finally
         " Restore options/regs/cursor...
         let [@a, @"] = reg_save
-        call s:setcursor(cursor)
+        " TODO: Decide on this.
+        "call s:setcursor(cursor)
     endtry
-
     return ret
 endfu
 "let Ydr = function('s:yankdel_range')
@@ -3973,7 +3970,7 @@ endfunction
 
 " Go to position of last non-whitespace char on specified line, else leave position
 " unchanged.
-" Return col, else 0 if no jump.
+" Return col of last non-ws, else 0.
 function! s:goto_last_non_ws(line)
     let ecol = col([a:line, '$'])
     if ecol == 1
@@ -3989,8 +3986,6 @@ function! s:goto_last_non_ws(line)
         " We're on non-whitespace.
         return col('.')
     endif
-    " Note: Shouldn't be possible to get here, as prior logic guarantees the search()
-    " above will succeed.
     return 0
 endfunction
 
@@ -4017,9 +4012,6 @@ endfunction
 "   is_eol_com:   1 iff specified line ends in eol comment
 "   prev_e:       position of last non-ws preceding eol comment
 "   com_s:        position of start of eol comment (else s:nullpos)
-"   eff_linelen:  minimum possible length of line (in screen cols), taking both
-"                 g:sexp_aligncom_min_separation and g:sexp_aligncom_colstops
-"                 into account
 "   comlen:       length of trailing comment (else 0)
 " Cursor Preservation: None (caller expected to handle)
 " Terminology: There's an ambiguity inherent in the phrase "ends in comment": if an
@@ -4038,7 +4030,10 @@ function! s:aligncom__characterize(line)
     let c = s:goto_last_non_ws(a:line)
     if !c
         " Effectively empty line
-        return [0, 0, 0, 0, s:nullpos]
+        return {
+            \ 'ecol': 1, 'is_com': 0, 'is_eol_com': 0,
+            \ 'prev_e': s:nullpos, 'com_s': s:nullpos, 'comlen': 0
+        \ }
     endif
     " This will be adjusted later for eol comment, but if there's no eol comment, we'll
     " need screen pos just past last non-ws for alignment purposes.
@@ -4083,8 +4078,6 @@ function! s:aligncom__characterize(line)
             " TODO: Do we need to consider possibility that comment could contain tabs,
             " whose screen width could change if comment is shifted? Possibly not, since
             " eff_linelen is used for cost calculation, not alignment.
-            " TODO: Currently, eff_linelen is used only in the calculation of comlen, so
-            " perhaps remove it from the return dict.
             let eff_linelen = eol_ecol - 1 - (virtcol([com_s[1], com_s[2]]) - ecol)
             " Also calculate length of trailing comment, which is needed by overrun logic.
             let comlen = eff_linelen - prev_e[2]
@@ -4092,7 +4085,7 @@ function! s:aligncom__characterize(line)
     endif
     return {
             \ 'ecol': ecol, 'is_com': is_com, 'is_eol_com': is_eol_com,
-            \ 'eff_linelen': eff_linelen, 'comlen': comlen, 'prev_e': prev_e, 'com_s': com_s
+            \ 'comlen': comlen, 'prev_e': prev_e, 'com_s': com_s
     \ }
 endfunction
 
@@ -4754,7 +4747,7 @@ endfunction
 " Preprocess range of lines potentially containing eol comments, building a list of dicts
 " intended to streamline the subsequent alignment logic in aligncom__optimize_range().
 " At the end of preprocessing, each element will have the following keys:
-"   line, ecol, is_eol_com, is_com, com_s, pre_max, prev_e, com_s, eff_linelen
+"   line, ecol, is_eol_com, is_com, com_s, pre_max, prev_e, com_s
 " Additionally...
 " Opt lvl < 2:
 "   If element is head of a 'greedy' segment, it will contain the following:
@@ -5157,13 +5150,16 @@ function! s:cleanup_ws(start, ps, ...)
                 " conditions holds true for the gap between prev and next:
                 " * # of blank lines > g:sexp_cleanup_keep_empty_lines
                 " * (else) trailing whitespace on prev line (remove trailing ws)
+                " Note: Treating negative 'keep_empty_lines' as infinity ensures removal
+                " of non-NL whitespace at EOL.
                 let precedes_com = next[1] && s:is_comment(next[1], next[2])
                 if gap > g:sexp_cleanup_keep_empty_lines + 1
                     \ || getline(eff_prev[1])[eff_prev[2] - 1:] =~ '.\s\+$'
                     " Replace gap with number of newlines determined by existing line gap
                     " and g:sexp_cleanup_keep_empty_lines option, followed by original
-                    " whitespace on eff_next's line:
-                    let spl = repeat("\n", min([gap, g:sexp_cleanup_keep_empty_lines + 1]))
+                    " whitespace on eff_next's line.
+                    let spl = repeat("\n", g:sexp_cleanup_keep_empty_lines < 0
+                        \ ? gap : min([gap, g:sexp_cleanup_keep_empty_lines + 1]))
                 endif
             " Single-line (whitespace between colinear elements)
             " If next isn't comment and there are multiple whitespace chars between
@@ -5307,7 +5303,7 @@ endfunction
 " Postcondition: Visual marks have been adjusted to reflect raised target to ensure that
 " next iteration has the information it needs. (This approach obviates the need for state
 " dict and calls to *__init() and *__update() functions.)
-function! sexp#raise(mode, func, ...)
+function! sexp#raise(state, mode, func, ...)
     " Before deleting anything, be sure there's a parent list by moving to start of visual
     " range and looking for nearest open.
     call sexp#ensure_normal_mode()
@@ -5402,9 +5398,10 @@ fu! sexp#convolute(count, ...)
     " Note: Not using sexp#splice because it doesn't preserve macro
     " chars/brackets.
     " Note: Work backwards since deletions invalidate positions.
-    let ket = s:yankdel_range(tpos_i, tpos_i, 1, 1)
-    let del = s:yankdel_range(bpos_i, pos, 1, [0, 0])
-    let bra = s:yankdel_range(spos_i, bpos_i, 1, 1)
+    " FIXME: Refactor yankdel_range() take optional args dict!!!
+    let ket = s:yankdel_range(tpos_i, tpos_i, 1, 1, [], 1)
+    let del = s:yankdel_range(bpos_i, pos, 1, [0, 0], [], 1)
+    let bra = s:yankdel_range(spos_i, bpos_i, 1, 1, [], 1)
 
     " Since the deleted text is going to be prepended to a list, make sure
     " that if it contains non-whitespace, it ends with whitespace. Normally,
@@ -5730,84 +5727,294 @@ function! sexp#splice_list(...)
 endfunction
 
 " Invoked by docount_stateful() to initialize state object, which will be provided to each
-" invocation of stackop__update().
+" invocation of stackop__update(), and ultimately, to stackop__final().
 function! sexp#stackop__init(mode, last, capture)
     " Make sure stackop__final() has the information it needs to finalize the operation.
+    " mode:    command invocation mode
+    " range:   affected range, used to determine re-indent
+    " curpos:  initially, cursor pos at invocation, but subject to change by operation
+    " vmarks:  initially, visual marks at invocation, but subject to change by operation
+    "          Logic:
+    "            visual command: changed to reflect operated on list
+    "            normal command: adjusted only to reflect bracket relocation/re-indent
     return {
-            \ 'multiline': 0,
+            \ 'mode': a:mode,
             \ 'range': [s:nullpos, s:nullpos],
             \ 'curpos': getpos('.'),
-            \ 'marks': s:get_visual_marks()
+            \ 'vmarks': s:get_visual_marks(),
     \ }
 endfunction
 
 " Invoked by docount_stateful() after each iteration to perform state update.
-" FIXME: Need to keep up with the total range of lines affected, not just multiline.
+" -- Args --
+" state:    The state dict created by stackop__init() and updated by stackop__update().
+" result:   Dict returned by sexp#stackop() to reflect the operation performed (see below)
+" <rest>:   The invocation arguments, unmodified
+" The 'result' dict contains optional keys, whose names generally correspond to names in
+" the state dict. Provided keys are used in a possibly mode and/or option-dependent way to
+" update the state dict.
 function! sexp#stackop__update(state, result, mode, last, capture)
-    " Update the range of lines affected.
-    if !a:state.range[0][1] || s:compare_pos(a:result[0], a:state.range[0]) < 0
-        let a:state.range[0] = a:result[0]
+    if has_key(a:result, 'range')
+        if !a:state.range[0][1] || s:compare_pos(a:result.range[0], a:state.range[0]) < 0
+            let a:state.range[0] = a:result.range[0]
+        endif
+        if !a:state.range[1][1] || s:compare_pos(a:result.range[1], a:state.range[1]) > 0
+            let a:state.range[1] = a:result.range[1]
+        endif
     endif
-    if !a:state.range[1][1] || s:compare_pos(a:result[1], a:state.range[1]) > 0
-        let a:state.range[1] = a:result[1]
+    if a:state.mode ==? 'v' && has_key(a:result, 'vmarks')
+        " Update visual marks to reflect updated list boundary.
+        " Note: If command mode is non-visual, vmarks are adjusted only for bracket
+        " relocations, and that happens automatically elsewhere.
+        let a:state.vmarks = a:result.vmarks
     endif
-    " Upon each successful iteration, establish new rollback point for visual marks and
-    " cursor pos.
-    let a:state.marks = s:get_visual_marks()
-    let a:state.curpos = getpos('.')
+    " Cursor modification logic
+    if !a:capture && g:sexp_emitting_bracket_is_sticky
+        " Don't let cursor be emitted by list.
+        if s:compare_pos(a:result.vmarks[a:last], a:state.curpos) == (a:last ? -1 : 1)
+            " Pull cursor inward to list boundary before next iteration.
+            let a:state.curpos = a:result.vmarks[a:last]
+        endif
+    endif
+    if a:capture && g:sexp_capturing_bracket_is_sticky && a:result.can_ride_bracket
+        " Since cursor started on capturing bracket, let it relocate with it.
+        let a:state.curpos = a:result.vmarks[a:last]
+    endif
 endfunction
 
 " Invoked by docount_stateful() at the end of all iterations to restore appropriate cursor
 " pos and/or visual state, and to perform re-indent if multiple lines were affected and
-" user has enabled auto-reindent for stackops.
+" user has enabled auto-reindent for capture/emit.
 " Handles exceptional (!empty(ex) && ex != 'sexp-done') as well as normal termination.
 function! sexp#stackop__final(ex, state, mode, last, capture)
-    let did_indent = 0
     if empty(a:ex) || a:ex == 'sexp-done'
         " Normal termination
         if g:sexp_auto_indent != -1 ? g:sexp_auto_indent : g:sexp_capture_emit_does_indent
-            " Convert range to corresponding super range before multi-line test.
-            " Rationale: For the sake of implementation simplicity, stackop_emit doesn't
-            " return a super range.
-            let range = s:super_range(a:state.range[0], a:state.range[1])
-            if range[0][1] != range[1][1]
-                " Super range spans multiple lines, so re-indent.
-                call s:set_visual_marks(range)
-                " Note: Though we use visual marks, it's important that we be in normal mode.
-                call sexp#ensure_normal_mode()
-                call sexp#indent('v', 0, 1, -1, 1, a:state.marks + [a:state.curpos])
-                let did_indent = 1
+            " Logic: In most cases, accurate re-indent is ensured by using the range in
+            " the state dict; however, there are corner cases (most notably, capture/emit
+            " of head) in which it's necessary to re-indent the parent. Thus, if last == 0
+            " and there is no sibling preceding the range, re-indent parent; otherwise,
+            " re-indent the range in state dict.
+            " Assumption: For an emit at head, range includes the emitted element.
+            let indent_parent = 0
+            let [s, e] = a:state.range
+            if !a:last
+                " Look for sibling preceding range.
+                call s:setcursor(s)
+                let p = sexp#current_element_terminal(0)
+                " Note: nearest_element_terminal() returns current el terminal if no adjacent.
+                let s = s:nearest_element_terminal(0, 0)
+                if !s:compare_pos(p, s)
+                    " No preceding sibling; re-indent parent (if it exists).
+                    let p = s:move_to_nearest_bracket(0)
+                    if p[1]
+                        let s = p
+                        " Position on parent close bracket for sexp#indent().
+                        let e = s:move_to_nearest_bracket(1)
+                        let indent_parent = 1
+                    endif
+                endif
+            endif
+            " Skip single-line indents.
+            if s[1] != e[1]
+                if indent_parent
+                    " Assumption: Cursor is positioned on parent list bracket.
+                    let mode = 'n'
+                else
+                    let mode = 'v'
+                    " Range spans multiple lines, so re-indent.
+                    call s:set_visual_marks([s, e])
+                    " Note: Though we use visual marks, it's important that we be in normal mode.
+                    call sexp#ensure_normal_mode()
+                endif
+                call sexp#indent(mode, 0, 1, -1, 1, [a:state.vmarks, a:state.curpos])
             endif
         endif
     endif
-    " For a normal termination, we should already be in correct state unless re-indent was
-    " performed.
-    " Design Decision: In case of abnormal termination, restore last established rollback
-    " point, not state prior to user-executed command with [count].
-    " Rationale: We're not undo'ing any of the iterations already performed.
-    if a:ex != 'sexp-done' || did_indent
-        if a:mode ==? 'v'
-            call sexp#ensure_normal_mode()
-            call s:set_visual_marks(a:state.marks)
-            normal! gv
-        else
-            keepjumps call s:setcursor(a:state.curpos)
-        endif
+    " Restore visual marks whether we've adjusted only for bracket relocations or more
+    " substantially (e.g., to prevent cursor escaping form when
+    " g:sexp_emitting_bracket_is_sticky is set).
+    " Assumption: vmarks and curpos have been adjusted for any bracket relocations.
+    call sexp#ensure_normal_mode()
+    call s:set_visual_marks(a:state.vmarks)
+    " TODO: Should we handle the abnormal termination scenario any differently?
+    if a:mode ==? 'v'
+        " TODO: Any advantage to using select_current_marks() instead?
+        normal! gv
+    else
+        keepjumps call s:setcursor(a:state.curpos)
     endif
 endfunction
 
-" Capture or emit the first or last element into or out of the current list.
-" The cursor will be placed on the new bracket position, or if mode is 'v',
-" the resulting list will be selected.
+" Capture nearest non-comment sibling of current list, given the starting position of the
+" list's bracket minus any leading macro characters (spos) and the position of the bracket
+" itself (bpos).
+" Note: For tail capture, spos == bpos.
+" Return: Dict with the following keys:
+"   vmarks  start/end of list that did the capture
+"           Used in visual mode to select the list after operation completes
+"   range   range affected by the operation
+"           Used to calculate reindent
+" Cursor Preservation: Caller handles.
+function! s:stackop_capture(last, spos, bpos, ps)
+    " Find position of matching bracket (needed only for returned range).
+    call s:setcursor(a:bpos)
+    " Note: Could defer this till after bracket relocation.
+    let opp_bpos = s:nearest_bracket(!a:last)
+    if !opp_bpos[1]
+        " Note: Should happen only if there are unmatched brackets.
+        throw 'sexp-error'
+    endif
+    " Position on outer edge of bracket construct (possibly macro chars) to be relocated.
+    call s:setcursor(a:spos)
+    let nextpos = a:spos
+    " Move outwards, landing on successive elements' outer edges, looking for a
+    " non-comment element, which will become the new terminal.
+    while 1
+        let prevpos = nextpos
+        " Move to outside edge of adjacent element.
+        let nextpos = s:move_to_adjacent_element(a:last, a:last, 0)
+        " Make sure the call above actually moved us to a different element.
+        " Note: s:move_to_adjacent_element() returns terminal position of *current* element
+        " if no next element exists, and we started on the outside edge of an element
+        " (i.e., the terminal position we'll end up on when there's no adjacent element).
+        " Assumption: s:move_to_adjacent_element() will not return nullpos unless a:top is
+        " set.
+        if s:compare_pos(prevpos, nextpos) == 0
+            " Nothing to capture
+            return {}
+        endif
+        if !s:is_comment(nextpos[1], nextpos[2])
+            " Found a capturable (non-comment) element.
+            break
+        endif
+    endwhile
+    " Note: Augment adjusted positions to eliminate modification order constraints.
+    let ps = s:concat_positions(a:ps, opp_bpos, nextpos)
+    " Yank and delete the bracket (and possibly leading macro chars) to be relocated.
+    let btext = s:yankdel_range(a:spos, a:bpos, 1, 1, ps, 1)
+
+    " Put the yanked bracket construct on the *outside* of nextpos using directed put.
+    call s:yankdel_range(nextpos, nextpos, btext, a:last ? [0, 1] : [1, 0], ps)
+
+    " New bracket pos can be obtained from either '. or '] mark
+    let bpos = getpos('.')
+    " Update visual marks to reflect updated list boundary.
+    let vmarks = a:last ? [opp_bpos, bpos] : [bpos, opp_bpos]
+    " Note: For capture, operated-on range determined by capturing list bounds.
+    " Assumption: No need to pull in leading macro chars, given how range is used.
+    let range = vmarks
+    return {'vmarks': vmarks, 'range': range}
+endfunction
+
+" Emit outermost non-comment element (along with any surrounding comments) from current
+" list, given the starting position of the list's bracket minus any leading macro
+" characters (spos) and the position of the bracket itself (bpos).
+" Note: If only comments remain within the list, they will be emitted.
+" Rationale: Never make a comment the terminal element of the emitting list, neither at
+" head nor tail.
+" Note: For tail capture, spos == bpos.
+" Return: Dict with the same keys as stackop_capture()
+" Design Decision: Although we could allow comment as terminal, provided we inserted a
+" newline before bracket, let's stick as closely to original behavior as possible, and
+" also do what was agreed upon in Github issue #13.
+" Cursor Preservation: Caller handles.
+function! s:stackop_emit(last, spos, bpos, ps)
+    " Start on the list bracket.
+    call s:setcursor(a:bpos)
+    " Get opposite bracket, needed for empty list test.
+    " Note: Could defer this till after bracket relocation.
+    let opp_bpos = s:nearest_bracket(!a:last)
+    " Move inwards onto the terminal element's outer edge.
+    let [l, c] = s:findpos('\v\S', !a:last)
+    " TODO: l == -1 shouldn't happen in well-formed buffer. Throw exception?
+    if l < 1 | return {} | endif
+    let nextpos = [0, l, c, 0]
+    " Make sure findpos didn't find other bracket pos.
+    if !s:compare_pos(opp_bpos, nextpos)
+        " List is empty. Nothing to emit. Let caller decide how to handle.
+        return {}
+    endif
+    call s:setcursor(nextpos)
+    " Save pos of outermost element to be emitted.
+    let outerpos = nextpos
+    " Set this if we need to insert separating space around bracket.
+    let insert_space = 0
+
+    " Continue inwards, landing on successive elements' outer edges, looking for a
+    " non-comment element, which can become the new terminal.
+    " Note: When only one non-comment element remains, opposite bracket serves as terminal.
+    while 1
+        let prevpos = nextpos
+        " Move to outside edge of adjacent element.
+        let nextpos = s:move_to_adjacent_element(!a:last, a:last, 0)
+        " Make sure we actually moved to a new element.
+        " Rationale: s:move_to_adjacent_element() will not return nullpos unless a:top is
+        " set.
+        if s:compare_pos(sexp#current_element_terminal(a:last), prevpos) == 0
+            " Final element being emitted; let bracket serve as "terminal".
+            let nextpos = opp_bpos
+            " Special Case: If no whitespace adjacent to opposite bracket, we need to
+            " insert a space to avoid creating something like `()foo' or `foo()'.
+            call s:setcursor(opp_bpos)
+            if getline(opp_bpos[1])[a:last ? opp_bpos[2] : opp_bpos[2] - 2] !~ '\s'
+                let insert_space = 1
+            endif
+            break
+        endif
+        if !s:is_comment(nextpos[1], nextpos[2])
+            " Found non-comment element that can serve as terminal.
+            break
+        endif
+    endwhile
+
+    " Note: Augment adjusted positions to eliminate modification order constraints.
+    let ps = s:concat_positions(a:ps, opp_bpos, outerpos, nextpos)
+    " Yank and delete the bracket (and possibly leading macro chars) to be relocated.
+    let btext = s:yankdel_range(a:spos, a:bpos, 1, 1, ps, 1)
+    if insert_space
+        let btext = a:last ? btext . ' ' : ' ' . btext
+    endif
+
+    " Put the yanked bracket construct on the *outside* of nextpos using directed put.
+    " Note: If emitting final element, nextpos will be opposite bracket.
+    call s:yankdel_range(nextpos, nextpos, btext, a:last ? [0, 1] : [1, 0], ps)
+
+    " Get location of relocated bracket.
+    " Note: getpos('.') and getpos("']") should be identical.
+    let bpos = getpos('.')
+    " Note: When emitting at end, inserted space necessitates adjustment.
+    if insert_space && a:last
+        let bpos[2] -= 1
+    endif
+    " Update visual marks to reflect updated list boundary.
+    let vmarks = a:last ? [opp_bpos, bpos] : [bpos, opp_bpos]
+    " Update the superset range of affected lines using outermost *emitted* element and
+    " opposite bracket (whose position has not been affected by bracket relocation).
+    let range = a:last ? [opp_bpos, outerpos] : [outerpos, opp_bpos]
+    return {'vmarks': vmarks, 'range': range}
+endfunction
+
+" Capture or emit the first or last element into or out of the current list, unless
+" current list is empty, in which case, we capture/emit from containing list, recursively.
+" For normal mode command, cursor position is preserved (subject to constraints imposed by
+" current setting of option g:sexp_emitting_bracket_is_sticky); for visual mode, operated
+" on list will be selected.
 "
-" For implementation simplicity a list will never emit its last non-comment element, or
-" capture its containing list.
 " Note: docount_stateful() makes [count] calls to this function, followed by a single call
 " to the __final() function to handle cleanup; thus, this function need only ensure that
-" cursor position (and visual selection) is correct after each iteration.
+" cursor position in state dict is correct after each iteration. Currently, the cursor
+" position and/or visual marks we'll need to restore can be changed by emit/capture, but
+" the modification logic is confined to the __update() function to obviate the need to
+" make the implementation functions state dict-aware.
+"
 " Throws 'sexp-error' in case of abnormal termination and 'sexp-done' for a normal
-" termination (when there are no more siblings to emit/capture).
-function! sexp#stackop(mode, last, capture)
+" termination (when there are no more siblings *at any level* to emit/capture).
+function! sexp#stackop(state, mode, last, capture)
+    " Note: capture/emit function can change a:state.curpos: changes made by capture are
+    " strictly adjustments for bracket relocation, but emit can make more dramatic
+    " changes, depending on g:sexp_emitting_bracket_is_sticky option.
+    call s:setcursor(a:state.curpos)
     let [_b, cursorline, cursorcol, _o] = getpos('.')
     let char = getline(cursorline)[cursorcol - 1]
 
@@ -5829,18 +6036,31 @@ function! sexp#stackop(mode, last, capture)
         let pos = s:move_to_current_element_terminal(0)
     endif
 
-    " Perform capture/emit and save the range of lines operated on.
-    let result = a:capture ? s:stackop_capture(a:last, pos, bpos)
-                 \ : s:stackop_emit(a:last, pos, bpos)
-    if empty(result)
-        throw 'sexp-done'
-    endif
+    " Is cursor *on* bracket performing capture? Note that this test could be performed
+    " once, up front (e.g., in __init()), though it's safe to perform it here since the
+    " nature of captures precludes the result changing.
+    let can_ride_bracket = a:capture && a:state.curpos == bpos
+    " Loop till successful capture/emit performed or deemed impossible.
+    while 1
+        let result = s:{a:capture ? 'stackop_capture' : 'stackop_emit'}(
+            \ a:last, pos, bpos,
+            \ s:concat_positions(a:state.curpos, a:state.vmarks, a:state.range))
+        if !empty(result)
+            " Note: This is needed because stackop_capture doesn't know initial pos.
+            let result.can_ride_bracket = can_ride_bracket
+            return result
+        endif
+        " Blocked at current level; ascend if possible and retry.
+        " Prevent riding higher level brackets.
+        let can_ride_bracket = 0
+        let bpos = s:move_to_nearest_bracket(a:last)
+        if !bpos[1]
+            throw 'sexp-done'
+        endif
+        " TODO: Validate the call to sexp#current_element_terminal()?
+        let pos = a:last ? bpos : sexp#current_element_terminal(0)
+    endwhile
 
-    " Assumption: Capture/emit has positioned us on bracket of the target list.
-    " TODO: Could defer this till the *__final() callback.
-    if a:mode ==? 'v'
-        call sexp#select_current_element('n', 1)
-    endif
     return result
 endfunction
 
@@ -5937,14 +6157,16 @@ function! sexp#docount_stateful(count, func, ...)
     try
         for n in range(a:count > 0 ? a:count : 1)
             " Perform single iteration.
-            let ret = call(a:func, a:000)
+            let ret = call(a:func, [state] + a:000)
             if exists('*' . update_fn)
                 " Pass results of current iteration to update function.
                 call call(update_fn, [state, ret] + a:000)
             endif
         endfor
-    catch
+    catch /sexp-/
         let ex = v:exception
+    catch
+        call s:warnmsg(printf("Internal error at %s: %s", v:throwpoint, v:exception))
     finally
         if exists('*' . final_fn)
             call call(final_fn, [ex, state] + a:000)
