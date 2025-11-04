@@ -1826,8 +1826,8 @@ endfunction
 "
 " If no such adjacent element exists, moves to beginning or end of element
 " respectively. Analogous to native w, e, and b commands.
-" Optional Arg: If optional 'ignore_current' flag is set, return nullpos without moving
-" cursor if no adjacent.
+" Optional Arg: If optional 'ignore_current' flag is set and there's no adjacent element,
+" return nullpos without moving cursor.
 function! s:move_to_adjacent_element(next, tail, top, ...)
     let cursor = getpos('.')
     let ignore_current = a:0 && a:1
@@ -2874,7 +2874,7 @@ endfunction
 "   empty_list:      putting into empty list
 "   empty_buffer:    putting into empty buffer
 " Note: Skipping documentation of several of the more obvious flags. 
-"         
+" Cursor Preservation: Caller handles.
 function! s:put__get_context(count, tail)
     let ret = {
         \ 'tgt': s:nullpos, 'adj': s:nullpos, 'adj_bracket': s:nullpos,
@@ -2921,6 +2921,7 @@ function! s:put__get_context(count, tail)
     if !ret.empty_list && !ret.empty_buffer
         " Find near side of adjacent
         " Note: Optional flag forces return of same position if no adjacent.
+        " FIXME!!!! How is ret.adj being left at nullpos??????
         let adj = s:nearest_element_terminal(a:tail, !a:tail, 1)
         if adj[1]
             " Found an adjacent element.
@@ -2937,8 +2938,12 @@ function! s:put__get_context(count, tail)
         " Check other (away) side of target, passing 'ignore_current' to ensure nullpos
         " returned if no adjacent.
         let away = s:nearest_element_terminal(!a:tail, a:tail, 1)
-        " Note: Making this call unconditionally (even if away is not nullpos) to obviate
-        " need for at_top() call; however, put nullpos in return dict if away is non-null.
+        " Find away bracket unconditionally (even if away is not nullpos) to obviate need
+        " for at_top() call; however, put nullpos in return dict if away is non-null.
+        " Note: Must position on far side of away element before looking for bracket.
+        " Rationale: If away element is a list, we want parent bracket, not the list's
+        " other terminal.
+        call s:move_to_current_element_terminal(!a:tail)
         let away_bracket = s:nearest_bracket(!a:tail)
         let [ret.away, ret.away_bracket] = [away, away[1] ? s:nullpos : away_bracket]
         let ret.at_top = !away_bracket[1]
@@ -3070,17 +3075,25 @@ function! s:put__get_reindent_range(tail, ctx, reg, sep)
     return ret
 endfunction
 
-" Starting at current position, return the outside terminal position of the most distant
-" sibling that can be reached without crossing line break between elements.
+" Starting at current position, look for the outside terminal position of the most distant
+" sibling that can be reached without crossing line break between elements, returning a
+" pair of the following form:
+"   [<sought-pos>, {
+"       next:   near end of subsequent sibling, else nullpos
+"       brkt:   enclosing bracket if next == nullpos and not toplevel, else nullpos
+"   }]
+" Note: The point of this return structure is to make it easy for caller to ignore all but
+" the sought pos if desired.
 function! s:last_colinear_sibling(tail)
     let curpos = getpos('.')
-    let pos = curpos
+    let [pos, next, brkt] = [curpos, s:nullpos, s:nullpos]
     try
         " At loop termination, pos will be the position we're seeking.
         while 1
-            let next = s:move_to_adjacent_element(a:tail, a:tail, 0)
-            if pos == next
-                " No more elements
+            let next = s:move_to_adjacent_element(a:tail, a:tail, 0, 1)
+            if !next[1]
+                " No more elements. Check for enclosing bracket in desired direction.
+                let brkt = s:nearest_bracket(a:tail)
                 break
             else
                 if next[1] > pos[1]
@@ -3094,8 +3107,8 @@ function! s:last_colinear_sibling(tail)
         endwhile
     finally
         call s:setcursor(curpos)
+        return [pos, {'next': next, 'brkt': brkt}]
     endtry
-    return pos
 endfunction
 
 " Reindent range affected by sexp#put.
@@ -3143,15 +3156,20 @@ function! s:put__reindent(tail, ctx, reg, sep, ps)
         let [irange[0], irange[1]] = [getpos("'["), getpos("']")]
     elseif tail
         " Put after
-        " Starting at end of put text (first possible endpoint), find end of colinear
-        " siblings.
         let irange[0] = getpos("'[")
-        let pos = ctx.adj
-        if sep.far_sep != NL
-            call s:setcursor(pos)
-            let pos = s:last_colinear_sibling(1)
+        " End of range will be last colinear sibling, else enclosing bracket, else end of
+        " put text.
+        let p = ctx.adj[1] ? ctx.adj : ctx.adj_bracket[1] ? ctx.adj_bracket : getpos("']")
+        if ctx.adj[1] && sep.far_sep != NL
+            " Start at near side of adjacent and find far side of last colinear sibling.
+            call s:setcursor(p)
+            let [p, d] = s:last_colinear_sibling(1)
+            if d.brkt[1]
+                " Use an enclosing bracket if no non-colinear sibling.
+                let p = d.brkt
+            endif
         endif
-        let irange[1] = pos
+        let irange[1] = p
     else
         " Put before
         if ctx.tgt_is_terminal
@@ -3160,35 +3178,36 @@ function! s:put__reindent(tail, ctx, reg, sep, ps)
             let irange[0] = ctx.tgt
         else
             " Head not changing; need NL between elements to establish 'clean point'.
-            " Note: The call to s:last_colinear_sibling() could probably be used to
-            " short-circuit a lot of the logic below. It's done this way only to use
-            " information we already have whenever possible.
             let irange[0] = getpos("'[")
             if sep.near_sep != NL
                 " At least target requires reindent, maybe more...
-                let pos = ctx.tgt
-                call s:setcursor(pos)
+                let p = ctx.tgt
+                call s:setcursor(p)
                 " TODO: Consider storing ranges rather than positions to obviate need for
                 " this here.
-                let pos = s:move_to_current_element_terminal(1)
-                " We're at away end of target.
+                " Move to away side of target.
+                " TODO: The call to s:last_colinear_sibling() could be used to
+                " obviate the need for much of the logic in the if block below. It's done
+                " this way only to use information we already have whenever possible.
+                let p = s:move_to_current_element_terminal(1)
                 if !ctx.away[1]
                     " No away element; use bracket if it exists.
                     if ctx.away_bracket[1]
                         let irange[1] = ctx.away_bracket
                     else
                         " Nothing on away side, not even bracket, so just use tgt.
-                        let irange[1] = pos
+                        let irange[1] = p
                     endif
                 elseif ctx.away[1] > ctx.tgt[1]
                     " Safe to stop with away side of target since away is not colinear
-                    let irange[1] = pos
+                    let irange[1] = p
                 else
                     " Can't stop with near side of away because it's colinear with target.
                     " Look for a line break between siblings (or end of list).
                     call s:setcursor(ctx.away)
                     call s:move_to_current_element_terminal(1)
-                    let irange[1] = s:last_colinear_sibling(1)
+                    let [p, d] = s:last_colinear_sibling(1)
+                    let irange[1] = d.brkt[1] ? d.brkt : p
                 endif
             else
                 " No need to go past away edge of target
