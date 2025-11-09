@@ -288,9 +288,12 @@ let s:sexp_mappings = {
     \ 'sexp_capture_next_element':         {'nx': '<M-S-l>'},
     \ 'sexp_put_before':                   {'n': 'P'},
     \ 'sexp_put_after':                    {'n': 'p'},
-    \ 'sexp_replace':                      {'n': '<LocalLeader>p', 'x': 'p'},
+    \ 'sexp_replace':                      {'n': 'gp', 'x': 'p'},
+    \ 'sexp_replace_P':                    {'n': 'gP', 'x': 'P'},
     \ 'sexp_put_at_head':                  {'n': '<M-p>'},
     \ 'sexp_put_at_tail':                  {'n': '<M-P>'},
+    \ 'sexp_replace_at_head':              {'n': '<LocalLeader>p'},
+    \ 'sexp_replace_at_tail':              {'n': '<LocalLeader>P'},
     \ }
 
 if !empty(g:sexp_filetypes)
@@ -431,8 +434,7 @@ endfunction
 "   plug: command name specified as the ... in <plug>(...)
 "   msg:  warning msg
 function! s:mapwarn(plug, msg)
-    call s:warn(printf("Invalid entry for g:sexp_mappings['%s']: %s",
-                \ a:plug, a:msg))
+    call s:warn(printf("g:sexp_mappings['%s']: %s", a:plug, a:msg))
 endfunction
 
 " Convert a single value in the sexp_mappings dict to a denormalized form conducive to use
@@ -755,16 +757,19 @@ Defplug  xnoremap sexp_capture_next_element sexp#docount_stateful(v:prevcount, '
 " Put register before/after
 DefplugN nnoremap sexp_put_before  sexp#put(v:count, 0)
 DefplugN nnoremap sexp_put_after   sexp#put(v:count, 1)
-" Replace with register
-DefplugN nnoremap sexp_replace sexp#replace('n', v:count)
-DefplugN xnoremap sexp_replace sexp#replace('v', v:prevcount)
-" Put register at child index
+" Replace element/selection with register
+DefplugN nnoremap sexp_replace   sexp#replace('n', v:count, 'p')
+DefplugN nnoremap sexp_replace_P sexp#replace('n', v:count, 'P')
+DefplugN xnoremap sexp_replace   sexp#replace('v', v:prevcount, 'p')
+DefplugN xnoremap sexp_replace_P sexp#replace('v', v:prevcount, 'P')
+" Put register into list
 DefplugN nnoremap sexp_put_at_head sexp#put_child(v:count, 0)
 DefplugN nnoremap sexp_put_at_tail sexp#put_child(v:count, 1)
 " Replace child with register
-DefplugN nnoremap sexp_replace_at_head sexp#replace_child(v:count, 0)
-DefplugN nnoremap sexp_replace_at_tail sexp#replace_child(v:count, 1)
-" TODO: Consider creating an operator version of replace with register.
+DefplugN nnoremap sexp_replace_at_head   sexp#replace_child(v:count, 0, 'p')
+DefplugN nnoremap sexp_replace_at_head_P sexp#replace_child(v:count, 0, 'P')
+DefplugN nnoremap sexp_replace_at_tail   sexp#replace_child(v:count, 1, 'p')
+DefplugN nnoremap sexp_replace_at_tail_P sexp#replace_child(v:count, 1, 'P')
 
 """ Insert mode mappings {{{1
 

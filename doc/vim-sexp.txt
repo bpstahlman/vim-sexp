@@ -892,39 +892,49 @@ LIST MANIPULATION (normal, visual) ~
 <
 REGISTER PUT (PASTE) COMMANDS (normal, visual) ~
 
-TODO  ~
-Finish adding smart register paste section...
+All of the register put (paste) commands accept an optional register name via
+the standard Vim mechanism (e.g., `"ap` to put from the `"a` register), as
+well as an optional [count] whose usage is documented with the corresponding
+command. Commands that replace existing elements have distinct `p` and `P`
+variants: by analogy with builtin `p` and `P`, the former updates the unnamed
+register (`@"`); the latter does not. Finally, all put (paste) commands
+automatically reindent the affected region.
 
 Put register before/after (normal)  ~
 
-P                                                    *<Plug>(sexp_put_before)*
-p                                                     *<Plug>(sexp_put_after)*
+["x]P                                                *<Plug>(sexp_put_before)*
+["x]p                                                 *<Plug>(sexp_put_after)*
+        Put [count] copies of register x before (`P`) or after (`p`) the
+        current element.
 
 Replace element with register (normal)  ~
 
-Design Decision Needed: Should we suport support distinct p and P versions by
-analogy with builtin visual-mode P (which doesn't update the unnamed
-register).
-
-Design Decision Needed: Ok to commandeer ]p and/or [p for defaults?
-
-gP                                                      *<Plug>(sexp_replace)*
-gp                                                      *<Plug>(sexp_replace)*
+["x]gP                                                *<Plug>(sexp_replace_P)*
+["x]gp                                                  *<Plug>(sexp_replace)*
+        Replace the current element with [count] copies of register x. With
+        `gP`, the unnamed register (`@"`) is not updated.
 
 Replace selection with register (visual)  ~
 
-Design Decision: Should be safe to commandeer builtins for this.
-Rationale: Plugin behavior is closer to builtin than for the other put
-commands.
+["x]P                                                 *<Plug>(sexp_replace_P)*
+["x]p                                                   *<Plug>(sexp_replace)*
+        Replace the current visual selection with [count] copies of register
+        x. With `P`, the unnamed register (`@"`) is not updated.
 
-P                                                       *<Plug>(sexp_replace)*
-p                                                       *<Plug>(sexp_replace)*
+Put register into list (normal)  ~
 
-Replace selection with register (visual)  ~
+["x]<M-p>                                           *<Plug>(sexp_put_at_head)*
+["x]<M-P>                                           *<Plug>(sexp_put_at_tail)*
+        Put register x into the current list, making it the [count]th child
+        from head (`<M-p>`) or tail (`<M-P>`).
 
-<LocalLeader>P                                      *<Plug>(sexp_put_at_head)*
-<LocalLeader>p                                      *<Plug>(sexp_put_at_tail)*
+Replace child with register (normal)  ~
 
+["x]<LocalLeader>p                               *<Plug>(sexp_replace_at_head)*
+["x]<LocalLeader>P                               *<Plug>(sexp_replace_at_tail)*
+        Replace the [count]th child from head (`<LocalLeader>p`) or tail
+        (`<LocalLeader>P>`) with register x. With `<LocalLeader>P`, the
+        unnamed register (`@"`) is not updated.
 
 INSERT MODE MAPPINGS (insert, optional) ~
 
@@ -1410,7 +1420,7 @@ Note: To unbind a command, simply set its <lhs> to an empty string.
             \ 'sexp_move_to_next_top_element':  ']]',
             \ 'sexp_select_prev_element':       '[e',
             \ 'sexp_select_next_element':       ']e',
-            \ 'sexp_indent':                    '==',
+            \ 'sexp_indent':                    {'n': '==', 'x': '='},
             \ 'sexp_indent_top':                '=-',
             \ 'sexp_indent_and_clean':          '<M-=>',
             \ 'sexp_indent_and_clean_top':      '<M-->',
@@ -1448,6 +1458,14 @@ Note: To unbind a command, simply set its <lhs> to an empty string.
             \ 'sexp_emit_tail_element':         '<M-S-k>',
             \ 'sexp_capture_prev_element':      '<M-S-h>',
             \ 'sexp_capture_next_element':      '<M-S-l>',
+            \ 'sexp_put_before':                {'n': 'P'},
+            \ 'sexp_put_after':                 {'n': 'p'},
+            \ 'sexp_replace':                   {'n': 'gp', 'x': 'p'},
+            \ 'sexp_replace_P':                 {'n': 'gP', 'x': 'P'},
+            \ 'sexp_put_at_head':               {'n': '<M-p>'},
+            \ 'sexp_put_at_tail':               {'n': '<M-P>'},
+            \ 'sexp_replace_at_head':           {'n': '<LocalLeader>p'},
+            \ 'sexp_replace_at_tail':           {'n': '<LocalLeader>P'},
             \ }
 <
 Override Example: ~
@@ -1502,6 +1520,7 @@ empty string:
 Next, write a function that will create your desired |:map-local| bindings.
 The following example includes every default mapping in vim-sexp. You can
 copy, paste, and edit this example to taste.
+FIXME: Add new commands to the list!
 >
         function! s:vim_sexp_mappings()
             xmap <silent><buffer> af              <Plug>(sexp_outer_list)

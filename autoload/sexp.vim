@@ -3329,13 +3329,13 @@ function! sexp#put(count, tail)
     call s:set_visual_marks([vs, ve])
 endfunction
 
+function! sexp#replace(mode, count, pvar)
+endfunction
+
 function! sexp#put_child(count, tail)
 endfunction
 
-function! sexp#replace(mode, count, tail)
-endfunction
-
-function! sexp#replace_child(count, dir)
+function! sexp#replace_child(count, dir, pvar)
 endfunction
 
 " Swap current visual selection with adjacent element. If pairwise is true,
