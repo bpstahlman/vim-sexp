@@ -218,79 +218,79 @@ if !exists('g:sexp_mappings')
 endif
 
 let s:sexp_mappings = {
-    \ 'sexp_outer_list':                   'af',
-    \ 'sexp_inner_list':                   'if',
-    \ 'sexp_outer_top_list':               'aF',
-    \ 'sexp_inner_top_list':               'iF',
-    \ 'sexp_outer_string':                 'as',
-    \ 'sexp_inner_string':                 'is',
-    \ 'sexp_outer_element':                'ae',
-    \ 'sexp_inner_element':                'ie',
-    \ 'sexp_outer_child_tail':             'aC',
-    \ 'sexp_outer_child_head':             'ac',
-    \ 'sexp_inner_child_tail':             'iC',
-    \ 'sexp_inner_child_head':             'ic',
-    \ 'sexp_move_to_prev_bracket':         '(',
-    \ 'sexp_move_to_next_bracket':         ')',
-    \ 'sexp_move_to_prev_element_head':    '<M-b>',
-    \ 'sexp_move_to_next_element_head':    '<M-w>',
-    \ 'sexp_move_to_prev_element_tail':    'g<M-e>',
-    \ 'sexp_move_to_next_element_tail':    '<M-e>',
-    \ 'sexp_flow_to_prev_close':           '<M-[>',
-    \ 'sexp_flow_to_next_open':            '<M-]>',
-    \ 'sexp_flow_to_prev_open':            '<M-{>',
-    \ 'sexp_flow_to_next_close':           '<M-}>',
-    \ 'sexp_flow_to_prev_leaf_head':       '<M-S-b>',
-    \ 'sexp_flow_to_next_leaf_head':       '<M-S-w>',
-    \ 'sexp_flow_to_prev_leaf_tail':       '<M-S-g>',
-    \ 'sexp_flow_to_next_leaf_tail':       '<M-S-e>',
-    \ 'sexp_move_to_prev_top_element':     '[[',
-    \ 'sexp_move_to_next_top_element':     ']]',
-    \ 'sexp_select_prev_element':          '[e',
-    \ 'sexp_select_next_element':          ']e',
-    \ 'sexp_indent':                       '==',
-    \ 'sexp_indent_top':                   '=-',
-    \ 'sexp_indent_and_clean':             '<M-=>',
-    \ 'sexp_indent_and_clean_top':         '<M-->',
-    \ 'sexp_align_comments':               '<LocalLeader>a',
-    \ 'sexp_align_comments_top':           '<LocalLeader>A',
-    \ 'sexp_round_head_wrap_list':         '<LocalLeader>i',
-    \ 'sexp_round_tail_wrap_list':         '<LocalLeader>I',
-    \ 'sexp_square_head_wrap_list':        '<LocalLeader>[',
-    \ 'sexp_square_tail_wrap_list':        '<LocalLeader>]',
-    \ 'sexp_curly_head_wrap_list':         '<LocalLeader>{',
-    \ 'sexp_curly_tail_wrap_list':         '<LocalLeader>}',
-    \ 'sexp_round_head_wrap_element':      '<LocalLeader>w',
-    \ 'sexp_round_tail_wrap_element':      '<LocalLeader>W',
-    \ 'sexp_square_head_wrap_element':     '<LocalLeader>e[',
-    \ 'sexp_square_tail_wrap_element':     '<LocalLeader>e]',
-    \ 'sexp_curly_head_wrap_element':      '<LocalLeader>e{',
-    \ 'sexp_curly_tail_wrap_element':      '<LocalLeader>e}',
-    \ 'sexp_insert_at_list_head':          '<LocalLeader>h',
-    \ 'sexp_insert_at_list_tail':          '<LocalLeader>l',
-    \ 'sexp_splice_list':                  '<LocalLeader>@',
-    \ 'sexp_convolute':                    '<LocalLeader>?',
-    \ 'sexp_clone_list':                   '<LocalLeader>c',
-    \ 'sexp_clone_list_sl':                '',
-    \ 'sexp_clone_list_ml':                '',
-    \ 'sexp_clone_element':                '<LocalLeader>C',
-    \ 'sexp_clone_element_sl':             '',
-    \ 'sexp_clone_element_ml':             '',
-    \ 'sexp_raise_list':                   '<LocalLeader>o',
-    \ 'sexp_raise_element':                '<LocalLeader>O',
-    \ 'sexp_swap_list_backward':           '<M-k>',
-    \ 'sexp_swap_list_forward':            '<M-j>',
-    \ 'sexp_swap_element_backward':        '<M-h>',
-    \ 'sexp_swap_element_forward':         '<M-l>',
-    \ 'sexp_emit_head_element':            '<M-S-j>',
-    \ 'sexp_emit_tail_element':            '<M-S-k>',
-    \ 'sexp_capture_prev_element':         '<M-S-h>',
-    \ 'sexp_capture_next_element':         '<M-S-l>',
-    \ 'sexp_put_before':                   '<LocalLeader>P',
-    \ 'sexp_put_after':                    '<LocalLeader>p',
-    \ 'sexp_replace':                      '<LocalLeader><LocalLeader>p',
-    \ 'sexp_put_at_head':                  '<M-p>',
-    \ 'sexp_put_at_tail':                  '<M-P>',
+    \ 'sexp_outer_list':                   {'xo': 'af'},
+    \ 'sexp_inner_list':                   {'xo': 'if'},
+    \ 'sexp_outer_top_list':               {'xo': 'aF'},
+    \ 'sexp_inner_top_list':               {'xo': 'iF'},
+    \ 'sexp_outer_string':                 {'xo': 'as'},
+    \ 'sexp_inner_string':                 {'xo': 'is'},
+    \ 'sexp_outer_element':                {'xo': 'ae'},
+    \ 'sexp_inner_element':                {'xo': 'ie'},
+    \ 'sexp_outer_child_tail':             {'xo': 'aC'},
+    \ 'sexp_outer_child_head':             {'xo': 'ac'},
+    \ 'sexp_inner_child_tail':             {'xo': 'iC'},
+    \ 'sexp_inner_child_head':             {'xo': 'ic'},
+    \ 'sexp_move_to_prev_bracket':         {'nxo': '('},
+    \ 'sexp_move_to_next_bracket':         {'nxo': ')'},
+    \ 'sexp_move_to_prev_element_head':    {'nxo': '<M-b>'},
+    \ 'sexp_move_to_next_element_head':    {'nxo': '<M-w>'},
+    \ 'sexp_move_to_prev_element_tail':    {'nxo': 'g<M-e>'},
+    \ 'sexp_move_to_next_element_tail':    {'nxo': '<M-e>'},
+    \ 'sexp_flow_to_prev_close':           {'nx': '<M-[>'},
+    \ 'sexp_flow_to_next_open':            {'nx': '<M-]>'},
+    \ 'sexp_flow_to_prev_open':            {'nx': '<M-{>'},
+    \ 'sexp_flow_to_next_close':           {'nx': '<M-}>'},
+    \ 'sexp_flow_to_prev_leaf_head':       {'nx': '<M-S-b>'},
+    \ 'sexp_flow_to_next_leaf_head':       {'nx': '<M-S-w>'},
+    \ 'sexp_flow_to_prev_leaf_tail':       {'nx': '<M-S-g>'},
+    \ 'sexp_flow_to_next_leaf_tail':       {'nx': '<M-S-e>'},
+    \ 'sexp_move_to_prev_top_element':     {'nxo': '[['},
+    \ 'sexp_move_to_next_top_element':     {'nxo': ']]'},
+    \ 'sexp_select_prev_element':          {'nxo': '[e'},
+    \ 'sexp_select_next_element':          {'nxo': ']e'},
+    \ 'sexp_indent':                       {'n': '==', 'x': '='},
+    \ 'sexp_indent_top':                   {'n': '=-'},
+    \ 'sexp_indent_and_clean':             {'n': '<M-=>'},
+    \ 'sexp_indent_and_clean_top':         {'n': '<M-->'},
+    \ 'sexp_align_comments':               {'n': '<LocalLeader>a'},
+    \ 'sexp_align_comments_top':           {'n': '<LocalLeader>A'},
+    \ 'sexp_round_head_wrap_list':         {'nx': '<LocalLeader>i'},
+    \ 'sexp_round_tail_wrap_list':         {'nx': '<LocalLeader>I'},
+    \ 'sexp_square_head_wrap_list':        {'nx': '<LocalLeader>['},
+    \ 'sexp_square_tail_wrap_list':        {'nx': '<LocalLeader>]'},
+    \ 'sexp_curly_head_wrap_list':         {'nx': '<LocalLeader>{'},
+    \ 'sexp_curly_tail_wrap_list':         {'nx': '<LocalLeader>}'},
+    \ 'sexp_round_head_wrap_element':      {'nx': '<LocalLeader>w'},
+    \ 'sexp_round_tail_wrap_element':      {'nx': '<LocalLeader>W'},
+    \ 'sexp_square_head_wrap_element':     {'nx': '<LocalLeader>e['},
+    \ 'sexp_square_tail_wrap_element':     {'nx': '<LocalLeader>e]'},
+    \ 'sexp_curly_head_wrap_element':      {'nx': '<LocalLeader>e{'},
+    \ 'sexp_curly_tail_wrap_element':      {'nx': '<LocalLeader>e}'},
+    \ 'sexp_insert_at_list_head':          {'n': '<LocalLeader>h'},
+    \ 'sexp_insert_at_list_tail':          {'n': '<LocalLeader>l'},
+    \ 'sexp_splice_list':                  {'n': '<LocalLeader>@'},
+    \ 'sexp_convolute':                    {'n': '<LocalLeader>?'},
+    \ 'sexp_clone_list':                   {'nx': '<LocalLeader>c'},
+    \ 'sexp_clone_list_sl':                {'nx': ''},
+    \ 'sexp_clone_list_ml':                {'nx': ''},
+    \ 'sexp_clone_element':                {'nx': '<LocalLeader>C'},
+    \ 'sexp_clone_element_sl':             {'nx': ''},
+    \ 'sexp_clone_element_ml':             {'nx': ''},
+    \ 'sexp_raise_list':                   {'nx': '<LocalLeader>o'},
+    \ 'sexp_raise_element':                {'nx': '<LocalLeader>O'},
+    \ 'sexp_swap_list_backward':           {'nx': '<M-k>'},
+    \ 'sexp_swap_list_forward':            {'nx': '<M-j>'},
+    \ 'sexp_swap_element_backward':        {'nx': '<M-h>'},
+    \ 'sexp_swap_element_forward':         {'nx': '<M-l>'},
+    \ 'sexp_emit_head_element':            {'nx': '<M-S-j>'},
+    \ 'sexp_emit_tail_element':            {'nx': '<M-S-k>'},
+    \ 'sexp_capture_prev_element':         {'nx': '<M-S-h>'},
+    \ 'sexp_capture_next_element':         {'nx': '<M-S-l>'},
+    \ 'sexp_put_before':                   {'n': 'P'},
+    \ 'sexp_put_after':                    {'n': 'p'},
+    \ 'sexp_replace':                      {'n': '<LocalLeader>p', 'x': 'p'},
+    \ 'sexp_put_at_head':                  {'n': '<M-p>'},
+    \ 'sexp_put_at_tail':                  {'n': '<M-P>'},
     \ }
 
 if !empty(g:sexp_filetypes)
@@ -406,89 +406,131 @@ function! s:repeat_set(buf, count)
     augroup END
 endfunction
 
+" Display warning with requested highlighting.
+function! s:warn(msg, ...)
+    let hl = a:0 ? a:1 : 'WarningMsg'
+    try
+        exe 'echohl' hl
+        echomsg a:msg
+    finally
+        echohl None
+    endtry
+endfunction
+
+" Return input lhs in canonical form to facilitate comparison.
+function! s:canonicalize_lhs(lhs)
+    let ret = a:lhs
+    " TODO: Use information in help section key-notation to create a function for
+    " canonicalizing lhs.
+    " ...
+    return ret
+endfunction
+
+" Simplify warning displays for mappings.
+" -- Args --
+"   plug: command name specified as the ... in <plug>(...)
+"   msg:  warning msg
+function! s:mapwarn(plug, msg)
+    call s:warn(printf("Invalid entry for g:sexp_mappings['%s']: %s",
+                \ a:plug, a:msg))
+endfunction
+
+" Convert a single value in the sexp_mappings dict to a denormalized form conducive to use
+" in map creation.
+" Args:
+"   plug:         command name (i.e., the ... in <Plug>(...))
+"   entry:        lhs specification in one of the following forms:
+"   entry:        '<lhs>'
+"                 | {'<modes1>': '<lhs1>', ..., '<modesN>': '<lhsN>'}
+"   valid_modes:  string of chars in [nxo] constraining the modes for this command
+"                 default: 'nox'
+"                 override: subset of modes defined by default
+function! s:parse_map_entry(plug, entry, valid_modes)
+    let maps = {}
+    let valid_modes = empty(a:valid_modes) ? 'novx' : a:valid_modes
+    for [modes, lhs] in items(a:entry)
+        " Convert v to x: e.g., 'nvo' => 'nxo'
+        let modes = substitute(modes, 'v', 'x', 'g')
+        " Collapse multiple occurrences of same mode: e.g., {'x': ..., 'xo': ...}.
+        let modes = substitute(
+            \ join(sort(split(modes, '\zs')), ''), '\v(.)\1+', '\1', 'g')
+        " Loop over sorted/uniquified mode chars.
+        for mode in split(modes, '\zs')
+            " TODO: Distinguish between defaults and user here?
+            if mode !~ '[' . valid_modes . ']'
+                call s:mapwarn(a:plug, printf("Unrecognized mode %s", mode))
+                continue
+            endif
+            " We have a valid mode, but has it already been specified for this plug?
+            if has_key(maps, mode)
+                " TODO: Consider just ignoring malformed entry altogether since this is
+                " effectively UB without ordered keys.
+                call s:mapwarn(a:plug, printf(
+                    \ "Conflicting lhs specifications for mode %s: old=%s new=%s",
+                    \ mode, maps[mode], lhs))
+                continue
+            endif
+            " We have a valid mode that hasn't appeared in another key.
+            let maps[mode] = lhs
+        endfor
+    endfor
+    return maps
+endfunction
+
 " Bind <Plug> mappings in current buffer to values in g:sexp_mappings or
 " s:sexp_mappings
 function! s:sexp_create_mappings()
-
-    for plug in ['sexp_replace']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_outer_list',           'sexp_inner_list',
-               \ 'sexp_outer_top_list',       'sexp_inner_top_list',
-               \ 'sexp_outer_string',         'sexp_inner_string',
-               \ 'sexp_outer_element',        'sexp_inner_element',
-               \ 'sexp_outer_child_tail',     'sexp_outer_child_head',
-               \ 'sexp_inner_child_tail',     'sexp_inner_child_head']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_move_to_prev_bracket',      'sexp_move_to_next_bracket',
-               \ 'sexp_move_to_prev_element_head', 'sexp_move_to_next_element_head',
-               \ 'sexp_move_to_prev_element_tail', 'sexp_move_to_next_element_tail',
-               \ 'sexp_move_to_prev_top_element',  'sexp_move_to_next_top_element',
-               \ 'sexp_select_prev_element',       'sexp_select_next_element']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            execute 'omap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_insert_at_list_head', 'sexp_insert_at_list_tail',
-               \ 'sexp_convolute',           'sexp_splice_list',
-               \ 'sexp_indent_top',          'sexp_indent_and_clean_top',
-               \ 'sexp_align_comments',      'sexp_align_comments_top',
-               \ 'sexp_put_before',          'sexp_put_after',
-               \ 'sexp_put_at_head',         'sexp_put_at_tail']
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-        endif
-    endfor
-
-    for plug in ['sexp_round_head_wrap_list',     'sexp_round_tail_wrap_list',
-               \ 'sexp_square_head_wrap_list',    'sexp_square_tail_wrap_list',
-               \ 'sexp_curly_head_wrap_list',     'sexp_curly_tail_wrap_list',
-               \ 'sexp_round_head_wrap_element',  'sexp_round_tail_wrap_element',
-               \ 'sexp_square_head_wrap_element', 'sexp_square_tail_wrap_element',
-               \ 'sexp_curly_head_wrap_element',  'sexp_curly_tail_wrap_element',
-               \ 'sexp_raise_list',               'sexp_raise_element',
-               \ 'sexp_swap_list_backward',       'sexp_swap_list_forward',
-               \ 'sexp_swap_element_backward',    'sexp_swap_element_forward',
-               \ 'sexp_emit_head_element',        'sexp_emit_tail_element',
-               \ 'sexp_capture_prev_element',     'sexp_capture_next_element',
-               \ 'sexp_flow_to_prev_close',       'sexp_flow_to_next_open',
-               \ 'sexp_flow_to_prev_open',        'sexp_flow_to_next_close',
-               \ 'sexp_flow_to_prev_leaf_head',   'sexp_flow_to_next_leaf_head',
-               \ 'sexp_flow_to_prev_leaf_tail',   'sexp_flow_to_next_leaf_tail',
-               \ 'sexp_clone_list',               'sexp_clone_element',
-               \ 'sexp_clone_list_sl',            'sexp_clone_element_sl',
-               \ 'sexp_clone_list_ml',            'sexp_clone_element_ml',
-               \ 'sexp_indent',                   'sexp_indent_and_clean',
-               \ 'sexp_align_comments',           'sexp_replace',
-               \ ]
-        let lhs = get(g:sexp_mappings, plug, s:sexp_mappings[plug])
-        if !empty(lhs)
-            execute 'nmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
-            if plug =~ '^sexp_indent' && lhs == '=='
-                " Special Case: Just as == overrides Vim's default normal mode
-                " command, = must override Vim's default visual mode command.
-                " Rationale: Prevents ambiguity that leads to map delay.
-                let lhs = '='
+    " Note: {s,g}entry stand for {s,g}:sexp_mappings entry, respectively.
+    for [plug, sentry] in items(s:sexp_mappings)
+        " Get corresponding user override if it exists.
+        let gentry = get(g:sexp_mappings, plug, {})
+        " Parse entry into a flat dict of modechar => lhs: e.g.,
+        " {'nx': '\s', 'o': '\t'} => {'n': '\s', 'x': '\s', 'o': \t'}
+        let sm = s:parse_map_entry(plug, sentry, '')
+        " Default map determines the valid keys.
+        let valid_modes_arr = sort(keys(sm))
+        let valid_modes_str = join(valid_modes_arr, '')
+        " Now parse any user-defined override
+        let gm = {}
+        if type(gentry) == type({})
+            " Empty dict indicates no user-override.
+            if !empty(gentry)
+                let gm = s:parse_map_entry(plug, gentry, valid_modes_str)
             endif
-            execute 'xmap <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+        elseif type(gentry) == type('')
+            " Create dict that uses specified lhs for all valid modes.
+            for mode in valid_modes_arr
+                let gm[mode] = gentry
+            endfor
+        else
+            " Note: Leave gm empty to ensure default is used.
+            call s:mapwarn(sprintf(
+                \ "Invalid format: must be string or dict."
+                \ . " (:help g:sexp_mappings)", string(gentry)))
         endif
+
+        " Loop over all modes which are valid for this command.
+        for mode in valid_modes_arr
+            " Use mode-specific override if it exists, else default, which must exist.
+            let lhs = get(gm, mode, get(sm, mode))
+            " Check for map conflict.
+            " Assumption: maparg() can handle distinct but equivalent forms of lhs (e.g.,
+            " <LocalLeader> vs \, <C-...> vs <c-...>, etc...)
+            " TODO: Could alternatively check only mappings created by this plugin, but
+            " that would entail canonicalizing lhs and storing in dict of some sort.
+            let rhs = maparg(lhs, mode)
+            if !empty(rhs)
+                " Warn before overwriting existing map.
+                " TODO: Consider adding option for this.
+                call s:mapwarn(plug, printf("lhs %s already mapped to %s in mode %s",
+                            \ lhs, rhs, mode))
+            endif
+            " Create the mapping.
+            execute mode . 'map <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
+        endfor
     endfor
 
+    " Insert-mode mappings
     if g:sexp_enable_insert_mode_mappings
         imap <silent><buffer> (    <Plug>(sexp_insert_opening_round)
         imap <silent><buffer> [    <Plug>(sexp_insert_opening_square)

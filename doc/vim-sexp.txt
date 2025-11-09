@@ -897,8 +897,8 @@ Finish adding smart register paste section...
 
 Put register before/after (normal)  ~
 
-<LocalLeader>P                          *<Plug>(sexp_put_before)*
-<LocalLeader>p                          *<Plug>(sexp_put_after)*
+P                                                    *<Plug>(sexp_put_before)*
+p                                                     *<Plug>(sexp_put_after)*
 
 Replace element with register (normal)  ~
 
@@ -908,8 +908,8 @@ register).
 
 Design Decision Needed: Ok to commandeer ]p and/or [p for defaults?
 
-<M-P>                                   *<Plug>(sexp_replace)*
-<M-p>                                   *<Plug>(sexp_replace)*
+gP                                                      *<Plug>(sexp_replace)*
+gp                                                      *<Plug>(sexp_replace)*
 
 Replace selection with register (visual)  ~
 
@@ -917,13 +917,13 @@ Design Decision: Should be safe to commandeer builtins for this.
 Rationale: Plugin behavior is closer to builtin than for the other put
 commands.
 
-P                                       *<Plug>(sexp_replace)*
-p                                       *<Plug>(sexp_replace)*
+P                                                       *<Plug>(sexp_replace)*
+p                                                       *<Plug>(sexp_replace)*
 
 Replace selection with register (visual)  ~
 
-P                                                   *<Plug>(sexp_put_at_head)*
-p                                                   *<Plug>(sexp_put_at_tail)*
+<LocalLeader>P                                      *<Plug>(sexp_put_at_head)*
+<LocalLeader>p                                      *<Plug>(sexp_put_at_tail)*
 
 
 INSERT MODE MAPPINGS (insert, optional) ~
