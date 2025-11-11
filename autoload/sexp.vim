@@ -3118,7 +3118,7 @@ function! s:yankdel_range__preadjust_positions(op, ps)
         " Assumption: We have a non-empty range.
         " Note: Use position *past* end to account for bytes in final char of range.
         let ret.delta -=
-            \ (s:pos2byte(s:offset_char(a:op.end, 1)) - s:pos2byte(a:op.start))
+            \ (s:pos2byte(s:offset_char(a:op.end, 1, 1)) - s:pos2byte(a:op.start))
     endif
     " Calculate and store offsets of positions of interest wrt start of range.
     for p in a:ps
