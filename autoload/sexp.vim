@@ -115,38 +115,6 @@ function! s:vm_cc(chars)
     return '[' . substitute(a:chars, '[^[0-9a-zA-Z_]]', '\\&', 'g') . ']'
 endfunction
 
-""" USER INTERFACE {{{1
-
-" Display warning with requested highlighting.
-function! s:warnmsg_impl(s, hl)
-    try
-        exe 'echohl' a:hl
-        echomsg a:s
-    finally
-        echohl None
-    endtry
-endfunction
-
-" Called by client to display warning to user via echomsg with appropriate highlighting
-" (WarningMsg unless optional error flag is provided, in which case, use ErrorMsg).
-" If we're inside {pre,post}_op() calls, there will be an active message queue, and we
-" simply add the msg to it; otherwise (e.g., called from insert-mode command, which
-" currently doesn't use the {pre,post}_op() mechanism), we echo the msg immediately.
-" Rationale: Deferring the echomsg call is preferable because it greatly increases the
-" probability it will be seen by the user before being overwritten (e.g., by an already
-" pending redraw).
-" TODO: Support printf-style formatting.
-function! s:warnmsg(s, ...)
-    let hl = a:0 && a:1 ? 'ErrorMsg' : 'WarningMsg'
-    if exists('s:msg_q')
-        " Add to queue.
-        call add(s:msg_q, {'hl': hl, 'msg': a:s})
-    else
-        " Don't defer: display now.
-        call s:warnmsg_impl(a:s, hl)
-    endif
-endfunction
-
 """ PRE/POST COMMAND CALLBACKS/CACHE {{{1
 
 function! s:make_cache(mode, name)
@@ -158,28 +126,11 @@ function! s:make_cache(mode, name)
     \ }
 endfunction
 
-" Display to user any messages queued during command execution.
-function! s:echo_queued_msgs()
-    if empty(get(s:, 'msg_q', []))
-        return
-    endif
-    " Perform any pending redraws now, to ensure they won't overwrite our message(s).
-    redraw
-    " Send all queued msgs.
-    for m in s:msg_q
-        " Get msg and highlight, noting that queue entry can be either a string (defaults
-        " to warning) or a dict.
-        let [msg, hl] = type(m) == type("") ? [m, 'WarningMsg'] : [m.msg, m.hl]
-        call s:warnmsg_impl(msg, hl)
-    endfor
-endfunction
-
 function! sexp#pre_op(mode, name)
     let s:sexp_ve_save = &ve
     set ve=onemore
-    " Create the msg queue used by s:warnmsg().
-    " TODO: Consider whether there are any concerns with making this script-local.
-    let s:msg_q = []
+    " Create the msg queue used by sexp#warn#msg().
+    call sexp#warn#create_msg_q()
     " TODO: Consider removing or simplifying the cache, which is currently needed only for
     " its sel_dir flag.
     let b:sexp_cmd_cache = s:make_cache(a:mode == 'x' ? 'v' : a:mode, a:name)
@@ -190,10 +141,10 @@ function! sexp#post_op(mode, name)
     " Assumption: This is called from finally block.
     let &ve = s:sexp_ve_save
     " This is done last to ensure no redraws can be queue after msgs are echoed.
-    call s:echo_queued_msgs()
+    call sexp#warn#echo_queued_msgs()
     " Caveat: Make sure the queue is used only when we're inside {pre,post}_op() calls
     " (i.e., not within insert-mode commands).
-    unlet! s:msg_q
+    call sexp#warn#destroy_msg_q()
 endfunction
 
 " Return 1 iff we're in one of the visual modes.
@@ -665,21 +616,6 @@ endfu
 " to user.
 let s:dispatch_warned = {'ts': {}, 'syn': {}}
 
-" Wrapper for s:warnmsg(), which takes an arbitrary key representing the warning and
-" ensures the warning is displayed only once per buffer.
-" -- Optional Arg(s) --
-" a:1  1 if warning should be displayed with error highlighting
-fu! s:warnmsg_once(key, msg, ...)
-    let b:sexp_did_warn = get(b:, 'sexp_did_warn', {})
-    if get(b:sexp_did_warn, a:key, 0)
-        " Already warned! Do nothing.
-        return
-    endif
-    call s:warnmsg(a:msg, a:0 && !!a:1)
-    " Make sure we don't display this one again for this buffer.
-    let b:sexp_did_warn[a:key] = 1
-endfu
-
 " Invoke either the Treesitter-based Lua function or the legacy syntax-based Vimscript
 " function with the provided arguments, with fallback to the latter if the former returns
 " nil (indicating a missing tree or some other serious issue).
@@ -706,7 +642,7 @@ fu! s:invoke(fn, ...)
             return ret
         endif
         " Warn once only.
-        call s:warnmsg_once('missing_ts',
+        call sexp#warn#msg_once('missing_ts',
             \ "Warning: Falling back to legacy syntax. Have you installed Treesitter parser for " . &filetype . "?")
     endif
     " Arrival here means we won't or can't use Treesitter. If we don't have legacy syntax,
@@ -714,7 +650,7 @@ fu! s:invoke(fn, ...)
     if empty(get(b:, 'current_syntax', ''))
         " Note: Display with error highlighting, as this is more serious than missing
         " Treesitter parser, since we have nothing to fallback to.
-        call s:warnmsg_once('missing_syn', "Warning: No syntax available for filetype '" . &filetype . "'", 1)
+        call sexp#warn#msg_once('missing_syn', "Warning: No syntax available for filetype '" . &filetype . "'", 1)
         " Fall through to legacy function *without* syntax, since we've no better option.
     endif
     " Use legacy approach.
@@ -2534,7 +2470,7 @@ function! s:set_marks_around_current_element(mode, inner, count, no_sel)
         if !vs[1]
             " TODO: Is this the best way to handle? Is this all it can mean? Consider
             " using exception for this, and getting rid of this if.
-            call s:warnmsg("Refusing to operate on selection containing unmatched parens!")
+            call sexp#warn#msg("Refusing to operate on selection containing unmatched parens!")
             return s:nullpos_pair
         endif
         " Move to start of range.
@@ -3786,7 +3722,7 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
         " Canonicalize start/end/range.
         let op = s:yankdel_range__preadjust_range(a:start, a:end, a:del_or_spl, inc)
         if op.err
-            call s:warnmsg("yankdel_range: Internal error detected: " . op.errmsg)
+            call sexp#warn#msg("yankdel_range: Internal error detected: " . op.errmsg)
             return
         elseif empty(op.cmd)
             " NO-OP
@@ -3795,7 +3731,7 @@ function! s:yankdel_range(start, end, del_or_spl, ...)
         " See header comment on failsafe mechanism.
         " Note: Failsafe doesn't apply to a directed put.
         if !failsafe_override && op.cmd =~# '[ds]' && s:range_has_non_ws(op.start, op.end, 1)
-            call s:warnmsg("yankdel_range: Internal error detected: refusing to modify non-whitespace!")
+            call sexp#warn#msg("yankdel_range: Internal error detected: refusing to modify non-whitespace!")
             return
         endif
         " Perform splice, directed put, delete or yank.
@@ -5370,7 +5306,7 @@ fu! sexp#convolute(count, ...)
         let p = s:move_to_nearest_bracket(0)
         if !p[1]
             " Warn and return without changing anything.
-            call s:warnmsg("Convolute impossible with count given: insufficient nesting")
+            call sexp#warn#msg("Convolute impossible with count given: insufficient nesting")
             call s:setcursor(cursor)
             return
         endif
@@ -5594,7 +5530,7 @@ function! s:get_clone_context(start, end, flags)
     endif
     if multi && force_sl_or_ml == 's'
         " Warn user we're overriding _sl command
-        call s:warnmsg("Overriding single-line clone command in multi-line context.")
+        call sexp#warn#msg("Overriding single-line clone command in multi-line context.")
     endif
     return {'multi': multi, 'eolc': multi ? eolc : {}}
 endfunction
@@ -5617,7 +5553,7 @@ function! sexp#clone(mode, count, list, after, force_sl_or_ml)
     let [start, end] = s:get_clone_target_range(a:mode, a:after, a:list)
     if !start[1]
         " Nothing to clone.
-        call s:warnmsg("Nothing to clone")
+        call sexp#warn#msg("Nothing to clone")
         return
     endif
     " Design Decision: If cursor starts in whitespace before target, move it
@@ -6185,7 +6121,7 @@ function! sexp#docount_stateful(count, func, ...)
     catch /sexp-/
         let ex = v:exception
     catch
-        call s:warnmsg(printf("Internal error at %s: %s", v:throwpoint, v:exception))
+        call sexp#warn#msg(printf("Internal error at %s: %s", v:throwpoint, v:exception))
     finally
         if exists('*' . final_fn)
             call call(final_fn, [ex, state] + a:000)

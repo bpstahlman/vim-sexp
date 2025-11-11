@@ -437,6 +437,36 @@ function! s:mapwarn(plug, msg)
     call s:warn(printf("g:sexp_mappings['%s']: %s", a:plug, a:msg))
 endfunction
 
+" Warn once-only (per buffer) for the specified map conflict.
+function! s:map_conflict_warn_once(lhs, rhs1, rhs2, mode)
+    " Note: Unambiguously order the components of the key to ensure we don't warn twice
+    " for the same conflict when s:sexp_create_mappings() is called twice.
+    " Explanation: In the initial call, the second map overwrites the first, but then in
+    " the second call, the first map will overwrite the second.
+    let s = call(function('sexp#warn#join_hashable'),
+                \ [a:mode, a:lhs] + sort([a:rhs1, a:rhs2]))
+    call sexp#warn#msg_once(s, printf(
+        \ "Mapping %s => %s conflicts with existing mapping to %s in mode %s",
+        \ a:lhs, a:rhs2, a:rhs1, a:mode))
+endfunction
+
+" TODO: UNTESTED and probably NOT NEEDED!
+function! s:set_nested_key(dict, ...)
+    if a:0 < 2
+        echoerr "set_nested_key: Internal error: requires at least 2 variadic args"
+    endif
+    let [i, dict] = [0, a:dict]
+    " Process all but final key in loop to ensure intermediate dicts exist.
+    while i < a:0 - 2
+        if !has_key(dict, key)
+            let dict[key] = {}
+        endif
+        let dict = dict[key]
+    endfor
+    " Assign value to leaf dict.
+    let dict[a:000[-2]] = a:000[-1]
+endfunction
+
 " Convert a single value in the sexp_mappings dict to a denormalized form conducive to use
 " in map creation.
 " Args:
@@ -515,17 +545,23 @@ function! s:sexp_create_mappings()
         for mode in valid_modes_arr
             " Use mode-specific override if it exists, else default, which must exist.
             let lhs = get(gm, mode, get(sm, mode))
-            " Check for map conflict.
+            " Check for a conflicting map defined for the current buffer.
             " Assumption: maparg() can handle distinct but equivalent forms of lhs (e.g.,
             " <LocalLeader> vs \, <C-...> vs <c-...>, etc...)
             " TODO: Could alternatively check only mappings created by this plugin, but
             " that would entail canonicalizing lhs and storing in dict of some sort.
-            let rhs = maparg(lhs, mode)
-            if !empty(rhs)
+            let m = maparg(lhs, mode, 0, 1)
+            " Assumption: maparg returns a buffer map before a global one, but in the
+            " absence of a buffer map, will return a global one; thus, we must check
+            " buffer flag.
+            " Caveat: The check against <plug>(...) ensures we don't warn about our own
+            " mapping if this function is called twice.
+            if !empty(m) && m.buffer && m.rhs !=? '<nop>'
+                \ && m.rhs !=? '<plug>(' . plug . ')'
                 " Warn before overwriting existing map.
                 " TODO: Consider adding option for this.
-                call s:mapwarn(plug, printf("lhs %s already mapped to %s in mode %s",
-                            \ lhs, rhs, mode))
+                call s:map_conflict_warn_once(
+                    \ lhs, m.rhs, '<Plug>(' . plug . ')', mode)
             endif
             " Create the mapping.
             execute mode . 'map <silent><buffer> ' . lhs . ' <Plug>(' . plug . ')'
