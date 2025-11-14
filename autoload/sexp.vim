@@ -1284,56 +1284,80 @@ function! s:count_elements(start, end)
     return n
 endfunction
 
-" Return pos offset by 1 char in requested direction
-" Note: If optional flag is set, newlines between lines count, and we will
-" never advance past a newline (even if we start on it).
-" FIXME: This function is too complex for what it does. (Recall that offset
-" used to be arbitrary, but now is limited to single char).
+" Return input pos offset by 1 char in requested direction
+" Note: If optional flag is set, newlines between lines count.
 function! s:offset_char(pos, dir, ...)
     let cursor = getpos('.')
     let inc_nl = a:0 && !!a:1
-    " Ensure normalized col position (1st byte in char).
-    keepjumps call cursor(a:pos[1], a:pos[2])
-    let [l0, c0] = [line('.'), col('.')]
-    let [l, c, cn] = [l0, c0, c0]
-    let lim = a:dir ? col([l0, '$']) : 1
-    " Loop until we've moved off reference char.
-    " Note: Termination handled explicitly in line wrap case.
-    while c == c0
-        " Advance a byte in desired direction.
-        let cn += a:dir ? 1 : -1
-        " Check for line wrap...
-        if a:dir && cn >= lim
-            " EOL
-            let [l, c] = inc_nl
-                \ ? [l, col([l, '$'])]
-                \ : l < line('$')
-                \   ? [l + 1, 1]
-                \   : [l, c0]
-            break
-        elseif !a:dir && cn < lim
-            " BOL
-            if l > 1
-                let [l, c] = [l - 1, col([l - 1, '$'])]
-                if !inc_nl && c > 1
-                    " Goto first byte of final char.
-                    keepjumps call cursor(l, c - 1)
-                    let [l, c] = [line('.'), col('.')]
+    let eol = col([a:pos[1], '$'])
+    try
+        if a:pos[2] >= eol
+            " Input position past EOL
+            " Handle input positions past EOL require special handling.
+            " Rationale: We can't begin a searchpos() from positions that don't correspond
+            " to a legal cursor position.
+            if a:dir
+                " Regardless of inc_nl, use beginning of next line (since input pos *is*
+                " the NL).
+                " Special Case: If at EOF, use virtual position past EOF.
+                let pos = a:pos[1] == line('$')
+                    \ ? [0, line('$'), col([line('$'), '$']), 0]
+                    \ : [0, a:pos[1] + 1, 1, 0]
+            else " !a:dir
+                if eol > 1
+                    " Non-empty line; use last char on line.
+                    " Use cursor() to ensure start of mb char.
+                    " Note: There's a way to do this without setting cursor, but minimum
+                    " required Vim version lacks charidx().
+                    keepjumps call cursor(a:pos[1], eol - 1)
+                    let pos = getpos('.')
+                else
+                    " Empty line
+                    if a:pos[1] == 1
+                        " Special Case: BOF
+                        let pos = [0, 1, 0, 0]
+                    else
+                        " Need to consider inc_nl
+                        let prev_eol = col([a:pos[1] - 1, '$'])
+                        if inc_nl || prev_eol == 1
+                            " Use NL of previous line.
+                            let pos = [0, a:pos[1] - 1, prev_eol, 0]
+                        else
+                            " Use last char of previous line
+                            keepjumps call cursor(a:pos[1] - 1, prev_eol - 1)
+                            let pos = getpos('.')
+                        endif
+                    endif
+                endif
+            endif
+        else
+            " Input position on *actual* char.
+            " Move to input pos and find next non-NL char (or NUL char on empty line).
+            keepjumps call s:setcursor(a:pos)
+            " Note: 'z' flag has different meaning for forward/backward search.
+            let [l, c] = searchpos('\v.|^$', 'Wn' . (a:dir ? 'z' : 'b'))
+            if l
+                let pos = [0, l, c, 0]
+                if pos[1] != a:pos[1]
+                    " Adjacent char is on different line; if inc_nl, use the passed over
+                    " NL, else keep the found position.
+                    if inc_nl
+                        " Use passed over NL.
+                        let pos = a:dir
+                            \ ? [0, a:pos[1], eol, 0]
+                            \ : [0, pos[1], col([pos[1], '$']), 0]
+                    endif
                 endif
             else
-                " Can't go before first char in buffer.
-                let [l, c] = [l, 1]
+                " Beginning or end of buffer. Use virtual pos before BOF or after EOF.
+                let pos = a:dir ? [0, a:pos[1], eol, 0] : [0, 1, 0, 0]
             endif
-            break
-        " No line wrap; see whether 1 byte movement constitutes char movement.
-        else
-            keepjumps call cursor(l, cn)
-            let [l, c] = [line('.'), col('.')]
         endif
-    endwhile
-    " Restore original position.
-    call s:setcursor(cursor)
-    return [0, l, c, 0]
+    finally
+        " Restore original position.
+        call s:setcursor(cursor)
+    endtry
+    return pos
 endfunction
 
 " See s:super_range() for function description.
