@@ -2988,7 +2988,17 @@ function! s:put__get_seps(tail, ctx, reg)
 
     " -- Interior separator
     " Note: We don't need to know count yet, since interior_sep is ignored if [count]=1.
-    let ret.interior_sep = reg.is_ml || reg.has_com ? NL : SPC
+    " Separate the [count] register copies from each other with NL if any of the following
+    " conditions are met:
+    " * register contents multiline
+    "   Rationale: Stacking many multiline forms horizontally could be problematic.
+    " * register *contains* comment
+    "   Rationale: For multiline register, comments are irrelevant, but we definitely
+    "   don't want multiple single line placed on the same line.
+    " * near sep is NL
+    "   Rationale: The logic that determined a NL should separate tgt from put text would
+    "   quite naturally extend to subsequent copies of the put text.
+    let ret.interior_sep = reg.is_ml || reg.has_com || ret.near_sep == NL ? NL : SPC
     return ret
 endfunction
 
