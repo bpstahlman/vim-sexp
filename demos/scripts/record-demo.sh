@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 7 ]; then
-    echo "usage: $0 NAME FIXTURE LINE COL KEYS DISPLAY_KEYS CAPTION" >&2
+if [ "$#" -lt 7 ] || [ "$#" -gt 8 ]; then
+    echo "usage: $0 NAME FIXTURE LINE COL KEYS DISPLAY_KEYS CAPTION [SETUP]" >&2
     exit 2
 fi
 
@@ -13,6 +13,7 @@ col=$4
 keys=$5
 display_keys=$6
 caption=$7
+setup=${8:-}
 
 cast="demos/casts/$name.cast"
 render_cast="demos/casts/$name.render.cast"
@@ -33,6 +34,7 @@ DEMO_COL="$col" \
 DEMO_KEYS="$keys" \
 DEMO_DISPLAY_KEYS="$display_keys" \
 DEMO_CAPTION="$caption" \
+DEMO_SETUP="$setup" \
 DEMO_TS_RTP="$ts_rtp" \
 asciinema rec --quiet --overwrite --command "env TERM=xterm-256color $vim_cmd -Nu NONE -n -i NONE -S demos/scripts/demo-driver.vim" "$cast"
 

@@ -20,11 +20,18 @@ let s:col = str2nr($DEMO_COL)
 let s:keys = $DEMO_KEYS
 let s:display_keys = $DEMO_DISPLAY_KEYS
 let s:caption = $DEMO_CAPTION
+let s:setup = $DEMO_SETUP
 let s:ts_rtp = $DEMO_TS_RTP
 
 if !empty(s:ts_rtp) && isdirectory(s:ts_rtp)
     execute 'set runtimepath+=' . fnameescape(s:ts_rtp)
 endif
+
+for cmd in split(s:setup, '|', 1)
+    if !empty(cmd)
+        execute cmd
+    endif
+endfor
 
 execute 'edit ' . fnameescape(s:fixture)
 setlocal filetype=clojure
@@ -56,10 +63,16 @@ redraw!
 normal! l
 normal! h
 redraw
-sleep 1200m
+sleep 900m
 
-execute 'normal ' . s:keys
-redraw!
-sleep 1600m
+for step in split(s:keys, '|', 1)
+    if !empty(step)
+        execute 'normal ' . step
+        redraw!
+        sleep 900m
+    endif
+endfor
+
+sleep 700m
 
 quitall!

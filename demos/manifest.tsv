@@ -1,3 +1,6 @@
 wrap-element	060-wrap.clj	6	10	\\w	<LocalLeader>w	Wrap current element in a list
 splice-list	070-splice-raise.clj	9	7	\\@	<LocalLeader>@	Splice current list into parent
-
+select-adjacent	080-select-flow.clj	4	8	vaf|]e|]e|[e	vaf, ]e, ]e, [e	Move visual selection between sibling elements
+capture-next	090-capture-emit.clj	5	5	\\L|\\L	<M-S-l> x2	Capture following forms into the current list	let g:sexp_mappings={'sexp_capture_next_element': {'nx': '<LocalLeader>L'}}
+swap-element	100-swap.clj	5	7	\\l|\\l	<M-l> x2	Swap the current element forward through siblings	let g:sexp_mappings={'sexp_swap_element_forward': {'nx': '<LocalLeader>l'}}
+cleanup-align	110-cleanup-align.clj	4	3	==	==	Clean indentation and align end-of-line comments	let g:sexp_indent_does_clean=1|let g:sexp_indent_aligns_comments=1

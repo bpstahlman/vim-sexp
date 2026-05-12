@@ -1,6 +1,6 @@
 .PHONY: demos clean-demos check-demo-tools
 
-DEMOS := wrap-element splice-list
+DEMOS := $(shell awk -F '\t' 'NF && $$1 !~ /^#/ { print $$1 }' demos/manifest.tsv)
 GIFS := $(addprefix demos/gifs/,$(addsuffix .gif,$(DEMOS)))
 DEMO_FIXTURES := $(wildcard demos/fixtures/*.clj)
 
@@ -21,7 +21,8 @@ demos/gifs/%.gif: Makefile demos/manifest.tsv demos/scripts/demo-driver.vim demo
 			"\"" $$4 "\" " \
 			"\"" $$5 "\" " \
 			"\"" $$6 "\" " \
-			"\"" $$7 "\""; \
+			"\"" $$7 "\" " \
+			"\"" $$8 "\""; \
 		exit system(cmd) } END { if (!found) { print "demo not found: " demo > "/dev/stderr"; exit 1 } }' demos/manifest.tsv
 
 clean-demos:

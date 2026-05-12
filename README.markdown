@@ -14,9 +14,60 @@
 
 Vim-sexp brings the Vim philosophy of _precision editing_ to S-expressions.
 
-## Demos
+## Visual Tour
 
-Short command demos are available in [demos/README.md](demos/README.md).
+These short demos show how vim-sexp commands operate on structural forms. Click
+any GIF to open it directly. Demo build instructions are available in
+[demos/README.md](demos/README.md).
+
+### Retarget Visual Selections
+
+Text objects can establish a structural visual selection, and `[e` / `]e` move
+that selection to previous or next sibling elements without growing it.
+
+<a href="demos/gifs/select-adjacent.gif">
+  <img src="demos/gifs/select-adjacent.gif" alt="Move visual selection between sibling elements" width="560">
+</a>
+
+### Wrap And Splice
+
+Wrap commands surround the current form or element, while splice removes the
+current list and lifts its children into the parent.
+
+<a href="demos/gifs/wrap-element.gif">
+  <img src="demos/gifs/wrap-element.gif" alt="Wrap current element in a list" width="560">
+</a>
+
+<a href="demos/gifs/splice-list.gif">
+  <img src="demos/gifs/splice-list.gif" alt="Splice current list into parent" width="560">
+</a>
+
+### Capture And Emit
+
+Capture and emit move elements into and out of lists. Repeated commands continue
+through the surrounding tree when the current list is exhausted.
+
+<a href="demos/gifs/capture-next.gif">
+  <img src="demos/gifs/capture-next.gif" alt="Capture following forms into the current list" width="560">
+</a>
+
+### Swap
+
+Swap commands move the current element, list, or visual selection through
+siblings while preserving S-expression structure.
+
+<a href="demos/gifs/swap-element.gif">
+  <img src="demos/gifs/swap-element.gif" alt="Swap the current element forward through siblings" width="560">
+</a>
+
+### Cleanup And Comment Alignment
+
+Indent can also clean excess whitespace and align end-of-line comments when the
+corresponding options are enabled.
+
+<a href="demos/gifs/cleanup-align.gif">
+  <img src="demos/gifs/cleanup-align.gif" alt="Clean indentation and align end-of-line comments" width="560">
+</a>
 
 ## Requirements
 
