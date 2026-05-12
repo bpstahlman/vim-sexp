@@ -14,6 +14,10 @@
 
 Vim-sexp brings the Vim philosophy of _precision editing_ to S-expressions.
 
+## Demos
+
+Short command demos are available in [demos/README.md](demos/README.md).
+
 ## Requirements
 
 * Vim 8.0+
