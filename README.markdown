@@ -14,6 +14,16 @@
 
 Vim-sexp brings the Vim philosophy of _precision editing_ to S-expressions.
 
+## Document Map
+
+* [Visual Tour](#visual-tour): short GIFs showing the main command families.
+* [Editing Workflows](#editing-workflows): practical multi-command editing recipes.
+* [Requirements](#requirements)
+* [Installation](#installation)
+* [Treesitter Support](#treesitter-support)
+* [Definitions](#definitions)
+* [Mappings](#mappings): command reference and default key bindings.
+
 ## Visual Tour
 
 These short demos show how vim-sexp commands operate on structural forms. Click
@@ -22,9 +32,10 @@ any GIF to open it directly. Demo build instructions are available in
 
 ### Demo Map
 
-* **Visual Tour:** quick examples of the main command families.
-* **Editing Workflows:** practical multi-command edits that combine motions,
-  text objects, operators, smart paste, swap, capture, and emit.
+* **This section:** quick examples of the main command families.
+* **[Editing Workflows](#editing-workflows):** practical multi-command edits
+  that combine motions, text objects, operators, smart paste, swap, capture,
+  and emit.
 
 ### Retarget Visual Selections
 
