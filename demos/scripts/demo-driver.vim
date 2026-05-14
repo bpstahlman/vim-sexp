@@ -9,9 +9,6 @@ set noshowcmd
 set shortmess+=I
 set fillchars=vert:\ 
 set runtimepath^=.
-runtime plugin/sexp.vim
-filetype plugin indent on
-syntax on
 
 let s:demo_name = $DEMO_NAME
 let s:fixture = $DEMO_FIXTURE
@@ -32,6 +29,14 @@ for cmd in split(s:setup, '|', 1)
         execute cmd
     endif
 endfor
+
+let s:initial_sleep = get(g:, 'demo_initial_sleep', 900)
+let s:step_sleep = get(g:, 'demo_step_sleep', 900)
+let s:final_sleep = get(g:, 'demo_final_sleep', 700)
+
+runtime plugin/sexp.vim
+filetype plugin indent on
+syntax on
 
 execute 'edit ' . fnameescape(s:fixture)
 setlocal filetype=clojure
@@ -63,16 +68,16 @@ redraw!
 normal! l
 normal! h
 redraw
-sleep 900m
+execute 'sleep ' . s:initial_sleep . 'm'
 
 for step in split(s:keys, '|', 1)
     if !empty(step)
         execute 'normal ' . step
         redraw!
-        sleep 900m
+        execute 'sleep ' . s:step_sleep . 'm'
     endif
 endfor
 
-sleep 700m
+execute 'sleep ' . s:final_sleep . 'm'
 
 quitall!

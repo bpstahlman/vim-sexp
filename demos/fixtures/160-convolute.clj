@@ -1,0 +1,5 @@
+(defun calculate (x y)
+  (if (ready? x)
+    (save (let ((total (+ x y))
+                (label (format-label total)))
+            (format label total)))))

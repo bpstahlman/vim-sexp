@@ -59,6 +59,14 @@ Command: `vaf`, `]e`, `]e`, `[e`
 
 [Open GIF directly](gifs/select-adjacent.gif)
 
+### Flow Across List Boundaries
+
+Command: `<M-]>`, `<M-]>`, `<M-]>`, `<M-}>`, `<M-}>`, `<M-}>`
+
+[![Flow across list boundaries](gifs/flow-selection.gif)](gifs/flow-selection.gif)
+
+[Open GIF directly](gifs/flow-selection.gif)
+
 ### Wrap Element
 
 Command: `<LocalLeader>w`
@@ -83,6 +91,14 @@ Command: `<M-S-l>`
 
 [Open GIF directly](gifs/capture-next.gif)
 
+### Emit Tail Elements
+
+Command: `<M-S-k>`
+
+[![Emit forms out of the current list](gifs/emit-tail.gif)](gifs/emit-tail.gif)
+
+[Open GIF directly](gifs/emit-tail.gif)
+
 ### Swap Element
 
 Command: `<M-l>`
@@ -91,6 +107,22 @@ Command: `<M-l>`
 
 [Open GIF directly](gifs/swap-element.gif)
 
+### Put Into List
+
+Command: `<LocalLeader>>p`
+
+[![Put register text at the tail of the current list](gifs/put-into-list.gif)](gifs/put-into-list.gif)
+
+[Open GIF directly](gifs/put-into-list.gif)
+
+### Convolute
+
+Command: `<LocalLeader>?`
+
+[![Convolute a let binding outward](gifs/convolute.gif)](gifs/convolute.gif)
+
+[Open GIF directly](gifs/convolute.gif)
+
 ### Cleanup And Align Comments
 
 Command: `==`
@@ -98,3 +130,11 @@ Command: `==`
 [![Clean indentation and align end-of-line comments](gifs/cleanup-align.gif)](gifs/cleanup-align.gif)
 
 [Open GIF directly](gifs/cleanup-align.gif)
+
+### Align Comments With Custom Limits
+
+Command: `<LocalLeader>a`
+
+[![Align comments with max shift 12](gifs/align-custom.gif)](gifs/align-custom.gif)
+
+[Open GIF directly](gifs/align-custom.gif)

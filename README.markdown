@@ -20,13 +20,25 @@ These short demos show how vim-sexp commands operate on structural forms. Click
 any GIF to open it directly. Demo build instructions are available in
 [demos/README.md](demos/README.md).
 
+### Demo Map
+
+* **Visual Tour:** quick examples of the main command families.
+* **Editing Workflows:** practical multi-command edits that combine motions,
+  text objects, operators, smart paste, swap, capture, and emit.
+
 ### Retarget Visual Selections
 
 Text objects can establish a structural visual selection, and `[e` / `]e` move
 that selection to previous or next sibling elements without growing it.
+Flow commands can descend through nested lists and then climb back out through
+list tails, without being confined to the current list.
 
 <a href="demos/gifs/select-adjacent.gif">
   <img src="demos/gifs/select-adjacent.gif" alt="Move visual selection between sibling elements" width="560">
+</a>
+
+<a href="demos/gifs/flow-selection.gif">
+  <img src="demos/gifs/flow-selection.gif" alt="Flow across list boundaries" width="560">
 </a>
 
 ### Wrap And Splice
@@ -51,6 +63,10 @@ through the surrounding tree when the current list is exhausted.
   <img src="demos/gifs/capture-next.gif" alt="Capture following forms into the current list" width="560">
 </a>
 
+<a href="demos/gifs/emit-tail.gif">
+  <img src="demos/gifs/emit-tail.gif" alt="Emit forms out of the current list" width="560">
+</a>
+
 ### Swap
 
 Swap commands move the current element, list, or visual selection through
@@ -60,14 +76,43 @@ siblings while preserving S-expression structure.
   <img src="demos/gifs/swap-element.gif" alt="Swap the current element forward through siblings" width="560">
 </a>
 
+### Put Into Lists
+
+Smart paste commands understand list boundaries and can place register text at
+the head or tail of the current compound form.
+
+<a href="demos/gifs/put-into-list.gif">
+  <img src="demos/gifs/put-into-list.gif" alt="Put register text at the tail of the current list" width="560">
+</a>
+
+### Convolute
+
+Convolute widens an inner binding form by moving it outward through the parent
+list, preserving the editing context around the current form.
+
+<a href="demos/gifs/convolute.gif">
+  <img src="demos/gifs/convolute.gif" alt="Convolute a let binding outward" width="560">
+</a>
+
 ### Cleanup And Comment Alignment
 
 Indent can also clean excess whitespace and align end-of-line comments when the
-corresponding options are enabled.
+corresponding options are enabled. Comment alignment limits and weights can be
+tuned to favor different grouping behavior.
 
 <a href="demos/gifs/cleanup-align.gif">
   <img src="demos/gifs/cleanup-align.gif" alt="Clean indentation and align end-of-line comments" width="560">
 </a>
+
+<a href="demos/gifs/align-custom.gif">
+  <img src="demos/gifs/align-custom.gif" alt="Align comments with max shift 12" width="560">
+</a>
+
+## Editing Workflows
+
+The visual tour above shows individual command families. This section will
+collect idiomatic editing recipes that combine vim-sexp commands into larger
+structural edits.
 
 ## Requirements
 
