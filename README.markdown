@@ -14,116 +14,18 @@
 
 Vim-sexp brings the Vim philosophy of _precision editing_ to S-expressions.
 
+Animated examples are available in [Examples](#examples), including a
+[Visual Tour](#visual-tour) of command families and
+[Editing Workflows](#editing-workflows) showing practical multi-command edits.
+
 ## Document Map
 
-* [Visual Tour](#visual-tour): short GIFs showing the main command families.
-* [Editing Workflows](#editing-workflows): practical multi-command editing recipes.
 * [Requirements](#requirements)
 * [Installation](#installation)
 * [Treesitter Support](#treesitter-support)
 * [Definitions](#definitions)
 * [Mappings](#mappings): command reference and default key bindings.
-
-## Visual Tour
-
-These short demos show how vim-sexp commands operate on structural forms. Click
-any GIF to open it directly. Demo build instructions are available in
-[demos/README.md](demos/README.md).
-
-### Demo Map
-
-* **This section:** quick examples of the main command families.
-* **[Editing Workflows](#editing-workflows):** practical multi-command edits
-  that combine motions, text objects, operators, smart paste, swap, capture,
-  and emit.
-
-### Retarget Visual Selections
-
-Text objects can establish a structural visual selection, and `[e` / `]e` move
-that selection to previous or next sibling elements without growing it.
-Flow commands can descend through nested lists and then climb back out through
-list tails, without being confined to the current list.
-
-<a href="demos/gifs/select-adjacent.gif">
-  <img src="demos/gifs/select-adjacent.gif" alt="Move visual selection between sibling elements" width="560">
-</a>
-
-<a href="demos/gifs/flow-selection.gif">
-  <img src="demos/gifs/flow-selection.gif" alt="Flow across list boundaries" width="560">
-</a>
-
-### Wrap And Splice
-
-Wrap commands surround the current form or element, while splice removes the
-current list and lifts its children into the parent.
-
-<a href="demos/gifs/wrap-element.gif">
-  <img src="demos/gifs/wrap-element.gif" alt="Wrap current element in a list" width="560">
-</a>
-
-<a href="demos/gifs/splice-list.gif">
-  <img src="demos/gifs/splice-list.gif" alt="Splice current list into parent" width="560">
-</a>
-
-### Capture And Emit
-
-Capture and emit move elements into and out of lists. Repeated commands continue
-through the surrounding tree when the current list is exhausted.
-
-<a href="demos/gifs/capture-next.gif">
-  <img src="demos/gifs/capture-next.gif" alt="Capture following forms into the current list" width="560">
-</a>
-
-<a href="demos/gifs/emit-tail.gif">
-  <img src="demos/gifs/emit-tail.gif" alt="Emit forms out of the current list" width="560">
-</a>
-
-### Swap
-
-Swap commands move the current element, list, or visual selection through
-siblings while preserving S-expression structure.
-
-<a href="demos/gifs/swap-element.gif">
-  <img src="demos/gifs/swap-element.gif" alt="Swap the current element forward through siblings" width="560">
-</a>
-
-### Put Into Lists
-
-Smart paste commands understand list boundaries and can place register text at
-the head or tail of the current compound form.
-
-<a href="demos/gifs/put-into-list.gif">
-  <img src="demos/gifs/put-into-list.gif" alt="Put register text at the tail of the current list" width="560">
-</a>
-
-### Convolute
-
-Convolute widens an inner binding form by moving it outward through the parent
-list, preserving the editing context around the current form.
-
-<a href="demos/gifs/convolute.gif">
-  <img src="demos/gifs/convolute.gif" alt="Convolute a let binding outward" width="560">
-</a>
-
-### Cleanup And Comment Alignment
-
-Indent can also clean excess whitespace and align end-of-line comments when the
-corresponding options are enabled. Comment alignment limits and weights can be
-tuned to favor different grouping behavior.
-
-<a href="demos/gifs/cleanup-align.gif">
-  <img src="demos/gifs/cleanup-align.gif" alt="Clean indentation and align end-of-line comments" width="560">
-</a>
-
-<a href="demos/gifs/align-custom.gif">
-  <img src="demos/gifs/align-custom.gif" alt="Align comments with max shift 12" width="560">
-</a>
-
-## Editing Workflows
-
-The visual tour above shows individual command families. This section will
-collect idiomatic editing recipes that combine vim-sexp commands into larger
-structural edits.
+* [Examples](#examples): animated demos and editing workflows.
 
 ## Requirements
 
@@ -196,6 +98,25 @@ Users who desire more explicit, opt-in configuration should refer to
 Comprehensive documentation is available at `:help vim-sexp`. The following is
 a brief summary.
 
+### Command Map
+
+* [Text Object Selections](#text-object-selections-visual-operator-pending)
+* [Text Object Motions](#text-object-motions-normal-visual-operator-pending)
+* [Flow Motions](#flow-motions-normal-visual)
+* [Clone Commands](#clone-commands-normal-visual)
+* [Indent Commands](#indent-commands-normal-visual)
+* [Comment Alignment Commands](#comment-alignment-commands-normal-visual)
+* [Wrap Commands](#wrap-commands-normal-visual)
+* [Cursor Insertion](#cursor-insertion-normal)
+* [List Manipulation](#list-manipulation-normal-visual)
+  * [Splice And Raise](#splice-and-raise)
+  * [Swap](#swap)
+  * [Capture And Emit](#capture-and-emit)
+  * [Convolute](#convolute)
+  * [Auto-Indent](#auto-indent)
+* [Register Put Commands (Smart Paste)](#register-put-commands-smart-paste-normal-visual)
+* [Insert Mode Mappings](#insert-mode-mappings-insert-optional)
+
 ### Text Object Selections (visual, operator-pending)
 
 Text object selections refer to text _around_ the cursor.
@@ -243,6 +164,17 @@ Hint: Square bracket commands tend to move down and into lists, curly braces up 
 * The `<M-S-g>` motion moves the cursor backward to leaf tail
 * The `<M-S-e>` motion moves the cursor forward to leaf tail
 
+### Clone Commands (normal, visual)
+
+* `<LocalLeader>c` inserts copy(s) of current list or visual selection before cursor without moving cursor
+
+**Note:** Simple heuristics are used to decide whether to perform a single or multi-line clone: i.e., whether to insert a space or a newline between the cloned elements.
+If you find that the default logic doesn't always do what you expect, you can add mappings for the single and multi-line command variants to your `g:sexp_mappings` override.
+
+:help sexp-clone-logic
+
+If `g:sexp_clone_does_indent` is set (true by default) and cloned text spans multiple lines, all elements involved in the clone (both original and copies) will be indented.
+
 ### Indent Commands (normal, visual)
 
 * `==` indents the current COMPOUND FORM or visual selection without moving the cursor
@@ -263,7 +195,70 @@ If `g:sexp_indent_aligns_comments` is set (false by default), the `==` and `=-` 
 
 :help sexp-comment-alignment
 
-### Smart Paste Commands (normal, visual)
+### Wrap Commands (normal, visual)
+
+Wrap commands wrap the current COMPOUND FORM, ELEMENT, or visual selection and
+place the cursor at the head or tail of the newly created COMPOUND FORM.
+
+If `g:sexp_insert_after_wrap` is set (true by default), insert mode is entered
+after wrapping.
+
+* `<LocalLeader>i` and `<LocalLeader>I` wrap the current COMPOUND FORM with `(` and `)`.
+* `<LocalLeader>[` and `<LocalLeader>]` wrap the current COMPOUND FORM with `[` and `]`.
+* `<LocalLeader>{` and `<LocalLeader>}` wrap the current COMPOUND FORM with `{` and `}`.
+* `<LocalLeader>W` and `<LocalLeader>w` wrap the current ELEMENT with `(` and `)`.
+* `<LocalLeader>e[` and `<LocalLeader>e]` wrap the current ELEMENT with `[` and `]`.
+* `<LocalLeader>e{` and `<LocalLeader>e}` wrap the current ELEMENT with `{` and `}`.
+
+### Cursor Insertion (normal)
+
+* `<LocalLeader>h` inserts the cursor at the head of the current COMPOUND FORM
+* `<LocalLeader>l` inserts the cursor at the tail of the current COMPOUND FORM
+
+If inserting at the head, a space is conditionally appended after the opening
+bracket so that any typed characters will be separated from the next element.
+
+### List Manipulation (normal, visual)
+
+List manipulation commands change the structure of COMPOUND FORMS. If these
+commands are called from visual mode, the selection is used in place of the
+current COMPOUND FORM or ELEMENT.
+
+#### Splice And Raise
+
+* `<LocalLeader>@` splices the current COMPOUND FORM into its parent.
+* `<LocalLeader>o` raises the current COMPOUND FORM to replace the enclosing COMPOUND FORM.
+* `<LocalLeader>O` raises the current ELEMENT to replace the enclosing COMPOUND FORM.
+
+#### Swap
+
+* `<M-k>` and `<M-j>` swap the position of the current COMPOUND FORM with a sibling ELEMENT.
+* `<M-h>` and `<M-l>` swap the position of the current ELEMENT with a sibling ELEMENT.
+
+#### Capture And Emit
+
+* `<M-S-j>` and `<M-S-k>` emit the terminal ELEMENTS of the current COMPOUND FORM.
+* `<M-S-h>` and `<M-S-l>` capture adjacent ELEMENTS into the current COMPOUND FORM.
+
+The `Emit` and `capture` commands are known as `barfage` and `slurpage` in [paredit.el][].
+
+#### Convolute
+
+* `<M-?>` _convolutes_ the current COMPOUND FORM, splicing the tail of the current list into the current list's parent and moving the head of the current list to the head of a new list containing the parent of the current list.
+
+#### Auto-Indent
+
+Although vim-sexp contains explicit commands for re-indenting forms, re-indenting after a command that alters form structure is a common enough use
+case that vim-sexp provides an auto-indent capability.
+When enabled, commands such as clone, emit/capture, raise, and splice will perform an auto-reindent of
+the affected region.
+As with an explicitly requested indent, auto-indent uses option settings to determine whether to perform excess whitespace cleanup and/or trailing comment alignment.
+
+For details on enabling/disabling auto-indent, whitespace cleanup and comment alignment...
+
+:help sexp-auto-indent
+
+### Register Put Commands (Smart Paste) (normal, visual)
 
 A family of commands and operators for pasting or replacing from registers, optimized for use with _S-expressions_.
 Unlike builtin put operators such as `p` and `P`, these commands will keep your Lisp code properly formatted and will never create unbalanced forms.
@@ -354,70 +349,7 @@ Although use of the unnamed register to swap words is idiomatic Vim, telescopic 
 :help sexp-regput-telescopic-motion
 ```
 
-### Clone Commands (normal, visual)
-
-* `<LocalLeader>c` inserts copy(s) of current list or visual selection before cursor without moving cursor
-
-**Note:** Simple heuristics are used to decide whether to perform a single or multi-line clone: i.e., whether to insert a space or a newline between the cloned elements.
-If you find that the default logic doesn't always do what you expect, you can add mappings for the single and multi-line command variants to your `g:sexp_mappings` override.
-
-:help sexp-clone-logic
-
-If `g:sexp_clone_does_indent` is set (true by default) and cloned text spans multiple lines, all elements involved in the clone (both original and copies) will be indented.
-
-### Wrap Commands (normal, visual)
-
-Wrap commands wrap the current COMPOUND FORM, ELEMENT, or visual selection and
-place the cursor at the head or tail of the newly created COMPOUND FORM.
-
-If `g:sexp_insert_after_wrap` is set (true by default), insert mode is entered
-after wrapping.
-
-* `<LocalLeader>i` and `<LocalLeader>I` wrap the current COMPOUND FORM with `(` and `)`.
-* `<LocalLeader>[` and `<LocalLeader>]` wrap the current COMPOUND FORM with `[` and `]`.
-* `<LocalLeader>{` and `<LocalLeader>}` wrap the current COMPOUND FORM with `{` and `}`.
-* `<LocalLeader>W` and `<LocalLeader>w` wrap the current ELEMENT with `(` and `)`.
-* `<LocalLeader>e[` and `<LocalLeader>e]` wrap the current ELEMENT with `[` and `]`.
-* `<LocalLeader>e{` and `<LocalLeader>e}` wrap the current ELEMENT with `{` and `}`.
-
-### List Manipulation (normal, visual)
-
-List manipulation commands change the structure of COMPOUND FORMS. If these
-commands are called from visual mode, the selection is used in place of the
-current COMPOUND FORM or ELEMENT.
-
-* `<LocalLeader>@` splices the current COMPOUND FORM into its parent.
-* `<LocalLeader>o` raises the current COMPOUND FORM to replace the enclosing COMPOUND FORM.
-* `<LocalLeader>O` raises the current ELEMENT to replace the enclosing COMPOUND FORM.
-* `<M-k>` and `<M-j>` swap the position of the current COMPOUND FORM with a sibling ELEMENT.
-* `<M-h>` and `<M-l>` swap the position of the current ELEMENT with a sibling ELEMENT.
-* `<M-S-j>` and `<M-S-k>` emit the terminal ELEMENTS of the current COMPOUND FORM.
-* `<M-S-h>` and `<M-S-l>` capture adjacent ELEMENTS into the current COMPOUND FORM.
-* `<M-?>` _convolutes_ the current COMPOUND FORM, splicing the tail of the current list into the current list's parent and moving the head of the current list to the head of a new list containing the parent of the current list.
-
-The `Emit` and `capture` commands are known as `barfage` and `slurpage` in [paredit.el][].
-
-### Auto-Indent
-
-Although vim-sexp contains explicit commands for re-indenting forms, re-indenting after a command that alters form structure is a common enough use
-case that vim-sexp provides an auto-indent capability.
-When enabled, commands such as clone, emit/capture, raise, and splice will perform an auto-reindent of
-the affected region.
-As with an explicitly requested indent, auto-indent uses option settings to determine whether to perform excess whitespace cleanup and/or trailing comment alignment.
-
-For details on enabling/disabling auto-indent, whitespace cleanup and comment alignment...
-
-:help sexp-auto-indent
-
-### Cursor Insertion (normal)
-
-* `<LocalLeader>h` inserts the cursor at the head of the current COMPOUND FORM
-* `<LocalLeader>l` inserts the cursor at the tail of the current COMPOUND FORM
-
-If inserting at the head, a space is conditionally appended after the opening
-bracket so that any typed characters will be separated from the next element.
-
-### Insert Mode Mappings (insert)
+### Insert Mode Mappings (insert, optional)
 
 Vim-sexp does intelligent bracket and double quote insertion like
 [paredit.el][]. Unlike ParEdit, deletion of brackets that would cause an
@@ -439,6 +371,108 @@ These insert mode mappings can be disabled with:
 ```vim
 let g:sexp_enable_insert_mode_mappings = 0
 ```
+
+## Examples
+
+Animated demos are grouped into two sections:
+
+* [Visual Tour](#visual-tour): quick examples of the main command families.
+* [Editing Workflows](#editing-workflows): practical multi-command edits that
+  combine motions, text objects, operators, smart paste, swap, capture, and
+  emit.
+
+Demo build instructions are available in [demos/README.md](demos/README.md).
+Click any GIF to open it directly.
+
+### Visual Tour
+
+#### Retarget Visual Selections
+
+Text objects can establish a structural visual selection, and `[e` / `]e` move
+that selection to previous or next sibling elements without growing it. Flow
+commands move through opens or closes in either direction, crossing list
+boundaries instead of staying inside the current list.
+
+<a href="demos/gifs/select-adjacent.gif">
+  <img src="demos/gifs/select-adjacent.gif" alt="Move visual selection between sibling elements" width="560">
+</a>
+
+<a href="demos/gifs/flow-selection.gif">
+  <img src="demos/gifs/flow-selection.gif" alt="Flow across list boundaries" width="560">
+</a>
+
+#### Wrap And Splice
+
+Wrap commands surround the current form or element, while splice removes the
+current list and lifts its children into the parent.
+
+<a href="demos/gifs/wrap-element.gif">
+  <img src="demos/gifs/wrap-element.gif" alt="Wrap current element in a list" width="560">
+</a>
+
+<a href="demos/gifs/splice-list.gif">
+  <img src="demos/gifs/splice-list.gif" alt="Splice current list into parent" width="560">
+</a>
+
+#### Capture And Emit
+
+Capture and emit move elements into and out of lists. Repeated commands continue
+through the surrounding tree when the current list is exhausted.
+
+<a href="demos/gifs/capture-next.gif">
+  <img src="demos/gifs/capture-next.gif" alt="Capture following forms into the current list" width="560">
+</a>
+
+<a href="demos/gifs/emit-tail.gif">
+  <img src="demos/gifs/emit-tail.gif" alt="Emit forms out of the current list" width="560">
+</a>
+
+#### Swap
+
+Swap commands move the current element, list, or visual selection through
+siblings while preserving S-expression structure.
+
+<a href="demos/gifs/swap-element.gif">
+  <img src="demos/gifs/swap-element.gif" alt="Swap the current element forward through siblings" width="560">
+</a>
+
+#### Put Into Lists
+
+Smart paste commands understand list boundaries and can place register text at
+the head or tail of the current compound form.
+
+<a href="demos/gifs/put-into-list.gif">
+  <img src="demos/gifs/put-into-list.gif" alt="Put register text at the tail of the current list" width="560">
+</a>
+
+#### Convolute
+
+Convolute widens an inner binding form by moving it outward through the parent
+list, preserving the editing context around the current form.
+
+<a href="demos/gifs/convolute.gif">
+  <img src="demos/gifs/convolute.gif" alt="Convolute a let binding outward" width="560">
+</a>
+
+#### Cleanup And Comment Alignment
+
+Indent can also clean excess whitespace and align end-of-line comments when the
+corresponding options are enabled. Comment alignment limits and weights can be
+tuned to favor different grouping behavior.
+
+<a href="demos/gifs/cleanup-align.gif">
+  <img src="demos/gifs/cleanup-align.gif" alt="Clean indentation and align end-of-line comments" width="560">
+</a>
+
+<a href="demos/gifs/align-custom.gif">
+  <img src="demos/gifs/align-custom.gif" alt="Align comments with max shift 12" width="560">
+</a>
+
+### Editing Workflows
+
+The visual tour above shows individual command families. This section will
+collect idiomatic editing recipes that combine vim-sexp commands into larger
+structural edits.
 
 [vim-repeat]: https://github.com/tpope/vim-repeat
 [paredit.el]: http://www.emacswiki.org/emacs/ParEdit
