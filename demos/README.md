@@ -1,10 +1,12 @@
 # Vim-Sexp Demos
 
 These short demos show common vim-sexp editing operations. Each demo includes a
-caption, a small Clojure fixture, and a generated GIF.
+caption, a small Lisp fixture, and a generated GIF.
 
 The GIFs are generated from asciinema casts so they can be rebuilt after
 changing fixtures, captions, timing, or plugin behavior.
+Each generated caption labels the initial state as `Before:` and the resulting
+state as `After:` so looping GIFs remain readable when opened mid-cycle.
 
 ## Building
 
@@ -50,6 +52,14 @@ make clean-demos
 ```
 
 ## Visual Tour Demos
+
+### Element Motions
+
+Command: `<M-w>`, `<M-w>`, `<M-e>`, `<M-b>`
+
+[![Move by element heads and tails](gifs/element-motions.gif)](gifs/element-motions.gif)
+
+[Open GIF directly](gifs/element-motions.gif)
 
 ### Retarget Visual Selection
 
@@ -106,6 +116,22 @@ Command: `<M-l>`
 [![Swap the current element forward through siblings](gifs/swap-element.gif)](gifs/swap-element.gif)
 
 [Open GIF directly](gifs/swap-element.gif)
+
+### Clone List
+
+Command: `<LocalLeader>c`
+
+[![Clone the current list](gifs/clone-list.gif)](gifs/clone-list.gif)
+
+[Open GIF directly](gifs/clone-list.gif)
+
+### Smart Paste
+
+Command: `p`
+
+[![Smart paste and realign register text](gifs/smart-paste.gif)](gifs/smart-paste.gif)
+
+[Open GIF directly](gifs/smart-paste.gif)
 
 ### Put Into List
 

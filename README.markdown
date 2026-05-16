@@ -382,16 +382,22 @@ Animated demos are grouped into two sections:
   emit.
 
 Demo build instructions are available in [demos/README.md](demos/README.md).
-Click any GIF to open it directly.
+Each GIF caption marks the starting and final states. Click any GIF to open it
+directly.
 
 ### Visual Tour
 
-#### Retarget Visual Selections
+#### Movement And Selection
 
-Text objects can establish a structural visual selection, and `[e` / `]e` move
-that selection to previous or next sibling elements without growing it. Flow
-commands move through opens or closes in either direction, crossing list
-boundaries instead of staying inside the current list.
+Element motions move by structural elements rather than words. Text objects can
+establish a structural visual selection, and `[e` / `]e` move that selection to
+previous or next sibling elements without growing it. Flow commands move through
+opens or closes in either direction, crossing list boundaries instead of staying
+inside the current list.
+
+<a href="demos/gifs/element-motions.gif">
+  <img src="demos/gifs/element-motions.gif" alt="Move by element heads and tails" width="560">
+</a>
 
 <a href="demos/gifs/select-adjacent.gif">
   <img src="demos/gifs/select-adjacent.gif" alt="Move visual selection between sibling elements" width="560">
@@ -429,17 +435,26 @@ through the surrounding tree when the current list is exhausted.
 
 #### Swap
 
-Swap commands move the current element, list, or visual selection through
-siblings while preserving S-expression structure.
+Clone copies the current form at the cursor, and swap moves the current element,
+list, or visual selection through siblings while preserving S-expression
+structure.
+
+<a href="demos/gifs/clone-list.gif">
+  <img src="demos/gifs/clone-list.gif" alt="Clone the current list" width="560">
+</a>
 
 <a href="demos/gifs/swap-element.gif">
   <img src="demos/gifs/swap-element.gif" alt="Swap the current element forward through siblings" width="560">
 </a>
 
-#### Put Into Lists
+#### Smart Paste
 
-Smart paste commands understand list boundaries and can place register text at
-the head or tail of the current compound form.
+Smart paste commands realign pasted register text, preserve balanced structure,
+and can also place text at the head or tail of the current compound form.
+
+<a href="demos/gifs/smart-paste.gif">
+  <img src="demos/gifs/smart-paste.gif" alt="Smart paste and realign register text" width="560">
+</a>
 
 <a href="demos/gifs/put-into-list.gif">
   <img src="demos/gifs/put-into-list.gif" alt="Put register text at the tail of the current list" width="560">

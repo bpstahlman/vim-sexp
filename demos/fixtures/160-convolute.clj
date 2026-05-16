@@ -1,5 +1,6 @@
 (defun calculate (x y)
-  (if (ready? x)
-    (save (let ((total (+ x y))
-                (label (format-label total)))
-            (format label total)))))
+  (if (ready-p x)
+      (save-result
+       (let ((total (+ x y))
+             (label (format-label total)))
+         (format label total)))))

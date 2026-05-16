@@ -33,6 +33,15 @@ endfor
 let s:initial_sleep = get(g:, 'demo_initial_sleep', 900)
 let s:step_sleep = get(g:, 'demo_step_sleep', 900)
 let s:final_sleep = get(g:, 'demo_final_sleep', 700)
+let s:steps = filter(split(s:keys, '|', 1), '!empty(v:val)')
+
+function! s:state_caption(state) abort
+    return a:state . ': ' . s:caption
+endfunction
+
+function! s:set_caption(state) abort
+    call setbufline(s:caption_bufnr, 2, s:state_caption(a:state))
+endfunction
 
 runtime plugin/sexp.vim
 filetype plugin indent on
@@ -53,8 +62,9 @@ setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
 setlocal nonumber norelativenumber nowrap
 setlocal filetype=
 call setline(1, 'Press: ' . s:display_keys)
-call setline(2, s:caption)
+call setline(2, s:state_caption('Before'))
 call setline(3, repeat('-', 72))
+let s:caption_bufnr = bufnr('%')
 normal! gg
 wincmd j
 
@@ -70,9 +80,17 @@ normal! h
 redraw
 execute 'sleep ' . s:initial_sleep . 'm'
 
-for step in split(s:keys, '|', 1)
+let s:step_count = len(s:steps)
+let s:step_index = 0
+for step in s:steps
     if !empty(step)
         execute 'normal ' . step
+        let s:step_index += 1
+        if s:step_count <= 1
+            call s:set_caption('After')
+        else
+            call s:set_caption('After ' . s:step_index . '/' . s:step_count)
+        endif
         redraw!
         execute 'sleep ' . s:step_sleep . 'm'
     endif

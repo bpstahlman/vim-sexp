@@ -1,11 +1,14 @@
+element-motions	050-element-motions.clj	4	8	\\w|\\w|\\e|\\b	<M-w>, <M-w>, <M-e>, <M-b>	Move by element heads and tails	let g:sexp_mappings={'sexp_move_to_next_element_head': {'nxo': '<LocalLeader>w'}, 'sexp_move_to_next_element_tail': {'nxo': '<LocalLeader>e'}, 'sexp_move_to_prev_element_head': {'nxo': '<LocalLeader>b'}}
 wrap-element	060-wrap.clj	6	10	\\w	<LocalLeader>w	Wrap current element in a list
 splice-list	070-splice-raise.clj	9	7	\\@	<LocalLeader>@	Splice current list into parent
 select-adjacent	080-select-flow.clj	4	8	vaf|]e|]e|[e	vaf, ]e, ]e, [e	Move visual selection between sibling elements
 capture-next	090-capture-emit.clj	5	5	\\L|\\L	<M-S-l> x2	Capture following forms into the current list	let g:sexp_mappings={'sexp_capture_next_element': {'nx': '<LocalLeader>L'}}
 swap-element	100-swap.clj	5	7	\\l|\\l	<M-l> x2	Swap the current element forward through siblings	let g:sexp_mappings={'sexp_swap_element_forward': {'nx': '<LocalLeader>l'}}
+clone-list	105-clone.clj	5	5	\\c	<LocalLeader>c	Clone the current list
 cleanup-align	110-cleanup-align.clj	4	3	==	==	Clean indentation and align end-of-line comments	let g:sexp_indent_does_clean=1|let g:sexp_indent_aligns_comments=1
 flow-selection	120-flow.clj	1	1	v\\f|\\f|\\f|\\f|\\F|\\F|\\F|\\F|\\F|\\F	v<M-]>, <M-]> x3, <M-}> x6	Flow a visual selection across list boundaries	let g:sexp_mappings={'sexp_flow_to_next_open': {'nx': '<LocalLeader>f'}, 'sexp_flow_to_next_close': {'nx': '<LocalLeader>F'}}|let g:demo_initial_sleep=650|let g:demo_step_sleep=550|let g:demo_final_sleep=400
 emit-tail	130-emit.clj	2	4	\\K|\\K	<M-S-k> x2	Emit forms out of the current list	let g:sexp_mappings={'sexp_emit_tail_element': {'nx': '<LocalLeader>K'}}
 put-into-list	140-put-into-list.clj	3	15	\\>p	<LocalLeader>>p	Put register text at the tail of the current list	let g:sexp_regput_silence_notification=1|call setreg('', ':timeout 30')
+smart-paste	145-smart-paste.clj	5	7	p	p	Smart paste and realign register text	let g:sexp_regput_silence_notification=1|let g:sexp_regput_fallback_source=''|call setreg('', join(['(normalize-request)', '(attach-metadata)'], nr2char(10)))
 align-custom	150-align-custom.clj	4	3	==	==	Align comments with max shift 12	let g:sexp_indent_does_clean=1|let g:sexp_indent_aligns_comments=1|let g:sexp_aligncom_maxshift=12
-convolute	160-convolute.clj	5	13	\\?	<LocalLeader>?	Convolute a let binding outward
+convolute	160-convolute.clj	6	10	\\?	<LocalLeader>?	Convolute a let binding outward
