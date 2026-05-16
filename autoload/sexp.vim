@@ -8086,22 +8086,10 @@ function! sexp#stackop(state, mode, last, capture)
     return result
 endfunction
 
-" Exchange the current element with an adjacent sibling element. Does nothing
-" if there is no current or sibling element.
-"
-" If list equals 1, the current list is treated as the selected element.
-"
-" If mode equals 'v' (regardless of the value of list), the current selection
-" is expanded to include any partially selected elements, then is swapped
-" with the next element as a unit. If the selection contains an even number
-" of elements, the swap is done with the next couple of elements in order to
-" maintain the original associative structure of the list. Visual marks are
-" set to the new position and visual mode is re-entered.
-"
-" Note that swapping comments with other elements can lead to structural
-" imbalance since trailing brackets may be included as part of a comment after
-" a swap. Fixing this is on the TODO list.
-function! sexp#swap_element(mode, next, list)
+" Exchange the current element with an adjacent sibling element using the legacy
+" visual-selection based implementation. Normal-mode mappings use the stateful
+" implementation below; this function remains for visual swap compatibility.
+function! sexp#swap_element_legacy(mode, next, list)
     let visual = a:mode ==? 'v'
     let cursor = getpos('.')
     let pairwise = 0
@@ -8141,6 +8129,188 @@ function! sexp#swap_element(mode, next, list)
             normal! gv
         endif
         call s:setcursor(cursor)
+    endif
+endfunction
+
+" Return range text, or an empty string for an empty/reversed range.
+function! s:swap_range_text(start, end)
+    return sexp#compare_pos(a:start, a:end) <= 0
+        \ ? s:extract_text_from_range(a:start, a:end)
+        \ : ''
+endfunction
+
+" Return text between two adjacent units.
+function! s:swap_sep_between(left, right)
+    let s = sexp#offset_char(a:left.end, 1, 1)
+    let e = sexp#offset_char(a:right.start, 0, 1)
+    return s:swap_range_text(s, e)
+endfunction
+
+" A unit forces linewise separation when keeping it inline could move text into
+" comment syntax or produce unreadable multiline layout.
+function! s:swap_unit_forces_nl(unit)
+    return a:unit.start[1] != a:unit.end[1]
+        \ || sexp#is_comment(a:unit.start[1], a:unit.start[2])
+        \ || s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+endfunction
+
+function! s:swap_choose_sep(aunit, bunit, old_sep)
+    if a:old_sep =~# "\n\n"
+        return "\n\n"
+    elseif a:old_sep =~# "\n"
+        return "\n"
+    elseif s:swap_unit_forces_nl(a:aunit) || s:swap_unit_forces_nl(a:bunit)
+        return "\n"
+    endif
+    return ' '
+endfunction
+
+function! s:swap_needs_trailing_sep(unit, end)
+    return s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+        \ && !s:at_eol(a:end[1], a:end[2])
+endfunction
+
+" Build a swap unit from an inner range, extending a same-line trailing end-of-line
+" comment so it moves with the preceding element.
+function! s:swap_unit_from_range(range)
+    let [s, e] = a:range
+    call s:setcursor(e)
+    let next = sexp#nearest_element_terminal(1, 0)
+    if next[1] == e[1] && sexp#compare_pos(next, e) > 0
+        \ && s:is_eol_comment(next[1], next[2])
+        let e = [0, next[1], col([next[1], '$']) - 1, 0]
+    endif
+    return {'start': s, 'end': e}
+endfunction
+
+function! s:swap_current_unit(list)
+    if a:list
+        let pos = sexp#current_element_terminal(1)
+        let tail = (pos[1] > 0 && getline(pos[1])[pos[2] - 1] =~# s:closing_bracket)
+                   \ ? pos
+                   \ : s:nearest_bracket(1)
+        if tail[1] < 1
+            return {}
+        endif
+        call s:setcursor(tail)
+        let range = s:set_marks_around_current_element('n', 1, 0, 0)
+    else
+        let range = s:set_marks_around_current_element('n', 1, 0, 0)
+    endif
+    return !range[0][1] ? {} : s:swap_unit_from_range(range)
+endfunction
+
+function! s:swap_adjacent_unit(unit, next)
+    call s:setcursor(a:unit[a:next ? 'end' : 'start'])
+    call s:set_marks_around_adjacent_element('n', a:next)
+    if s:get_visual_beg_mark()[1] < 1
+        return {}
+    endif
+    let ret = s:swap_unit_from_range(s:get_visual_marks())
+    if sexp#compare_pos(a:unit[a:next ? 'end' : 'start'], ret[a:next ? 'end' : 'start']) == 0
+        return {}
+    endif
+    return ret
+endfunction
+
+function! sexp#swap_element__init(mode, next, list)
+    return {
+        \ 'cursor': getpos('.'),
+        \ 'vmarks': s:get_visual_marks(),
+        \ 'affected_range': [],
+        \ 'offset': 0,
+    \ }
+endfunction
+
+" Exchange the current normal-mode element/list with an adjacent sibling. This
+" implementation treats full-line comments as independent elements, while extending
+" units over trailing end-of-line comments to avoid moving text into comment syntax.
+function! sexp#swap_element(state, mode, next, list)
+    let cursor = getpos('.')
+    let moving = s:swap_current_unit(a:list)
+    if empty(moving)
+        call s:setcursor(cursor)
+        throw 'sexp-done'
+    endif
+
+    let target = s:swap_adjacent_unit(moving, a:next)
+    if empty(target)
+        call s:setcursor(cursor)
+        throw 'sexp-done'
+    endif
+
+    let first = a:next ? moving : target
+    let second = a:next ? target : moving
+    let sep = s:swap_choose_sep(moving, target, s:swap_sep_between(first, second))
+    let marker_s = nr2char(0x02)
+    let marker_e = nr2char(0x03)
+    let moving_text = s:extract_text_from_range(moving.start, moving.end)
+    let target_text = s:extract_text_from_range(target.start, target.end)
+    let tail_sep = a:next && s:swap_needs_trailing_sep(moving, second.end) ? "\n" : ''
+    let repl = a:next
+        \ ? target_text . sep . marker_s . moving_text . marker_e . tail_sep
+        \ : marker_s . moving_text . marker_e . sep . target_text
+
+    let ps = s:concat_positions(a:state.cursor, a:state.vmarks, first.start, second.end)
+    call s:yankdel_range(first.start, second.end, repl, 1, ps, 1)
+
+    call s:setcursor([0, 1, 1, 0])
+    let [sl, sc] = s:findpos(marker_s, 1)
+    keepjumps call cursor(sl, sc)
+    normal! x
+    let s = [0, sl, sc, 0]
+
+    let [el, ec] = s:findpos(marker_e, 1)
+    keepjumps call cursor(el, ec)
+    normal! x
+    let e = [0, el, ec - 1, 0]
+
+    call s:set_visual_marks([s, e])
+    call s:setcursor(s)
+
+    return {
+        \ 'swapped': 1,
+        \ 'affected_range': [first.start, second.end],
+        \ 'cursor': s,
+        \ 'vmarks': [s, e],
+        \ 'offset_delta': a:next ? 1 : -1,
+    \ }
+endfunction
+
+function! sexp#swap_element__update(state, ret, mode, next, list)
+    if empty(a:ret) || !get(a:ret, 'swapped', 0)
+        return
+    endif
+    let a:state.cursor = a:ret.cursor
+    let a:state.vmarks = a:ret.vmarks
+    let a:state.offset += a:ret.offset_delta
+    if empty(a:state.affected_range)
+        let a:state.affected_range = a:ret.affected_range
+    else
+        let a:state.affected_range = [
+            \ sexp#compare_pos(a:state.affected_range[0], a:ret.affected_range[0]) <= 0
+                \ ? a:state.affected_range[0] : a:ret.affected_range[0],
+            \ sexp#compare_pos(a:state.affected_range[1], a:ret.affected_range[1]) >= 0
+                \ ? a:state.affected_range[1] : a:ret.affected_range[1],
+        \ ]
+    endif
+endfunction
+
+function! sexp#swap_element__final(ex, state, mode, next, list)
+    call sexp#ensure_normal_mode()
+    if empty(a:ex) || a:ex ==# 'sexp-done'
+        if !empty(a:state.affected_range)
+            \ && (g:sexp_auto_indent != -1 ? g:sexp_auto_indent : g:sexp_swap_does_indent)
+            call s:post_op_reindent(
+                \ a:state.affected_range[0],
+                \ a:state.affected_range[1],
+                \ [a:state.cursor, a:state.vmarks])
+        endif
+        call s:set_visual_marks(a:state.vmarks)
+        call s:setcursor(a:state.cursor)
+    else
+        call s:set_visual_marks(a:state.vmarks)
+        call s:setcursor(a:state.cursor)
     endif
 endfunction
 

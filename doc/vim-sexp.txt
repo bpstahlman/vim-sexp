@@ -1555,6 +1555,7 @@ following {command} names are currently supported:
         clone
         raise
         splice
+        swap
         capture_emit
 
 ==============================================================================
@@ -1667,6 +1668,13 @@ See also |sexp-auto-indent|.
 >
         " Default
         let g:sexp_raise_does_indent = 1
+<
+                                                     *g:sexp_swap_does_indent*
+Automatically re-indent the target(s) of a sexp_swap operation.
+See also |sexp-auto-indent|.
+>
+        " Default
+        let g:sexp_swap_does_indent = 1
 <
 Set this flag to force cursor to remain with its list, even when the element
 under it is emitted. Default behavior matches Paredit.

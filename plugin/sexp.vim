@@ -95,6 +95,10 @@ if !exists('g:sexp_splice_does_indent')
     let g:sexp_splice_does_indent = 1
 endif
 
+if !exists('g:sexp_swap_does_indent')
+    let g:sexp_swap_does_indent = 1
+endif
+
 if !exists('g:sexp_emitting_bracket_is_sticky')
     let g:sexp_emitting_bracket_is_sticky = 0
 endif
@@ -689,16 +693,16 @@ DefplugN  xnoremap sexp_clone_element_ml sexp#clone('v', v:count, 0, 0, 'm')
 Defplug! nnoremap sexp_splice_list sexp#splice_list(v:count)
 
 " Swap list
-Defplug! nnoremap sexp_swap_list_backward sexp#docount(v:count, 'sexp#swap_element', 'n', 0, 1)
-DefplugN xnoremap sexp_swap_list_backward sexp#docount(v:count, 'sexp#swap_element', 'v', 0, 1)
-Defplug! nnoremap sexp_swap_list_forward  sexp#docount(v:count, 'sexp#swap_element', 'n', 1, 1)
-DefplugN xnoremap sexp_swap_list_forward  sexp#docount(v:count, 'sexp#swap_element', 'v', 1, 1)
+Defplug! nnoremap sexp_swap_list_backward sexp#docount_stateful(v:count, 'sexp#swap_element', 'n', 0, 1)
+DefplugN xnoremap sexp_swap_list_backward sexp#docount(v:count, 'sexp#swap_element_legacy', 'v', 0, 1)
+Defplug! nnoremap sexp_swap_list_forward  sexp#docount_stateful(v:count, 'sexp#swap_element', 'n', 1, 1)
+DefplugN xnoremap sexp_swap_list_forward  sexp#docount(v:count, 'sexp#swap_element_legacy', 'v', 1, 1)
 
 " Swap element
-Defplug! nnoremap sexp_swap_element_backward sexp#docount(v:count, 'sexp#swap_element', 'n', 0, 0)
-DefplugN xnoremap sexp_swap_element_backward sexp#docount(v:count, 'sexp#swap_element', 'v', 0, 0)
-Defplug! nnoremap sexp_swap_element_forward  sexp#docount(v:count, 'sexp#swap_element', 'n', 1, 0)
-DefplugN xnoremap sexp_swap_element_forward  sexp#docount(v:count, 'sexp#swap_element', 'v', 1, 0)
+Defplug! nnoremap sexp_swap_element_backward sexp#docount_stateful(v:count, 'sexp#swap_element', 'n', 0, 0)
+DefplugN xnoremap sexp_swap_element_backward sexp#docount(v:count, 'sexp#swap_element_legacy', 'v', 0, 0)
+Defplug! nnoremap sexp_swap_element_forward  sexp#docount_stateful(v:count, 'sexp#swap_element', 'n', 1, 0)
+DefplugN xnoremap sexp_swap_element_forward  sexp#docount(v:count, 'sexp#swap_element_legacy', 'v', 1, 0)
 
 " Emit/capture element
 Defplug! nnoremap sexp_emit_head_element    sexp#docount_stateful(v:count, 'sexp#stackop', 'n', 0, 0)
