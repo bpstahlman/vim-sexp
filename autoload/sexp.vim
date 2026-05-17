@@ -8170,6 +8170,31 @@ function! s:swap_needs_trailing_sep(unit, end)
         \ && !s:at_eol(a:end[1], a:end[2])
 endfunction
 
+function! s:swap_adjacent_unit_or_empty(unit, next)
+    let cursor = getpos('.')
+    try
+        call s:setcursor(a:unit[a:next ? 'end' : 'start'])
+        call s:set_marks_around_adjacent_element('n', a:next)
+        if s:get_visual_beg_mark()[1] < 1
+            return {}
+        endif
+        let ret = s:swap_unit_from_range(s:get_visual_marks())
+        return sexp#compare_pos(a:unit[a:next ? 'end' : 'start'],
+            \ ret[a:next ? 'end' : 'start']) == 0 ? {} : ret
+    finally
+        call s:setcursor(cursor)
+    endtry
+endfunction
+
+function! s:swap_unit_side_seps(unit)
+    let prev = s:swap_adjacent_unit_or_empty(a:unit, 0)
+    let next = s:swap_adjacent_unit_or_empty(a:unit, 1)
+    return {
+        \ 'before': empty(prev) ? '' : s:swap_sep_between(prev, a:unit),
+        \ 'after': empty(next) ? '' : s:swap_sep_between(a:unit, next),
+    \ }
+endfunction
+
 " Build a swap unit from an inner range, extending a same-line trailing end-of-line
 " comment so it moves with the preceding element.
 function! s:swap_unit_from_range(range)
@@ -8201,23 +8226,26 @@ function! s:swap_current_unit(list)
 endfunction
 
 function! s:swap_adjacent_unit(unit, next)
-    call s:setcursor(a:unit[a:next ? 'end' : 'start'])
-    call s:set_marks_around_adjacent_element('n', a:next)
-    if s:get_visual_beg_mark()[1] < 1
-        return {}
-    endif
-    let ret = s:swap_unit_from_range(s:get_visual_marks())
-    if sexp#compare_pos(a:unit[a:next ? 'end' : 'start'], ret[a:next ? 'end' : 'start']) == 0
-        return {}
-    endif
-    return ret
+    return s:swap_adjacent_unit_or_empty(a:unit, a:next)
 endfunction
 
 function! sexp#swap_element__init(mode, next, list)
+    let cursor = getpos('.')
+    let vmarks = s:get_visual_marks()
+    try
+        let moving = s:swap_current_unit(a:list)
+        let seps = empty(moving) ? {'before': '', 'after': ''} : s:swap_unit_side_seps(moving)
+    finally
+        call s:set_visual_marks(vmarks)
+        call s:setcursor(cursor)
+    endtry
     return {
-        \ 'cursor': getpos('.'),
-        \ 'vmarks': s:get_visual_marks(),
+        \ 'cursor': cursor,
+        \ 'vmarks': vmarks,
         \ 'affected_range': [],
+        \ 'origin_before_sep': seps.before,
+        \ 'origin_after_sep': seps.after,
+        \ 'pending_heal_sep': '',
         \ 'offset': 0,
     \ }
 endfunction
@@ -8242,28 +8270,22 @@ function! sexp#swap_element(state, mode, next, list)
     let first = a:next ? moving : target
     let second = a:next ? target : moving
     let sep = s:swap_choose_sep(moving, target, s:swap_sep_between(first, second))
-    let marker_s = nr2char(0x02)
-    let marker_e = nr2char(0x03)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
-    let tail_sep = a:next && s:swap_needs_trailing_sep(moving, second.end) ? "\n" : ''
+    let sep_after_moved = a:next && s:swap_needs_trailing_sep(moving, second.end) ? "\n" : ''
+    let sep_before_moved = sep
+    let sep_after_moved = a:next ? sep_after_moved : sep
+    let moving_off = a:next ? strlen(target_text . sep_before_moved) : 0
     let repl = a:next
-        \ ? target_text . sep . marker_s . moving_text . marker_e . tail_sep
-        \ : marker_s . moving_text . marker_e . sep . target_text
+        \ ? target_text . sep_before_moved . moving_text . sep_after_moved
+        \ : moving_text . sep_after_moved . target_text
 
+    let anchor_byte = s:pos2byte(first.start)
     let ps = s:concat_positions(a:state.cursor, a:state.vmarks, first.start, second.end)
     call s:yankdel_range(first.start, second.end, repl, 1, ps, 1)
 
-    call s:setcursor([0, 1, 1, 0])
-    let [sl, sc] = s:findpos(marker_s, 1)
-    keepjumps call cursor(sl, sc)
-    normal! x
-    let s = [0, sl, sc, 0]
-
-    let [el, ec] = s:findpos(marker_e, 1)
-    keepjumps call cursor(el, ec)
-    normal! x
-    let e = [0, el, ec - 1, 0]
+    let s = s:byte2pos(anchor_byte + moving_off)
+    let e = s:byte2pos(anchor_byte + moving_off + strlen(moving_text) - 1)
 
     call s:set_visual_marks([s, e])
     call s:setcursor(s)
