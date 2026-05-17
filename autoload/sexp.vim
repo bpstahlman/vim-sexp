@@ -8138,9 +8138,13 @@ endfunction
 
 " Return range text, or an empty string for an empty/reversed range.
 function! s:swap_range_text(start, end)
-    return sexp#compare_pos(a:start, a:end) <= 0
-        \ ? s:extract_text_from_range(a:start, a:end)
-        \ : ''
+    if sexp#compare_pos(a:start, a:end) > 0
+        return ''
+    endif
+    let text = join(getline(1, '$'), "\n")
+    let s = s:pos2byte(a:start)
+    let e = s:pos2byte(a:end)
+    return strpart(text, s - 1, e - s + 1)
 endfunction
 
 " Return text between two adjacent units.
@@ -8181,6 +8185,9 @@ endfunction
 " slot_hint is prefix/suffix from the moving element's old slot; target_side_hint is
 " the separator between moving element and target before the swap.
 function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hint)
+    if empty(a:left) || empty(a:right)
+        return ''
+    endif
     if !empty(a:state.pending_heal_sep)
         let hint = a:state.pending_heal_sep
         if s:swap_sep_has_blankline(hint)
@@ -8198,6 +8205,26 @@ function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hi
     if !empty(a:left) && !empty(a:right)
         \ && (s:swap_unit_forces_nl(a:left) || s:swap_unit_forces_nl(a:right))
         return "\n"
+    endif
+    return ' '
+endfunction
+
+" Choose separator adjacent to the moved unit. Hints are edge-oriented: one describes
+" the moved unit's original edge and the other describes the target slot's edge.
+function! s:swap_choose_moved_sep(moving, neighbor, moved_edge_hint, slot_edge_hint)
+    if empty(a:neighbor) && empty(a:slot_edge_hint)
+        return ''
+    elseif s:swap_sep_has_blankline(a:moved_edge_hint)
+        \ || s:swap_sep_has_blankline(a:slot_edge_hint)
+        return "\n\n"
+    elseif s:swap_sep_has_newline(a:moved_edge_hint)
+        \ || s:swap_sep_has_newline(a:slot_edge_hint)
+        return "\n"
+    elseif s:swap_unit_forces_nl(a:moving)
+        \ || !empty(a:neighbor) && s:swap_unit_forces_nl(a:neighbor)
+        return "\n"
+    elseif empty(a:moved_edge_hint) && empty(a:slot_edge_hint)
+        return ''
     endif
     return ' '
 endfunction
@@ -8324,14 +8351,17 @@ function! sexp#swap_element(state, mode, next, list)
     let win = s:swap_window(first, second)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
-    let sep_between = s:swap_choose_sep(moving, target, win.between_sep)
     let sep_healed = s:swap_choose_healed_sep(a:state,
         \ a:next ? win.prev : target,
         \ a:next ? target : win.next,
         \ a:next ? win.prefix_sep : win.suffix_sep,
         \ win.between_sep)
-    let sep_before_moved = a:next ? sep_between : win.prefix_sep
-    let sep_after_moved = a:next ? win.suffix_sep : sep_between
+    let sep_before_moved = a:next
+        \ ? s:swap_choose_moved_sep(moving, target, win.prefix_sep, win.suffix_sep)
+        \ : s:swap_choose_moved_sep(moving, win.prev, win.between_sep, win.prefix_sep)
+    let sep_after_moved = a:next
+        \ ? s:swap_choose_moved_sep(moving, win.next, win.between_sep, win.suffix_sep)
+        \ : s:swap_choose_moved_sep(moving, target, win.suffix_sep, win.prefix_sep)
     if a:next && s:swap_needs_trailing_sep(moving, second.end)
         let sep_after_moved = "\n"
     endif
