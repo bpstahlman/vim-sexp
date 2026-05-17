@@ -5580,8 +5580,12 @@ endfunction
 "      Enum:
 "        0=exclusive of range endpoint
 "        1=inclusive of range endpoint
-"        2=exclusive of range endpoint and adjacent non-NL whitespace on the
-"          range-interior side of the endpoint
+"        2=exclusive of range endpoint and adjacent whitespace on the range-interior
+"          side of the endpoint
+"          Note: For start, adjacent whitespace is non-NL whitespace following the
+"          endpoint. For end, adjacent whitespace extends back toward BOL; if that
+"          whitespace reaches BOL, the adjusted inclusive end becomes the previous
+"          line's newline.
 "      Formats:
 "        both_inclusive
 "      | [start_inclusive, end_inclusive]
@@ -8195,6 +8199,21 @@ function! s:swap_unit_side_seps(unit)
     \ }
 endfunction
 
+function! s:swap_window(first, second)
+    let prev = s:swap_adjacent_unit_or_empty(a:first, 0)
+    let next = s:swap_adjacent_unit_or_empty(a:second, 1)
+    return {
+        \ 'prev': prev,
+        \ 'next': next,
+        \ 'start': empty(prev) ? a:first.start : prev.end,
+        \ 'end': empty(next) ? a:second.end : next.start,
+        \ 'inc': [empty(prev) ? 1 : 0, empty(next) ? 1 : 0],
+        \ 'prefix_sep': empty(prev) ? '' : s:swap_sep_between(prev, a:first),
+        \ 'between_sep': s:swap_sep_between(a:first, a:second),
+        \ 'suffix_sep': empty(next) ? '' : s:swap_sep_between(a:second, next),
+    \ }
+endfunction
+
 " Build a swap unit from an inner range, extending a same-line trailing end-of-line
 " comment so it moves with the preceding element.
 function! s:swap_unit_from_range(range)
@@ -8269,20 +8288,29 @@ function! sexp#swap_element(state, mode, next, list)
 
     let first = a:next ? moving : target
     let second = a:next ? target : moving
-    let sep = s:swap_choose_sep(moving, target, s:swap_sep_between(first, second))
+    let win = s:swap_window(first, second)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
-    let sep_after_moved = a:next && s:swap_needs_trailing_sep(moving, second.end) ? "\n" : ''
-    let sep_before_moved = sep
-    let sep_after_moved = a:next ? sep_after_moved : sep
-    let moving_off = a:next ? strlen(target_text . sep_before_moved) : 0
+    let sep_between = s:swap_choose_sep(moving, target, win.between_sep)
+    let sep_healed = !empty(a:state.pending_heal_sep)
+        \ ? a:state.pending_heal_sep
+        \ : a:next ? win.prefix_sep : win.suffix_sep
+    let sep_before_moved = a:next ? sep_between : win.prefix_sep
+    let sep_after_moved = a:next ? win.suffix_sep : sep_between
+    if a:next && s:swap_needs_trailing_sep(moving, second.end)
+        let sep_after_moved = "\n"
+    endif
+    let moving_off = a:next
+        \ ? strlen(sep_healed . target_text . sep_before_moved)
+        \ : strlen(sep_before_moved)
     let repl = a:next
-        \ ? target_text . sep_before_moved . moving_text . sep_after_moved
-        \ : moving_text . sep_after_moved . target_text
+        \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
+        \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
 
-    let anchor_byte = s:pos2byte(first.start)
-    let ps = s:concat_positions(a:state.cursor, a:state.vmarks, first.start, second.end)
-    call s:yankdel_range(first.start, second.end, repl, 1, ps, 1)
+    let anchor = s:yankdel_range__preadjust_range_start(win.start, win.inc[0])
+    let anchor_byte = s:pos2byte(anchor)
+    let ps = s:concat_positions(a:state.cursor, a:state.vmarks, win.start, win.end)
+    call s:yankdel_range(win.start, win.end, repl, win.inc, ps, 1)
 
     let s = s:byte2pos(anchor_byte + moving_off)
     let e = s:byte2pos(anchor_byte + moving_off + strlen(moving_text) - 1)
@@ -8292,10 +8320,11 @@ function! sexp#swap_element(state, mode, next, list)
 
     return {
         \ 'swapped': 1,
-        \ 'affected_range': [first.start, second.end],
+        \ 'affected_range': [win.start, win.end],
         \ 'cursor': s,
         \ 'vmarks': [s, e],
         \ 'offset_delta': a:next ? 1 : -1,
+        \ 'pending_heal_sep': a:next ? win.suffix_sep : win.prefix_sep,
     \ }
 endfunction
 
@@ -8306,6 +8335,7 @@ function! sexp#swap_element__update(state, ret, mode, next, list)
     let a:state.cursor = a:ret.cursor
     let a:state.vmarks = a:ret.vmarks
     let a:state.offset += a:ret.offset_delta
+    let a:state.pending_heal_sep = a:ret.pending_heal_sep
     if empty(a:state.affected_range)
         let a:state.affected_range = a:ret.affected_range
     else
