@@ -8169,6 +8169,39 @@ function! s:swap_choose_sep(aunit, bunit, old_sep)
     return ' '
 endfunction
 
+function! s:swap_sep_has_blankline(sep)
+    return a:sep =~# "\n\n"
+endfunction
+
+function! s:swap_sep_has_newline(sep)
+    return a:sep =~# "\n"
+endfunction
+
+" Choose separator for the sibling boundary healed when moving crosses target.
+" slot_hint is prefix/suffix from the moving element's old slot; target_side_hint is
+" the separator between moving element and target before the swap.
+function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hint)
+    if !empty(a:state.pending_heal_sep)
+        let hint = a:state.pending_heal_sep
+        if s:swap_sep_has_blankline(hint)
+            return "\n\n"
+        elseif s:swap_sep_has_newline(hint)
+            return "\n"
+        endif
+    elseif s:swap_sep_has_blankline(a:slot_hint)
+        \ || s:swap_sep_has_blankline(a:target_side_hint)
+        return "\n\n"
+    elseif s:swap_sep_has_newline(a:target_side_hint)
+        \ || s:swap_sep_has_newline(a:slot_hint)
+        return "\n"
+    endif
+    if !empty(a:left) && !empty(a:right)
+        \ && (s:swap_unit_forces_nl(a:left) || s:swap_unit_forces_nl(a:right))
+        return "\n"
+    endif
+    return ' '
+endfunction
+
 function! s:swap_needs_trailing_sep(unit, end)
     return s:is_eol_comment(a:unit.end[1], a:unit.end[2])
         \ && !s:at_eol(a:end[1], a:end[2])
@@ -8292,9 +8325,11 @@ function! sexp#swap_element(state, mode, next, list)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
     let sep_between = s:swap_choose_sep(moving, target, win.between_sep)
-    let sep_healed = !empty(a:state.pending_heal_sep)
-        \ ? a:state.pending_heal_sep
-        \ : a:next ? win.prefix_sep : win.suffix_sep
+    let sep_healed = s:swap_choose_healed_sep(a:state,
+        \ a:next ? win.prev : target,
+        \ a:next ? target : win.next,
+        \ a:next ? win.prefix_sep : win.suffix_sep,
+        \ win.between_sep)
     let sep_before_moved = a:next ? sep_between : win.prefix_sep
     let sep_after_moved = a:next ? win.suffix_sep : sep_between
     if a:next && s:swap_needs_trailing_sep(moving, second.end)
