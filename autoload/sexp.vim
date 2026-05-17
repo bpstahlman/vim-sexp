@@ -5578,10 +5578,10 @@ endfunction
 " -- Optional Args --
 " a:1  range inclusivity
 "      Enum:
-"        0=exclusive
-"        1=inclusive
-"        2=exclusive of cursor pos as well as any adjacent end-of-line whitespace,
-"          including the newline itself
+"        0=exclusive of range endpoint
+"        1=inclusive of range endpoint
+"        2=exclusive of range endpoint and adjacent non-NL whitespace on the
+"          range-interior side of the endpoint
 "      Formats:
 "        both_inclusive
 "      | [start_inclusive, end_inclusive]
