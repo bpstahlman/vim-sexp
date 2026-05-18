@@ -95,6 +95,8 @@ let s:yank_metadata = {}
 let s:regput_internal_typ_active = 0
 " Saved 'virtualedit' value pending deferred restoration at SafeState.
 let s:regput_pending_ve_restore = v:null
+" State shared by consecutive normal-mode swap invocations.
+let s:swap_seq_state = {}
 
 " Temporary hint created when sexp object command executes.
 " Used by TextYankPost handler to validate whether subsequent yank/delete came from
@@ -8308,12 +8310,23 @@ function! s:swap_adjacent_unit(unit, next)
     return s:swap_adjacent_unit_or_empty(a:unit, a:next)
 endfunction
 
+function! s:swap_seq_can_continue(mode, list, moving)
+    return a:mode ==# 'n'
+        \ && !empty(s:swap_seq_state)
+        \ && get(s:swap_seq_state, 'bufnr', -1) == bufnr('%')
+        \ && get(s:swap_seq_state, 'changedtick', -1) == b:changedtick
+        \ && get(s:swap_seq_state, 'list', -1) == a:list
+        \ && !empty(a:moving)
+        \ && get(s:swap_seq_state, 'vmarks', []) == [a:moving.start, a:moving.end]
+endfunction
+
 function! sexp#swap_element__init(mode, next, list)
     let cursor = getpos('.')
     let vmarks = s:get_visual_marks()
     try
         let moving = s:swap_current_unit(a:list)
         let seps = empty(moving) ? {'before': '', 'after': ''} : s:swap_unit_side_seps(moving)
+        let seq = s:swap_seq_can_continue(a:mode, a:list, moving) ? s:swap_seq_state : {}
     finally
         call s:set_visual_marks(vmarks)
         call s:setcursor(cursor)
@@ -8322,10 +8335,13 @@ function! sexp#swap_element__init(mode, next, list)
         \ 'cursor': cursor,
         \ 'vmarks': vmarks,
         \ 'affected_range': [],
-        \ 'origin_before_sep': seps.before,
-        \ 'origin_after_sep': seps.after,
-        \ 'pending_heal_sep': '',
-        \ 'offset': 0,
+        \ 'origin_before_sep': empty(seq) ? seps.before : seq.origin_before_sep,
+        \ 'origin_after_sep': empty(seq) ? seps.after : seq.origin_after_sep,
+        \ 'pending_heal_sep': empty(seq) ? '' : seq.pending_heal_sep,
+        \ 'offset': empty(seq) ? 0 : seq.offset,
+        \ 'seq_continues': !empty(seq),
+        \ 'bufnr': bufnr('%'),
+        \ 'list': a:list,
     \ }
 endfunction
 
@@ -8425,7 +8441,20 @@ function! sexp#swap_element__final(ex, state, mode, next, list)
         endif
         call s:set_visual_marks(a:state.vmarks)
         call s:setcursor(a:state.cursor)
+        let s:swap_seq_state = !empty(a:state.affected_range) && a:mode ==# 'n'
+            \ ? {
+                \ 'bufnr': bufnr('%'),
+                \ 'changedtick': b:changedtick,
+                \ 'list': a:list,
+                \ 'vmarks': copy(a:state.vmarks),
+                \ 'origin_before_sep': a:state.origin_before_sep,
+                \ 'origin_after_sep': a:state.origin_after_sep,
+                \ 'pending_heal_sep': a:state.pending_heal_sep,
+                \ 'offset': a:state.offset,
+            \ }
+            \ : {}
     else
+        let s:swap_seq_state = {}
         call s:set_visual_marks(a:state.vmarks)
         call s:setcursor(a:state.cursor)
     endif
