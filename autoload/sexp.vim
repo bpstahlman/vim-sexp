@@ -8231,6 +8231,18 @@ function! s:swap_choose_moved_sep(moving, neighbor, moved_edge_hint, slot_edge_h
     return ' '
 endfunction
 
+function! s:swap_safe_moved_sep(moving, neighbor, sep)
+    if s:swap_sep_has_blankline(a:sep)
+        return "\n\n"
+    elseif s:swap_sep_has_newline(a:sep)
+        return "\n"
+    elseif s:swap_unit_forces_nl(a:moving)
+        \ || !empty(a:neighbor) && s:swap_unit_forces_nl(a:neighbor)
+        return "\n"
+    endif
+    return a:sep
+endfunction
+
 function! s:swap_needs_trailing_sep(unit, end)
     return s:is_eol_comment(a:unit.end[1], a:unit.end[2])
         \ && !s:at_eol(a:end[1], a:end[2])
@@ -8367,17 +8379,29 @@ function! sexp#swap_element(state, mode, next, list)
     let win = s:swap_window(first, second)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
+    let next_offset = a:state.offset + (a:next ? 1 : -1)
     let sep_healed = s:swap_choose_healed_sep(a:state,
         \ a:next ? win.prev : target,
         \ a:next ? target : win.next,
         \ a:next ? win.prefix_sep : win.suffix_sep,
         \ win.between_sep)
-    let sep_before_moved = a:next
-        \ ? s:swap_choose_moved_sep(moving, target, win.prefix_sep, win.suffix_sep)
-        \ : s:swap_choose_moved_sep(moving, win.prev, win.between_sep, win.prefix_sep)
-    let sep_after_moved = a:next
-        \ ? s:swap_choose_moved_sep(moving, win.next, win.between_sep, win.suffix_sep)
-        \ : s:swap_choose_moved_sep(moving, target, win.suffix_sep, win.prefix_sep)
+    if next_offset == 0
+        let sep_before_moved = s:swap_safe_moved_sep(
+            \ moving, a:next ? target : win.prev, a:state.origin_before_sep)
+        let sep_after_moved = s:swap_safe_moved_sep(
+            \ moving, a:next ? win.next : target, a:state.origin_after_sep)
+    else
+        let sep_before_moved = a:next
+            \ ? s:swap_choose_moved_sep(moving, target,
+                \ a:state.origin_before_sep, win.suffix_sep)
+            \ : s:swap_choose_moved_sep(moving, win.prev,
+                \ a:state.origin_before_sep, win.prefix_sep)
+        let sep_after_moved = a:next
+            \ ? s:swap_choose_moved_sep(moving, win.next,
+                \ a:state.origin_after_sep, win.suffix_sep)
+            \ : s:swap_choose_moved_sep(moving, target,
+                \ a:state.origin_after_sep, win.prefix_sep)
+    endif
     if a:next && s:swap_needs_trailing_sep(moving, second.end)
         let sep_after_moved = "\n"
     endif
@@ -8404,7 +8428,7 @@ function! sexp#swap_element(state, mode, next, list)
         \ 'affected_range': [win.start, win.end],
         \ 'cursor': s,
         \ 'vmarks': [s, e],
-        \ 'offset_delta': a:next ? 1 : -1,
+        \ 'offset': next_offset,
         \ 'pending_heal_sep': a:next ? win.suffix_sep : win.prefix_sep,
     \ }
 endfunction
@@ -8415,7 +8439,7 @@ function! sexp#swap_element__update(state, ret, mode, next, list)
     endif
     let a:state.cursor = a:ret.cursor
     let a:state.vmarks = a:ret.vmarks
-    let a:state.offset += a:ret.offset_delta
+    let a:state.offset = a:ret.offset
     let a:state.pending_heal_sep = a:ret.pending_heal_sep
     if empty(a:state.affected_range)
         let a:state.affected_range = a:ret.affected_range
