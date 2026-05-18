@@ -8232,12 +8232,9 @@ function! s:swap_choose_moved_sep(moving, neighbor, moved_edge_hint, slot_edge_h
 endfunction
 
 function! s:swap_safe_moved_sep(moving, neighbor, sep)
-    if s:swap_sep_has_blankline(a:sep)
-        return "\n\n"
-    elseif s:swap_sep_has_newline(a:sep)
-        return "\n"
-    elseif s:swap_unit_forces_nl(a:moving)
-        \ || !empty(a:neighbor) && s:swap_unit_forces_nl(a:neighbor)
+    if s:is_eol_comment(a:moving.end[1], a:moving.end[2])
+        \ && !empty(a:neighbor)
+        \ && !s:swap_sep_has_newline(a:sep)
         return "\n"
     endif
     return a:sep
