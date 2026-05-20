@@ -8156,11 +8156,24 @@ function! s:swap_sep_between(left, right)
     return s:swap_range_text(s, e)
 endfunction
 
-" A unit forces linewise separation when keeping it inline could move text into
-" comment syntax or produce unreadable multiline layout.
-function! s:swap_unit_forces_nl(unit)
+function! s:swap_force_linewise(flag)
+    return stridx(g:sexp_swap_force_linewise, a:flag) >= 0
+endfunction
+
+function! s:swap_unit_is_multiline(unit)
     return a:unit.start[1] != a:unit.end[1]
-        \ || sexp#is_comment(a:unit.start[1], a:unit.start[2])
+endfunction
+
+function! s:swap_unit_is_full_line_comment(unit)
+    return sexp#is_comment(a:unit.start[1], a:unit.start[2])
+        \ && s:at_bol(a:unit.start[1], a:unit.start[2])
+endfunction
+
+" A unit forces linewise separation when configured to do so, or when keeping it inline
+" could move following text into an end-of-line comment.
+function! s:swap_unit_forces_nl(unit)
+    return s:swap_force_linewise('m') && s:swap_unit_is_multiline(a:unit)
+        \ || s:swap_force_linewise('c') && s:swap_unit_is_full_line_comment(a:unit)
         \ || s:is_eol_comment(a:unit.end[1], a:unit.end[2])
 endfunction
 
@@ -8211,22 +8224,19 @@ function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hi
     return ' '
 endfunction
 
-" Choose separator adjacent to the moved unit. Hints are edge-oriented: one describes
-" the moved unit's original edge and the other describes the target slot's edge.
-function! s:swap_choose_moved_sep(moving, neighbor, moved_edge_hint, slot_edge_hint)
+" Choose separator adjacent to the moved unit. The slot edge gives the target
+" shape; the moved unit contributes only intrinsic linewise requirements.
+function! s:swap_choose_moved_sep(moving, neighbor, slot_edge_hint)
     if empty(a:neighbor) && empty(a:slot_edge_hint)
         return ''
-    elseif s:swap_sep_has_blankline(a:moved_edge_hint)
-        \ || s:swap_sep_has_blankline(a:slot_edge_hint)
+    elseif s:swap_sep_has_blankline(a:slot_edge_hint)
         return "\n\n"
-    elseif s:swap_sep_has_newline(a:moved_edge_hint)
-        \ || s:swap_sep_has_newline(a:slot_edge_hint)
+    elseif s:swap_sep_has_newline(a:slot_edge_hint)
+        return "\n"
+    elseif !empty(a:neighbor) && s:swap_unit_is_full_line_comment(a:neighbor)
         return "\n"
     elseif s:swap_unit_forces_nl(a:moving)
-        \ || !empty(a:neighbor) && s:swap_unit_forces_nl(a:neighbor)
         return "\n"
-    elseif empty(a:moved_edge_hint) && empty(a:slot_edge_hint)
-        return ''
     endif
     return ' '
 endfunction
@@ -8389,15 +8399,11 @@ function! sexp#swap_element(state, mode, next, list)
             \ moving, a:next ? win.next : target, a:state.origin_after_sep)
     else
         let sep_before_moved = a:next
-            \ ? s:swap_choose_moved_sep(moving, target,
-                \ a:state.origin_before_sep, win.suffix_sep)
-            \ : s:swap_choose_moved_sep(moving, win.prev,
-                \ a:state.origin_before_sep, win.prefix_sep)
+            \ ? s:swap_choose_moved_sep(moving, target, win.suffix_sep)
+            \ : s:swap_choose_moved_sep(moving, win.prev, win.prefix_sep)
         let sep_after_moved = a:next
-            \ ? s:swap_choose_moved_sep(moving, win.next,
-                \ a:state.origin_after_sep, win.suffix_sep)
-            \ : s:swap_choose_moved_sep(moving, target,
-                \ a:state.origin_after_sep, win.prefix_sep)
+            \ ? s:swap_choose_moved_sep(moving, win.next, win.suffix_sep)
+            \ : s:swap_choose_moved_sep(moving, target, win.prefix_sep)
     endif
     if a:next && s:swap_needs_trailing_sep(moving, second.end)
         let sep_after_moved = "\n"

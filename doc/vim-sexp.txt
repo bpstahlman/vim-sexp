@@ -1676,6 +1676,17 @@ See also |sexp-auto-indent|.
         " Default
         let g:sexp_swap_does_indent = 1
 <
+                                                *g:sexp_swap_force_linewise*
+Controls which swap units force linewise separators when moved. Hard comment
+safety is always enforced regardless of this setting.
+
+Flags:
+        m       multi-line units force linewise separators
+        c       full-line comment units force linewise separators
+>
+        " Default
+        let g:sexp_swap_force_linewise = 'mc'
+<
 Set this flag to force cursor to remain with its list, even when the element
 under it is emitted. Default behavior matches Paredit.
 See also |sexp-emit-cursor-logic|.

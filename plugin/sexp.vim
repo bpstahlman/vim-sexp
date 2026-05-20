@@ -99,6 +99,10 @@ if !exists('g:sexp_swap_does_indent')
     let g:sexp_swap_does_indent = 1
 endif
 
+if !exists('g:sexp_swap_force_linewise')
+    let g:sexp_swap_force_linewise = 'mc'
+endif
+
 if !exists('g:sexp_emitting_bracket_is_sticky')
     let g:sexp_emitting_bracket_is_sticky = 0
 endif
