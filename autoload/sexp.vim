@@ -8196,10 +8196,10 @@ function! s:swap_sep_has_newline(sep)
     return a:sep =~# "\n"
 endfunction
 
-" Choose separator for the sibling boundary healed when moving crosses target.
-" slot_hint is prefix/suffix from the moving element's old slot; target_side_hint is
-" the separator between moving element and target before the swap.
-function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hint)
+" Choose separator for the sibling boundary healed when moving crosses target. The
+" swapee occupies the moving unit's vacated slot, so preserve that slot separator
+" unless the swapee needs a newline there for comment safety.
+function! s:swap_choose_healed_sep(state, left, right, swapee, slot_hint)
     if empty(a:left) || empty(a:right)
         return ''
     endif
@@ -8211,14 +8211,11 @@ function! s:swap_choose_healed_sep(state, left, right, slot_hint, target_side_hi
             return "\n"
         endif
     elseif s:swap_sep_has_blankline(a:slot_hint)
-        \ || s:swap_sep_has_blankline(a:target_side_hint)
         return "\n\n"
-    elseif s:swap_sep_has_newline(a:target_side_hint)
-        \ || s:swap_sep_has_newline(a:slot_hint)
+    elseif s:swap_sep_has_newline(a:slot_hint)
         return "\n"
     endif
-    if !empty(a:left) && !empty(a:right)
-        \ && (s:swap_unit_forces_nl(a:left) || s:swap_unit_forces_nl(a:right))
+    if s:swap_unit_is_full_line_comment(a:swapee)
         return "\n"
     endif
     return ' '
@@ -8390,8 +8387,8 @@ function! sexp#swap_element(state, mode, next, list)
     let sep_healed = s:swap_choose_healed_sep(a:state,
         \ a:next ? win.prev : target,
         \ a:next ? target : win.next,
-        \ a:next ? win.prefix_sep : win.suffix_sep,
-        \ win.between_sep)
+        \ target,
+        \ a:next ? win.prefix_sep : win.suffix_sep)
     if next_offset == 0
         let sep_before_moved = s:swap_safe_moved_sep(
             \ moving, a:next ? target : win.prev, a:state.origin_before_sep)
@@ -8399,11 +8396,11 @@ function! sexp#swap_element(state, mode, next, list)
             \ moving, a:next ? win.next : target, a:state.origin_after_sep)
     else
         let sep_before_moved = a:next
-            \ ? s:swap_choose_moved_sep(moving, target, win.suffix_sep)
+            \ ? s:swap_choose_moved_sep(moving, target, win.between_sep)
             \ : s:swap_choose_moved_sep(moving, win.prev, win.prefix_sep)
         let sep_after_moved = a:next
             \ ? s:swap_choose_moved_sep(moving, win.next, win.suffix_sep)
-            \ : s:swap_choose_moved_sep(moving, target, win.prefix_sep)
+            \ : s:swap_choose_moved_sep(moving, target, win.between_sep)
     endif
     if a:next && s:swap_needs_trailing_sep(moving, second.end)
         let sep_after_moved = "\n"
