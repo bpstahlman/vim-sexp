@@ -8403,6 +8403,20 @@ function! s:swap_seq_can_continue(mode, list, moving)
         \ && get(s:swap_seq_state, 'vmarks', []) == [a:moving.start, a:moving.end]
 endfunction
 
+function! s:swap_seq_state_from_state(state, list)
+    return {
+        \ 'bufnr': bufnr('%'),
+        \ 'changedtick': b:changedtick,
+        \ 'list': a:list,
+        \ 'vmarks': copy(a:state.vmarks),
+        \ 'origin_before_sep': a:state.origin_before_sep,
+        \ 'origin_after_sep': a:state.origin_after_sep,
+        \ 'trailing_comment_inline_before': a:state.trailing_comment_inline_before,
+        \ 'swap_stack': copy(a:state.swap_stack),
+        \ 'offset': a:state.offset,
+    \ }
+endfunction
+
 function! sexp#swap_element__init(mode, next, list)
     let cursor = getpos('.')
     let vmarks = s:get_visual_marks()
@@ -8567,18 +8581,10 @@ function! sexp#swap_element__final(ex, state, mode, next, list)
         endif
         call s:set_visual_marks(a:state.vmarks)
         call s:setcursor(a:state.cursor)
-        let s:swap_seq_state = !empty(a:state.affected_range) && a:mode ==# 'n'
-            \ ? {
-                \ 'bufnr': bufnr('%'),
-                \ 'changedtick': b:changedtick,
-                \ 'list': a:list,
-                \ 'vmarks': copy(a:state.vmarks),
-                \ 'origin_before_sep': a:state.origin_before_sep,
-                \ 'origin_after_sep': a:state.origin_after_sep,
-                \ 'trailing_comment_inline_before': a:state.trailing_comment_inline_before,
-                \ 'swap_stack': copy(a:state.swap_stack),
-                \ 'offset': a:state.offset,
-            \ }
+        let s:swap_seq_state = a:mode ==# 'n'
+            \ && (!empty(a:state.affected_range)
+                \ || (a:ex ==# 'sexp-done' && get(a:state, 'seq_continues', 0)))
+            \ ? s:swap_seq_state_from_state(a:state, a:list)
             \ : {}
     else
         let s:swap_seq_state = {}
