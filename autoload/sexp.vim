@@ -8251,7 +8251,7 @@ function! s:swap_window_baselines(state, next, win)
     let frame = a:state.swap_stack[-1]
     if a:next
         return {
-            \ 'prefix_sep': frame.base_between_sep,
+            \ 'prefix_sep': frame.base_suffix_sep,
             \ 'between_sep': frame.base_suffix_sep,
             \ 'suffix_sep': a:win.suffix_sep,
         \ }
@@ -8260,7 +8260,7 @@ function! s:swap_window_baselines(state, next, win)
     return {
         \ 'prefix_sep': a:win.prefix_sep,
         \ 'between_sep': frame.base_prefix_sep,
-        \ 'suffix_sep': frame.base_between_sep,
+        \ 'suffix_sep': frame.base_prefix_sep,
     \ }
 endfunction
 
@@ -8285,7 +8285,8 @@ function! s:swap_target_pulled_inline(target, healed_sep)
 endfunction
 
 function! s:swap_safe_after_moved_sep(moving, neighbor, sep)
-    if s:swap_unit_has_trailing_eol_comment(a:moving)
+    if !empty(a:moving)
+        \ && s:swap_unit_has_trailing_eol_comment(a:moving)
         \ && !empty(a:neighbor)
         \ && !s:swap_sep_has_newline(a:sep)
         return "\n"
@@ -8480,11 +8481,7 @@ function! sexp#swap_element(state, mode, next, list)
                 \ : strlen(win.prefix_sep . target_text . win.between_sep),
         \ })
 
-        let sep_healed = s:swap_edge_sep(a:state,
-            \ a:next ? win.prev : target,
-            \ a:next ? target : win.next,
-            \ a:next ? base.prefix_sep : base.suffix_sep,
-            \ !a:next, a:next, 1)
+        let sep_healed = a:next ? base.prefix_sep : base.suffix_sep
         let sep_before_moved = s:swap_edge_sep(a:state,
             \ a:next ? target : win.prev,
             \ moving,
@@ -8500,9 +8497,6 @@ function! sexp#swap_element(state, mode, next, list)
         if a:next
             let sep_before_moved = s:swap_safe_after_moved_sep(
                 \ target, moving, sep_before_moved)
-        else
-            let sep_healed = s:swap_safe_after_moved_sep(
-                \ target, win.next, sep_healed)
         endif
         if a:next && s:swap_needs_trailing_sep(moving, second.end)
             let sep_after_moved = "\n"
