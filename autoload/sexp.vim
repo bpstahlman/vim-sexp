@@ -1978,6 +1978,9 @@ endfunction
 " Returns nonzero if input position first non-ws on line
 " Note: Accepts virtual cursor pos at EOL.
 function! s:at_bol(line, col)
+    if a:col <= 1
+        return 1
+    endif
     return getline(a:line)[:a:col - 2] !~ '\S'
 endfunction
 
@@ -8169,12 +8172,16 @@ function! s:swap_unit_is_full_line_comment(unit)
         \ && s:at_bol(a:unit.start[1], a:unit.start[2])
 endfunction
 
-" A unit forces linewise separation when configured to do so, or when keeping it inline
-" could move following text into an end-of-line comment.
+function! s:swap_unit_has_trailing_eol_comment(unit)
+    return !s:swap_unit_is_full_line_comment(a:unit)
+        \ && s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+endfunction
+
+" A unit forces linewise separation when configured to do so.
 function! s:swap_unit_forces_nl(unit)
     return s:swap_force_linewise('m') && s:swap_unit_is_multiline(a:unit)
         \ || s:swap_force_linewise('c') && s:swap_unit_is_full_line_comment(a:unit)
-        \ || s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+        \ || s:swap_unit_has_trailing_eol_comment(a:unit)
 endfunction
 
 function! s:swap_choose_sep(aunit, bunit, old_sep)
@@ -8196,50 +8203,89 @@ function! s:swap_sep_has_newline(sep)
     return a:sep =~# "\n"
 endfunction
 
-" Choose separator for the sibling boundary healed when moving crosses target. The
-" swapee occupies the moving unit's vacated slot, so preserve that slot separator
-" unless the swapee needs a newline there for comment safety.
-function! s:swap_choose_healed_sep(state, left, right, swapee, slot_hint)
+function! s:swap_sep_is_inline(sep)
+    return !empty(a:sep) && !s:swap_sep_has_newline(a:sep)
+endfunction
+
+function! s:swap_is_reversal(state, next)
+    return !empty(a:state.swap_stack) && a:state.swap_stack[-1].next != a:next
+endfunction
+
+function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_linewise, allow_inline_right)
     if empty(a:left) || empty(a:right)
         return ''
     endif
-    if !empty(a:state.pending_heal_sep)
-        let hint = a:state.pending_heal_sep
-        if s:swap_sep_has_blankline(hint)
-            return "\n\n"
-        elseif s:swap_sep_has_newline(hint)
+    if s:swap_sep_has_newline(a:baseline)
+        return a:baseline
+    endif
+
+    if s:swap_unit_has_trailing_eol_comment(a:left)
+        return "\n"
+    elseif s:swap_unit_is_full_line_comment(a:left)
+        \ || s:swap_unit_is_full_line_comment(a:right)
+        return "\n"
+    elseif a:left_linewise && s:swap_unit_forces_nl(a:left)
+        return "\n"
+    elseif a:right_linewise
+        if s:swap_unit_has_trailing_eol_comment(a:right)
+            if !a:state.trailing_comment_inline_before || !a:allow_inline_right
+                return "\n"
+            endif
+        elseif s:swap_unit_forces_nl(a:right)
             return "\n"
         endif
-    elseif s:swap_sep_has_blankline(a:slot_hint)
-        return "\n\n"
-    elseif s:swap_sep_has_newline(a:slot_hint)
-        return "\n"
     endif
-    if s:swap_unit_is_full_line_comment(a:swapee)
-        return "\n"
-    endif
-    return ' '
+
+    return empty(a:baseline) ? ' ' : a:baseline
 endfunction
 
-" Choose separator adjacent to the moved unit. The slot edge gives the target
-" shape; the moved unit contributes only intrinsic linewise requirements.
-function! s:swap_choose_moved_sep(moving, neighbor, slot_edge_hint)
-    if empty(a:neighbor) && empty(a:slot_edge_hint)
-        return ''
-    elseif s:swap_sep_has_blankline(a:slot_edge_hint)
-        return "\n\n"
-    elseif s:swap_sep_has_newline(a:slot_edge_hint)
-        return "\n"
-    elseif !empty(a:neighbor) && s:swap_unit_is_full_line_comment(a:neighbor)
-        return "\n"
-    elseif s:swap_unit_forces_nl(a:moving)
-        return "\n"
+function! s:swap_window_baselines(state, next, win)
+    if empty(a:state.swap_stack)
+        return {
+            \ 'prefix_sep': a:win.prefix_sep,
+            \ 'between_sep': a:win.between_sep,
+            \ 'suffix_sep': a:win.suffix_sep,
+        \ }
     endif
-    return ' '
+
+    let frame = a:state.swap_stack[-1]
+    if a:next
+        return {
+            \ 'prefix_sep': frame.base_between_sep,
+            \ 'between_sep': frame.base_suffix_sep,
+            \ 'suffix_sep': a:win.suffix_sep,
+        \ }
+    endif
+
+    return {
+        \ 'prefix_sep': a:win.prefix_sep,
+        \ 'between_sep': frame.base_prefix_sep,
+        \ 'suffix_sep': frame.base_between_sep,
+    \ }
 endfunction
 
-function! s:swap_safe_moved_sep(moving, neighbor, sep)
-    if s:is_eol_comment(a:moving.end[1], a:moving.end[2])
+function! s:swap_reversal_seps(frame, next)
+    if a:next
+        return {
+            \ 'healed': a:frame.actual_prefix_sep,
+            \ 'before_moved': a:frame.actual_between_sep,
+            \ 'after_moved': a:frame.actual_suffix_sep,
+        \ }
+    endif
+    return {
+        \ 'healed': a:frame.actual_suffix_sep,
+        \ 'before_moved': a:frame.actual_prefix_sep,
+        \ 'after_moved': a:frame.actual_between_sep,
+    \ }
+endfunction
+
+function! s:swap_target_pulled_inline(target, healed_sep)
+    return s:at_bol(a:target.start[1], a:target.start[2])
+        \ && s:swap_sep_is_inline(a:healed_sep)
+endfunction
+
+function! s:swap_safe_after_moved_sep(moving, neighbor, sep)
+    if s:swap_unit_has_trailing_eol_comment(a:moving)
         \ && !empty(a:neighbor)
         \ && !s:swap_sep_has_newline(a:sep)
         return "\n"
@@ -8248,7 +8294,7 @@ function! s:swap_safe_moved_sep(moving, neighbor, sep)
 endfunction
 
 function! s:swap_needs_trailing_sep(unit, end)
-    return s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+    return s:swap_unit_has_trailing_eol_comment(a:unit)
         \ && !s:at_eol(a:end[1], a:end[2])
 endfunction
 
@@ -8296,6 +8342,26 @@ endfunction
 " comment so it moves with the preceding element.
 function! s:swap_unit_from_range(range)
     let [s, e] = a:range
+    if s:swap_unit_has_trailing_eol_comment({'start': s, 'end': e})
+        \ && sexp#is_comment(s[1], s[2])
+        let cursor = getpos('.')
+        try
+            call s:setcursor(s)
+            let prev = sexp#nearest_element_terminal(0, 0)
+            if prev[1] == s[1] && !sexp#is_comment(prev[1], prev[2])
+                call s:setcursor(prev)
+                let prange = s:set_marks_around_current_element('n', 1, 0, 0)
+                if prange[0][1]
+                    return {'start': prange[0], 'end': e}
+                endif
+            endif
+        finally
+            call s:setcursor(cursor)
+        endtry
+    endif
+    if getline(e[1])[e[2] :] =~# '^\s*;'
+        return {'start': s, 'end': [0, e[1], col([e[1], '$']) - 1, 0]}
+    endif
     call s:setcursor(e)
     let next = sexp#nearest_element_terminal(1, 0)
     if next[1] == e[1] && sexp#compare_pos(next, e) > 0
@@ -8353,7 +8419,11 @@ function! sexp#swap_element__init(mode, next, list)
         \ 'affected_range': [],
         \ 'origin_before_sep': empty(seq) ? seps.before : seq.origin_before_sep,
         \ 'origin_after_sep': empty(seq) ? seps.after : seq.origin_after_sep,
-        \ 'pending_heal_sep': empty(seq) ? '' : seq.pending_heal_sep,
+        \ 'trailing_comment_inline_before': empty(seq)
+            \ ? !empty(moving) && s:swap_unit_has_trailing_eol_comment(moving)
+                \ && s:swap_sep_is_inline(seps.before)
+            \ : seq.trailing_comment_inline_before,
+        \ 'swap_stack': empty(seq) ? [] : copy(seq.swap_stack),
         \ 'offset': empty(seq) ? 0 : seq.offset,
         \ 'seq_continues': !empty(seq),
         \ 'bufnr': bufnr('%'),
@@ -8384,33 +8454,71 @@ function! sexp#swap_element(state, mode, next, list)
     let moving_text = s:extract_text_from_range(moving.start, moving.end)
     let target_text = s:extract_text_from_range(target.start, target.end)
     let next_offset = a:state.offset + (a:next ? 1 : -1)
-    let sep_healed = s:swap_choose_healed_sep(a:state,
-        \ a:next ? win.prev : target,
-        \ a:next ? target : win.next,
-        \ target,
-        \ a:next ? win.prefix_sep : win.suffix_sep)
-    if next_offset == 0
-        let sep_before_moved = s:swap_safe_moved_sep(
-            \ moving, a:next ? target : win.prev, a:state.origin_before_sep)
-        let sep_after_moved = s:swap_safe_moved_sep(
-            \ moving, a:next ? win.next : target, a:state.origin_after_sep)
+    let stack = copy(a:state.swap_stack)
+    let is_reversal = s:swap_is_reversal(a:state, a:next)
+    let restore_repl = ''
+    let restore_moving_off = -1
+    if is_reversal
+        let frame = remove(stack, -1)
+        let restore_repl = frame.restore_text
+        let restore_moving_off = frame.restore_moving_off
     else
-        let sep_before_moved = a:next
-            \ ? s:swap_choose_moved_sep(moving, target, win.between_sep)
-            \ : s:swap_choose_moved_sep(moving, win.prev, win.prefix_sep)
-        let sep_after_moved = a:next
-            \ ? s:swap_choose_moved_sep(moving, win.next, win.suffix_sep)
-            \ : s:swap_choose_moved_sep(moving, target, win.between_sep)
+        let base = s:swap_window_baselines(a:state, a:next, win)
+        call add(stack, {
+            \ 'next': a:next,
+            \ 'actual_prefix_sep': win.prefix_sep,
+            \ 'actual_between_sep': win.between_sep,
+            \ 'actual_suffix_sep': win.suffix_sep,
+            \ 'base_prefix_sep': base.prefix_sep,
+            \ 'base_between_sep': base.between_sep,
+            \ 'base_suffix_sep': base.suffix_sep,
+            \ 'restore_text': a:next
+                \ ? win.prefix_sep . moving_text . win.between_sep . target_text . win.suffix_sep
+                \ : win.prefix_sep . target_text . win.between_sep . moving_text . win.suffix_sep,
+            \ 'restore_moving_off': a:next
+                \ ? strlen(win.prefix_sep)
+                \ : strlen(win.prefix_sep . target_text . win.between_sep),
+        \ })
+
+        let sep_healed = s:swap_edge_sep(a:state,
+            \ a:next ? win.prev : target,
+            \ a:next ? target : win.next,
+            \ a:next ? base.prefix_sep : base.suffix_sep,
+            \ !a:next, a:next, 1)
+        let sep_before_moved = s:swap_edge_sep(a:state,
+            \ a:next ? target : win.prev,
+            \ moving,
+            \ a:next ? base.between_sep : base.prefix_sep,
+            \ a:next, 1,
+            \ !s:swap_target_pulled_inline(target, sep_healed))
+        let sep_after_moved = s:swap_edge_sep(a:state,
+            \ moving,
+            \ a:next ? win.next : target,
+            \ a:next ? base.suffix_sep : base.between_sep,
+            \ 1, !a:next, 1)
+
+        if a:next
+            let sep_before_moved = s:swap_safe_after_moved_sep(
+                \ target, moving, sep_before_moved)
+        else
+            let sep_healed = s:swap_safe_after_moved_sep(
+                \ target, win.next, sep_healed)
+        endif
+        if a:next && s:swap_needs_trailing_sep(moving, second.end)
+            let sep_after_moved = "\n"
+        endif
     endif
-    if a:next && s:swap_needs_trailing_sep(moving, second.end)
-        let sep_after_moved = "\n"
+    if is_reversal
+        let moving_off = restore_moving_off
+        let repl = restore_repl
+    else
+        let moving_off = a:next
+            \ ? strlen(sep_healed . target_text . sep_before_moved)
+            \ : strlen(sep_before_moved)
+        let repl = a:next
+            \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
+            \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
     endif
-    let moving_off = a:next
-        \ ? strlen(sep_healed . target_text . sep_before_moved)
-        \ : strlen(sep_before_moved)
-    let repl = a:next
-        \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
-        \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
 
     let anchor = s:yankdel_range__preadjust_range_start(win.start, win.inc[0])
     let anchor_byte = s:pos2byte(anchor)
@@ -8429,7 +8537,7 @@ function! sexp#swap_element(state, mode, next, list)
         \ 'cursor': s,
         \ 'vmarks': [s, e],
         \ 'offset': next_offset,
-        \ 'pending_heal_sep': a:next ? win.suffix_sep : win.prefix_sep,
+        \ 'swap_stack': stack,
     \ }
 endfunction
 
@@ -8440,7 +8548,7 @@ function! sexp#swap_element__update(state, ret, mode, next, list)
     let a:state.cursor = a:ret.cursor
     let a:state.vmarks = a:ret.vmarks
     let a:state.offset = a:ret.offset
-    let a:state.pending_heal_sep = a:ret.pending_heal_sep
+    let a:state.swap_stack = a:ret.swap_stack
     if empty(a:state.affected_range)
         let a:state.affected_range = a:ret.affected_range
     else
@@ -8473,7 +8581,8 @@ function! sexp#swap_element__final(ex, state, mode, next, list)
                 \ 'vmarks': copy(a:state.vmarks),
                 \ 'origin_before_sep': a:state.origin_before_sep,
                 \ 'origin_after_sep': a:state.origin_after_sep,
-                \ 'pending_heal_sep': a:state.pending_heal_sep,
+                \ 'trailing_comment_inline_before': a:state.trailing_comment_inline_before,
+                \ 'swap_stack': copy(a:state.swap_stack),
                 \ 'offset': a:state.offset,
             \ }
             \ : {}
