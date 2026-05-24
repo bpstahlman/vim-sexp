@@ -3142,8 +3142,9 @@ function! s:set_marks_around_adjacent_element(mode, next)
     endif
 
     call sexp#move_to_adjacent_element_terminal(a:next, 0, 0)
-    call s:set_marks_around_current_element('n', 1, 0, 0)
+    let range = s:set_marks_around_current_element('n', 1, 0, 0)
     call s:setcursor(cursor)
+    return range
 endfunction
 
 " Enter characterwise visual mode with current visual marks, unless '< is
@@ -8207,6 +8208,51 @@ function! s:swap_sep_is_inline(sep)
     return !empty(a:sep) && !s:swap_sep_has_newline(a:sep)
 endfunction
 
+function! s:swap_slide_level()
+    return get(g:, 'sexp_swap_slide', 0) + 0
+endfunction
+
+function! s:swap_unit_is_inlineable(unit)
+    return !s:swap_unit_is_multiline(a:unit)
+        \ && !s:swap_unit_is_full_line_comment(a:unit)
+        \ && !s:swap_unit_has_trailing_eol_comment(a:unit)
+endfunction
+
+function! s:swap_slide_row_compatible(unit)
+    return !empty(a:unit) && s:swap_unit_is_inlineable(a:unit)
+endfunction
+
+function! s:swap_unit_has_inline_neighbor(unit, next)
+    let neighbor = s:swap_adjacent_unit_or_empty(a:unit, a:next)
+    if empty(neighbor) || !s:swap_slide_row_compatible(neighbor)
+        return 0
+    endif
+    return a:next
+        \ ? s:swap_sep_is_inline(s:swap_sep_between(a:unit, neighbor))
+        \ : s:swap_sep_is_inline(s:swap_sep_between(neighbor, a:unit))
+endfunction
+
+function! s:swap_slide_destination_compatible(unit, next)
+    let level = s:swap_slide_level()
+    if level <= 0 || !s:swap_slide_row_compatible(a:unit)
+        return 0
+    endif
+    return level >= 2 || s:swap_unit_has_inline_neighbor(a:unit, a:next)
+endfunction
+
+function! s:swap_should_slide(next, moving, win, sep_before_moved, sep_after_moved)
+    if !s:swap_unit_is_inlineable(a:moving)
+        return 0
+    endif
+    return a:next
+        \ ? s:swap_sep_has_newline(a:sep_before_moved)
+            \ && s:swap_sep_has_newline(a:sep_after_moved)
+            \ && s:swap_slide_destination_compatible(a:win.next, 1)
+        \ : s:swap_sep_has_newline(a:sep_after_moved)
+            \ && s:swap_sep_has_newline(a:sep_before_moved)
+            \ && s:swap_slide_destination_compatible(a:win.prev, 0)
+endfunction
+
 function! s:swap_is_reversal(state, next)
     return !empty(a:state.swap_stack) && a:state.swap_stack[-1].next != a:next
 endfunction
@@ -8252,14 +8298,16 @@ function! s:swap_window_baselines(state, next, win)
     if a:next
         return {
             \ 'prefix_sep': frame.base_suffix_sep,
-            \ 'between_sep': frame.base_suffix_sep,
+            \ 'between_sep': get(frame, 'slid', 0)
+                \ ? a:win.between_sep : frame.base_suffix_sep,
             \ 'suffix_sep': a:win.suffix_sep,
         \ }
     endif
 
     return {
         \ 'prefix_sep': a:win.prefix_sep,
-        \ 'between_sep': frame.base_prefix_sep,
+        \ 'between_sep': get(frame, 'slid', 0)
+            \ ? a:win.between_sep : frame.base_prefix_sep,
         \ 'suffix_sep': frame.base_prefix_sep,
     \ }
 endfunction
@@ -8303,11 +8351,11 @@ function! s:swap_adjacent_unit_or_empty(unit, next)
     let cursor = getpos('.')
     try
         call s:setcursor(a:unit[a:next ? 'end' : 'start'])
-        call s:set_marks_around_adjacent_element('n', a:next)
-        if s:get_visual_beg_mark()[1] < 1
+        let range = s:set_marks_around_adjacent_element('n', a:next)
+        if range[0][1] < 1
             return {}
         endif
-        let ret = s:swap_unit_from_range(s:get_visual_marks())
+        let ret = s:swap_unit_from_range(range)
         return sexp#compare_pos(a:unit[a:next ? 'end' : 'start'],
             \ ret[a:next ? 'end' : 'start']) == 0 ? {} : ret
     finally
@@ -8516,9 +8564,22 @@ function! sexp#swap_element(state, mode, next, list)
             let sep_after_moved = "\n"
         endif
     endif
+    let slide = !is_reversal
+        \ && s:swap_should_slide(
+            \ a:next, moving, win, sep_before_moved, sep_after_moved)
+    if slide
+        let stack[-1].slid = 1
+    endif
     if is_reversal
         let moving_off = restore_moving_off
         let repl = restore_repl
+    elseif slide
+        let moving_off = a:next
+            \ ? strlen(sep_healed . target_text . sep_after_moved)
+            \ : strlen(' ')
+        let repl = a:next
+            \ ? sep_healed . target_text . sep_after_moved . moving_text . ' '
+            \ : ' ' . moving_text . sep_before_moved . target_text . sep_healed
     else
         let moving_off = a:next
             \ ? strlen(sep_healed . target_text . sep_before_moved)

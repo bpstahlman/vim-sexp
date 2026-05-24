@@ -103,6 +103,10 @@ if !exists('g:sexp_swap_force_linewise')
     let g:sexp_swap_force_linewise = 'mc'
 endif
 
+if !exists('g:sexp_swap_slide')
+    let g:sexp_swap_slide = 0
+endif
+
 if !exists('g:sexp_emitting_bracket_is_sticky')
     let g:sexp_emitting_bracket_is_sticky = 0
 endif

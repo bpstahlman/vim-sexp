@@ -1687,6 +1687,19 @@ Flags:
         " Default
         let g:sexp_swap_force_linewise = 'mc'
 <
+                                                        *g:sexp_swap_slide*
+Controls whether simple single-line swap units may slide into the outbound
+row when linewise separation from the swapee is required. Reversal still
+restores exact prior swap frames.
+
+Values:
+        0       never slide
+        1       slide only into existing inline runs
+        2       slide into any compatible single-line code row
+>
+        " Default
+        let g:sexp_swap_slide = 0
+<
 Set this flag to force cursor to remain with its list, even when the element
 under it is emitted. Default behavior matches Paredit.
 See also |sexp-emit-cursor-logic|.
