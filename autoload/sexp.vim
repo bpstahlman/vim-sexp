@@ -2686,13 +2686,11 @@ endif
 " visual mode map. However, this feels like a kludge. A better solution is to implement
 " the same expansion logic whether cursor is at start or end of visual selection. The
 " current version of this function takes this approach.
-" Return: Pair: [success, stopiter]
-"         success:  1 if visual marks were set
-"         stopiter: 1 if there's no point in continuing
-function! s:set_marks_around_current_list(mode, offset, allow_expansion)
+function! s:current_list_range(mode, offset, allow_expansion)
     " Save/restore cursor.
     let cursor = getpos('.')
     let [error, stopiter] = [0, 0]
+    let range = s:nullpos_pair
     let visual = a:mode ==? 'v'
     try
         " Prepare the entrails
@@ -2777,19 +2775,28 @@ function! s:set_marks_around_current_list(mode, offset, allow_expansion)
             " character past e. Handle by reversing range.
             let [s, e] = [e, s]
         endif
-        call s:set_visual_marks([s, e])
+        let range = [s, e]
     catch /sexp-error/
         let [error, stopiter] = [1, 1]
     finally
-        " Don't erase marks when in visual mode. (See note in header.)
-        if error && !visual
-            delmarks < >
-        endif
         if getpos('.') != cursor
             call s:setcursor(cursor)
         endif
-        return [!error, stopiter]
+        return {'ok': !error, 'stopiter': stopiter, 'range': range}
     endtry
+endfunction
+
+" Return: Pair: [success, stopiter]
+"         success:  1 if visual marks were set
+"         stopiter: 1 if there's no point in continuing
+function! s:set_marks_around_current_list(mode, offset, allow_expansion)
+    let ret = s:current_list_range(a:mode, a:offset, a:allow_expansion)
+    if ret.ok
+        call s:set_visual_marks(ret.range)
+    elseif a:mode !=? 'v'
+        delmarks < >
+    endif
+    return [ret.ok, ret.stopiter]
 endfunction
 
 " Set visual marks to the positions of the outermost paired brackets from the
@@ -8422,15 +8429,11 @@ endfunction
 
 function! s:swap_current_unit(list)
     if a:list
-        let pos = sexp#current_element_terminal(1)
-        let tail = (pos[1] > 0 && getline(pos[1])[pos[2] - 1] =~# s:closing_bracket)
-                   \ ? pos
-                   \ : s:nearest_bracket(1)
-        if tail[1] < 1
+        let ret = s:current_list_range('n', 0, 0)
+        if !ret.ok
             return {}
         endif
-        call s:setcursor(tail)
-        let range = s:set_marks_around_current_element('n', 1, 0, 0)
+        let range = ret.range
     else
         let range = s:set_marks_around_current_element('n', 1, 0, 0)
     endif
