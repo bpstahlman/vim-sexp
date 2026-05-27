@@ -754,6 +754,22 @@ function! sexp#nearest_element_terminal(next, tail, ...)
     endif
 endfunction
 
+" Returns [start, end] range for the nearest adjacent element, else [nullpos, nullpos].
+" Design Decision: Don't expose the ignore_current/nullpos_on_fail knobs.
+function! sexp#nearest_element_terminals(next, tail)
+    let cursor = getpos('.')
+    try
+        let pos = sexp#nearest_element_terminal(a:next, a:tail, 1, 1)
+        if !pos[1]
+            return [s:nullpos, s:nullpos]
+        endif
+        call s:setcursor(pos)
+        return sexp#current_element_terminals()
+    finally
+        call s:setcursor(cursor)
+    endtry
+endfunction
+
 """ QUERIES AT POSITION {{{1
 
 " TODO: Consider performance impact of replacing calls to this with sexp#offset_char(), which
@@ -1786,26 +1802,31 @@ endfunction
 " Args:
 "   start: position [bufnr, lnum, col, off]
 "   end:   position [bufnr, lnum, col, off]
-" Returns: string containing text from start to end (inclusive)
+" Returns: string containing text from start to end (inclusive), or empty string if the
+"          range is reversed.
 function! s:extract_text_from_range(start, end)
+    if sexp#compare_pos(a:start, a:end) > 0
+        return ''
+    endif
     let [start_lnum, start_col] = [a:start[1], a:start[2]]
-    let [end_lnum, end_col] = [a:end[1], a:end[2]]
-    
+    let end_excl = sexp#offset_char(a:end, 1, 1)
+    let [end_lnum, end_col] = [end_excl[1], end_excl[2]]
+
     " Handle single-line case
     if start_lnum == end_lnum
         let line = getline(start_lnum)
-        return strpart(line, start_col - 1, end_col - start_col + 1)
+        return strpart(line, start_col - 1, end_col - start_col)
     endif
-    
+
     " Multi-line case: extract lines and join
     let lines = getline(start_lnum, end_lnum)
-    
+
     " Trim first line to start_col
     let lines[0] = strpart(lines[0], start_col - 1)
-    
+
     " Trim last line to end_col
-    let lines[-1] = strpart(lines[-1], 0, end_col)
-    
+    let lines[-1] = strpart(lines[-1], 0, end_col - 1)
+
     return join(lines, "\n")
 endfunction
 
@@ -2648,10 +2669,10 @@ else
     endfunction
 endif
 
-" Set visual marks to the positions of the nearest paired brackets. Offset is
-" the number of columns inwards from the brackets to set the marks.
+" Return the range of the nearest paired brackets. Offset is the number of columns
+" inwards from the brackets to use for the returned range.
 "
-" If allow_expansion is 1, the visual marks are set to the next outer pair of
+" If allow_expansion is 1, the range is expanded to the next outer pair of
 " brackets when either of the following conditions is met:
 "
 "   * Mode equals 'v', the visual selection is more than one column wide, and selecting
@@ -2666,13 +2687,8 @@ endif
 "   * s:countindex is greater than 0 and the visual marks are valid.
 "     Use Case: Counted expansion by sexp#docount().
 "
-" Visual Marks: Both are deleted if there's no list to select and mode does not equal 'v'.
-" Rationale: Erase < > only to prevent operation (o-pending mode) on something that's not
-" a list. I could see an argument for erasing visual marks even in visual mode, but this
-" is the way it's always worked.
 " Note: If the optimal inner/outer list doesn't exist, but a suitable fallback does, set
-" both marks and the 'success' flag, but also set the 'stopiter' flag to allow a higher
-" level loop to terminate early.
+" both the 'ok' and 'stopiter' flags to allow a higher level loop to terminate early.
 "
 " Important Note: Originally, the first of the 2 expansion conditions listed above
 " worked only if cursor was at the *start* of the visual selection. This approach stopped
@@ -2686,6 +2702,10 @@ endif
 " visual mode map. However, this feels like a kludge. A better solution is to implement
 " the same expansion logic whether cursor is at start or end of visual selection. The
 " current version of this function takes this approach.
+" Return: Dict
+"         ok:       1 if a range was found
+"         stopiter: 1 if there's no point in continuing
+"         range:    [start, end] pair when ok, else nullpos pair
 function! s:current_list_range(mode, offset, allow_expansion)
     " Save/restore cursor.
     let cursor = getpos('.')
@@ -2786,6 +2806,11 @@ function! s:current_list_range(mode, offset, allow_expansion)
     endtry
 endfunction
 
+" Set visual marks to the positions of the nearest paired brackets.
+" Visual Marks: Both are deleted if there's no list to select and mode does not equal 'v'.
+" Rationale: Erase < > only to prevent operation (o-pending mode) on something that's not
+" a list. I could see an argument for erasing visual marks even in visual mode, but this
+" is the way it's always worked.
 " Return: Pair: [success, stopiter]
 "         success:  1 if visual marks were set
 "         stopiter: 1 if there's no point in continuing
@@ -3132,9 +3157,14 @@ function! s:set_marks_around_current_element(mode, inner, count, no_sel)
     return [start, end]
 endfunction
 
-" Set visual marks to the start and end of the adjacent inner element. If no
-" element is adjacent in the direction specified, the marks are set around the
-" current element instead via s:set_marks_around_adjacent_element().
+" Set visual marks to the start and end of the adjacent inner element. Because
+" sexp#move_to_adjacent_element_terminal() can fall back to the current element when no
+" adjacent exists, s:set_marks_around_current_element() may select the current element
+" instead.
+" TODO: Consider factoring a range-returning adjacent-element helper with an explicit
+" no-adjacent result, leaving this function as a mark-setting wrapper.
+" Return: [start, end] range selected by s:set_marks_around_current_element().
+"         Returns s:nullpos_pair if no current/adjacent element can be selected.
 function! s:set_marks_around_adjacent_element(mode, next)
     let cursor = getpos('.')
 
@@ -8149,22 +8179,9 @@ function! sexp#swap_element_legacy(mode, next, list)
     endif
 endfunction
 
-" Return range text, or an empty string for an empty/reversed range.
-function! s:swap_range_text(start, end)
-    if sexp#compare_pos(a:start, a:end) > 0
-        return ''
-    endif
-    let text = join(getline(1, '$'), "\n")
-    let s = s:pos2byte(a:start)
-    let e = s:pos2byte(a:end)
-    return strpart(text, s - 1, e - s + 1)
-endfunction
-
 " Return text between two adjacent units.
 function! s:swap_sep_between(left, right)
-    let s = sexp#offset_char(a:left.end, 1, 1)
-    let e = sexp#offset_char(a:right.start, 0, 1)
-    return s:swap_range_text(s, e)
+    return s:yankdel_range(a:left.end, a:right.start, 0, [0, 0])
 endfunction
 
 function! s:swap_force_linewise(flag)
@@ -8230,7 +8247,7 @@ function! s:swap_slide_row_compatible(unit)
 endfunction
 
 function! s:swap_unit_has_inline_neighbor(unit, next)
-    let neighbor = s:swap_adjacent_unit_or_empty(a:unit, a:next)
+    let neighbor = s:swap_adjacent_unit(a:unit, a:next)
     if empty(neighbor) || !s:swap_slide_row_compatible(neighbor)
         return 0
     endif
@@ -8260,10 +8277,21 @@ function! s:swap_should_slide(next, moving, win, sep_before_moved, sep_after_mov
             \ && s:swap_slide_destination_compatible(a:win.prev, 0)
 endfunction
 
+" Return 1 iff the current swap command constitutes a reversal of direction with respect
+" to previous command invocation in the same sequence.
 function! s:swap_is_reversal(state, next)
     return !empty(a:state.swap_stack) && a:state.swap_stack[-1].next != a:next
 endfunction
 
+" Calculate the whitespace separator for the specified edge.
+" -- Args --
+" state
+" left                swap unit on left side of calculated edge
+" right               swap unit on right side of calculated edge
+" baseline            baseline whitespace separator
+" left_linewise       can left unit impose linewise after itself?
+" right_linewise      can right unit impose linewise before itself?
+" allow_inline_right  set to 1 iff right-side trailing eol comment may remain inline
 function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_linewise, allow_inline_right)
     if empty(a:left) || empty(a:right)
         return ''
@@ -8271,11 +8299,14 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
     if s:swap_sep_has_newline(a:baseline)
         return a:baseline
     endif
-
+    " Does a newline need to be inserted?
     if s:swap_unit_has_trailing_eol_comment(a:left)
+        " Force newline insertion for comment safety.
         return "\n"
     elseif s:swap_unit_is_full_line_comment(a:left)
         \ || s:swap_unit_is_full_line_comment(a:right)
+        " Always force newline around full line comments.
+        " TODO_61: Shouldn't the option come into play for the 'right' case?
         return "\n"
     elseif a:left_linewise && s:swap_unit_forces_nl(a:left)
         return "\n"
@@ -8292,6 +8323,50 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
     return empty(a:baseline) ? ' ' : a:baseline
 endfunction
 
+" Baseline Description: "Actual" refers to the separators that actually exist when a frame
+" is pushed (including any forcibly-inserted newlines); "base" or "baseline" Implies a
+" slot preference, not necessarily what's currently in the buffer. Roughly-speaking, it's
+" what would exist in the absence of forcibly-inserted newlines. The "actual" separators
+" are needed to support swap reversal; the *baseline* separators are used to calculate new
+" separators for an outbound swap. Here's what the swap windows look like (swapping A over
+" B):
+" Forward:
+"    Before:
+" L prefix A between B suffix
+"    After:
+" L prefix B before_A A after_A
+" Backwards:
+"    Before:
+" L prefix B between A suffix
+"    After:
+" L before_A A after_A B suffix
+"
+" The {before,after}_A must be calculated on each outbound swap. On a reversal, we simply
+" restore the saved (actual) separators from the frame at the top of the stack. The
+" baseline swap is a simple "inner element swap" of A and B; however, there are scenarios
+" in which this simplistic swap would produce illegal/undesirable results. In such cases,
+" we use before_A and/or after_A to insert newlines as needed. These extra newlines will
+" be reflected in the "actual" separator keys, but not in "baseline". The reason this
+" function uses the latest stack frame to set 'prefix_sep' and 'between_sep' is that when
+" the outbound swap occurs, we want to allow forcibly-inserted newlines to be discarded if
+" the new configuration doesn't require them.
+"
+" The following shows how the base dict calculated below is used for healing and
+" calculation of separators around moved-unit on an outbound swap:
+"  forward:
+"    healed   = base.prefix
+"    before_A = policy_fn(base.between)
+"    after_A  = policy_fn(base.suffix)
+"
+"  backward:
+"    before_A = policy_fn(base.prefix)
+"    after_A  = policy_fn(base.between)
+"    healed   = base.suffix
+" Note that the policy_fn(...) indicates that the input base values are used only as
+" hints, which may be overridden by policy/safety.
+" Between Sep Note: On a continued outbound swap, base.between_sep is set from the latest
+" frame's carried outbound separator unless the preceding outbound swap performed a
+" "slide", in which case the current window's between_sep is used.
 function! s:swap_window_baselines(state, next, win)
     if empty(a:state.swap_stack)
         return {
@@ -8300,38 +8375,27 @@ function! s:swap_window_baselines(state, next, win)
             \ 'suffix_sep': a:win.suffix_sep,
         \ }
     endif
-
+    " There's a non-empty swap sequence.
     let frame = a:state.swap_stack[-1]
     if a:next
+        " base suffix from preceding frame used as current frame's prefix and between sep
+        " hints.
         return {
             \ 'prefix_sep': frame.base_suffix_sep,
             \ 'between_sep': get(frame, 'slid', 0)
                 \ ? a:win.between_sep : frame.base_suffix_sep,
             \ 'suffix_sep': a:win.suffix_sep,
         \ }
-    endif
-
-    return {
-        \ 'prefix_sep': a:win.prefix_sep,
-        \ 'between_sep': get(frame, 'slid', 0)
-            \ ? a:win.between_sep : frame.base_prefix_sep,
-        \ 'suffix_sep': frame.base_prefix_sep,
-    \ }
-endfunction
-
-function! s:swap_reversal_seps(frame, next)
-    if a:next
+    else
+        " base prefix from preceding frame used as current frame's suffix and between sep
+        " hints.
         return {
-            \ 'healed': a:frame.actual_prefix_sep,
-            \ 'before_moved': a:frame.actual_between_sep,
-            \ 'after_moved': a:frame.actual_suffix_sep,
+            \ 'prefix_sep': a:win.prefix_sep,
+            \ 'between_sep': get(frame, 'slid', 0)
+                \ ? a:win.between_sep : frame.base_prefix_sep,
+            \ 'suffix_sep': frame.base_prefix_sep,
         \ }
     endif
-    return {
-        \ 'healed': a:frame.actual_suffix_sep,
-        \ 'before_moved': a:frame.actual_prefix_sep,
-        \ 'after_moved': a:frame.actual_between_sep,
-    \ }
 endfunction
 
 function! s:swap_target_pulled_inline(target, healed_sep)
@@ -8354,60 +8418,83 @@ function! s:swap_needs_trailing_sep(unit, end)
         \ && !s:at_eol(a:end[1], a:end[2])
 endfunction
 
-function! s:swap_adjacent_unit_or_empty(unit, next)
+" Return the raw range of element adjacent to 'unit' in direction indicated by 'next', else
+" [] if no such element.
+" TODO_61: Change empty [] to nullpos_pair for consistency.
+function! s:swap_adjacent_range_or_empty(unit, next)
     let cursor = getpos('.')
     try
         call s:setcursor(a:unit[a:next ? 'end' : 'start'])
-        let range = s:set_marks_around_adjacent_element('n', a:next)
-        if range[0][1] < 1
-            return {}
+        let range = sexp#nearest_element_terminals(a:next, a:next ? 0 : 1)
+        if !range[0][1]
+            return []
         endif
-        let ret = s:swap_unit_from_range(range)
-        return sexp#compare_pos(a:unit[a:next ? 'end' : 'start'],
-            \ ret[a:next ? 'end' : 'start']) == 0 ? {} : ret
+        return range
     finally
         call s:setcursor(cursor)
     endtry
 endfunction
 
+" Return the range of swap unit adjacent to 'unit' in direction indicated by 'next',
+" else {} if no such swap unit.
+function! s:swap_adjacent_unit(unit, next)
+    let range = s:swap_adjacent_range_or_empty(a:unit, a:next)
+    if empty(range)
+        return {}
+    endif
+    " If the found range represents either an element with an eol comment or the eol
+    " comment of such an element, widen the range to include both.
+    return s:swap_unit_from_range(range)
+endfunction
+
+" Return dict containing the before/after whitespace separators for the input 'unit'.
 function! s:swap_unit_side_seps(unit)
-    let prev = s:swap_adjacent_unit_or_empty(a:unit, 0)
-    let next = s:swap_adjacent_unit_or_empty(a:unit, 1)
+    let prev = s:swap_adjacent_range_or_empty(a:unit, 0)
+    let next = s:swap_adjacent_range_or_empty(a:unit, 1)
     return {
-        \ 'before': empty(prev) ? '' : s:swap_sep_between(prev, a:unit),
-        \ 'after': empty(next) ? '' : s:swap_sep_between(a:unit, next),
+        \ 'before': empty(prev) ? '' : s:swap_sep_between({'end': prev[1]}, a:unit),
+        \ 'after': empty(next) ? '' : s:swap_sep_between(a:unit, {'start': next[0]}),
     \ }
 endfunction
 
+" Given the provided pair of elements to be swapped, return a dict with information that
+" will be used to accomplish the swap: in particular, the elements on either side of the
+" swapped elements are used by whitespace separator calculation logic.
 function! s:swap_window(first, second)
-    let prev = s:swap_adjacent_unit_or_empty(a:first, 0)
-    let next = s:swap_adjacent_unit_or_empty(a:second, 1)
+    let prev = s:swap_adjacent_range_or_empty(a:first, 0)
+    let next = s:swap_adjacent_range_or_empty(a:second, 1)
     return {
-        \ 'prev': prev,
-        \ 'next': next,
-        \ 'start': empty(prev) ? a:first.start : prev.end,
-        \ 'end': empty(next) ? a:second.end : next.start,
+        \ 'prev': empty(prev) ? {} : {'start': prev[0], 'end': prev[1]},
+        \ 'next': empty(next) ? {} : {'start': next[0], 'end': next[1]},
+        \ 'start': empty(prev) ? a:first.start : prev[1],
+        \ 'end': empty(next) ? a:second.end : next[0],
         \ 'inc': [empty(prev) ? 1 : 0, empty(next) ? 1 : 0],
-        \ 'prefix_sep': empty(prev) ? '' : s:swap_sep_between(prev, a:first),
+        \ 'prefix_sep': empty(prev) ? '' : s:swap_sep_between({'end': prev[1]}, a:first),
         \ 'between_sep': s:swap_sep_between(a:first, a:second),
-        \ 'suffix_sep': empty(next) ? '' : s:swap_sep_between(a:second, next),
+        \ 'suffix_sep': empty(next) ? '' : s:swap_sep_between(a:second, {'start': next[0]}),
     \ }
 endfunction
 
-" Build a swap unit from an inner range, extending a same-line trailing end-of-line
-" comment so it moves with the preceding element.
+" Build a swap unit from an inner range, extending input range as necessary to ensure a
+" non-comment element and an adjacent end-of-line comment are treated as a single unit.
+" Note: Input range can correspond to either the eol-comment or the preceding element.
+" Return: {'start': <pos4>, 'end': <pos4>} representing the unit. If no eol-comment, the
+" return dict will simply contain the input range.
 function! s:swap_unit_from_range(range)
     let [s, e] = a:range
-    if s:swap_unit_has_trailing_eol_comment({'start': s, 'end': e})
-        \ && sexp#is_comment(s[1], s[2])
+    " Is the input range the trailing comment in an element/eol-comment pair?
+    if sexp#is_comment(s[1], s[2]) && s:is_eol_comment(e[1], e[2])
         let cursor = getpos('.')
         try
             call s:setcursor(s)
-            let prev = sexp#nearest_element_terminal(0, 0)
-            if prev[1] == s[1] && !sexp#is_comment(prev[1], prev[2])
+            " Is the preceding element a non-comment whose end is colinear with the eol
+            " comment?
+            let prev = sexp#nearest_element_terminal(0, 1, 1, 1)
+            if prev[1] && prev[1] == s[1] && !sexp#is_comment(prev[1], prev[2])
                 call s:setcursor(prev)
-                let prange = s:set_marks_around_current_element('n', 1, 0, 0)
+                let prange = sexp#current_element_terminals()
                 if prange[0][1]
+                    " Widen the unit to include the element and attached eol comment.
                     return {'start': prange[0], 'end': e}
                 endif
             endif
@@ -8415,18 +8502,18 @@ function! s:swap_unit_from_range(range)
             call s:setcursor(cursor)
         endtry
     endif
-    if getline(e[1])[e[2] :] =~# '^\s*;'
-        return {'start': s, 'end': [0, e[1], col([e[1], '$']) - 1, 0]}
-    endif
+    " Cursor wasn't on eol comment, but is it on the element preceding one?
     call s:setcursor(e)
-    let next = sexp#nearest_element_terminal(1, 0)
-    if next[1] == e[1] && sexp#compare_pos(next, e) > 0
-        \ && s:is_eol_comment(next[1], next[2])
+    let next = sexp#nearest_element_terminal(1, 0, 1, 1)
+    " Is the next element an eol comment on the same line as the end of the element?
+    if next[1] && next[1] == e[1] && s:is_eol_comment(next[1], next[2])
         let e = [0, next[1], col([next[1], '$']) - 1, 0]
     endif
     return {'start': s, 'end': e}
 endfunction
 
+" Return range of current list/element (as indicated by input flag), else {}.
+" TODO_61: Change {'start': <spos>, 'end': <epos>} to simple pos range.
 function! s:swap_current_unit(list)
     if a:list
         let ret = s:current_list_range('n', 0, 0)
@@ -8435,15 +8522,15 @@ function! s:swap_current_unit(list)
         endif
         let range = ret.range
     else
-        let range = s:set_marks_around_current_element('n', 1, 0, 0)
+        let range = sexp#current_element_terminals()
+        if !range[0][1]
+            let range = sexp#nearest_element_terminals(1, 0)
+        endif
     endif
     return !range[0][1] ? {} : s:swap_unit_from_range(range)
 endfunction
 
-function! s:swap_adjacent_unit(unit, next)
-    return s:swap_adjacent_unit_or_empty(a:unit, a:next)
-endfunction
-
+" Return 1 iff it's safe to continue the current swap sequence.
 function! s:swap_seq_can_continue(mode, list, moving)
     return a:mode ==# 'n'
         \ && !empty(s:swap_seq_state)
@@ -8454,6 +8541,9 @@ function! s:swap_seq_can_continue(mode, list, moving)
         \ && get(s:swap_seq_state, 'vmarks', []) == [a:moving.start, a:moving.end]
 endfunction
 
+" Convert the input state dict (created by the docount_stateful() mechanism) into a state
+" dict that can be used to implement an extended sequence of swaps spanning multiple
+" command invocations.
 function! s:swap_seq_state_from_state(state, list)
     return {
         \ 'bufnr': bufnr('%'),
@@ -8468,15 +8558,22 @@ function! s:swap_seq_state_from_state(state, list)
     \ }
 endfunction
 
+" Invoked by docount_stateful() to initialize state object, which will be provided to each
+" invocation of sexp#swap_element__update(), and ultimately, to sexp#swap_element__final().
+" Return: state needed both to perform the counted swap operation *and* to initialize the
+" swap sequence state dict saved by the __final() callback.
+" -- Dict Key Descriptions --
+" trailing_comment_inline_before:   1 iff at start of swap sequence, the moved unit has
+"                                   eol comment and a preceding inline element
 function! sexp#swap_element__init(mode, next, list)
     let cursor = getpos('.')
     let vmarks = s:get_visual_marks()
     try
+        " Get range of the element to be moved (swapped element).
         let moving = s:swap_current_unit(a:list)
         let seps = empty(moving) ? {'before': '', 'after': ''} : s:swap_unit_side_seps(moving)
         let seq = s:swap_seq_can_continue(a:mode, a:list, moving) ? s:swap_seq_state : {}
     finally
-        call s:set_visual_marks(vmarks)
         call s:setcursor(cursor)
     endtry
     return {
@@ -8499,118 +8596,130 @@ endfunction
 
 " Exchange the current normal-mode element/list with an adjacent sibling. This
 " implementation treats full-line comments as independent elements, while extending
-" units over trailing end-of-line comments to avoid moving text into comment syntax.
+" units over trailing end-of-line comments to avoid the sorts of issues that tend to be
+" caused by treating elements and their attached comments as independent entities.
 function! sexp#swap_element(state, mode, next, list)
     let cursor = getpos('.')
-    let moving = s:swap_current_unit(a:list)
-    if empty(moving)
-        call s:setcursor(cursor)
-        throw 'sexp-done'
-    endif
-
-    let target = s:swap_adjacent_unit(moving, a:next)
-    if empty(target)
-        call s:setcursor(cursor)
-        throw 'sexp-done'
-    endif
-
-    let first = a:next ? moving : target
-    let second = a:next ? target : moving
-    let win = s:swap_window(first, second)
-    let moving_text = s:extract_text_from_range(moving.start, moving.end)
-    let target_text = s:extract_text_from_range(target.start, target.end)
-    let next_offset = a:state.offset + (a:next ? 1 : -1)
-    let stack = copy(a:state.swap_stack)
-    let is_reversal = s:swap_is_reversal(a:state, a:next)
-    let restore_repl = ''
-    let restore_moving_off = -1
-    if is_reversal
-        let frame = remove(stack, -1)
-        let restore_repl = frame.restore_text
-        let restore_moving_off = frame.restore_moving_off
-    else
-        let base = s:swap_window_baselines(a:state, a:next, win)
-        call add(stack, {
-            \ 'next': a:next,
-            \ 'actual_prefix_sep': win.prefix_sep,
-            \ 'actual_between_sep': win.between_sep,
-            \ 'actual_suffix_sep': win.suffix_sep,
-            \ 'base_prefix_sep': base.prefix_sep,
-            \ 'base_between_sep': base.between_sep,
-            \ 'base_suffix_sep': base.suffix_sep,
-            \ 'restore_text': a:next
-                \ ? win.prefix_sep . moving_text . win.between_sep . target_text . win.suffix_sep
-                \ : win.prefix_sep . target_text . win.between_sep . moving_text . win.suffix_sep,
-            \ 'restore_moving_off': a:next
-                \ ? strlen(win.prefix_sep)
-                \ : strlen(win.prefix_sep . target_text . win.between_sep),
-        \ })
-
-        let sep_healed = a:next ? base.prefix_sep : base.suffix_sep
-        let sep_before_moved = s:swap_edge_sep(a:state,
-            \ a:next ? target : win.prev,
-            \ moving,
-            \ a:next ? base.between_sep : base.prefix_sep,
-            \ a:next, 1,
-            \ !s:swap_target_pulled_inline(target, sep_healed))
-        let sep_after_moved = s:swap_edge_sep(a:state,
-            \ moving,
-            \ a:next ? win.next : target,
-            \ a:next ? base.suffix_sep : base.between_sep,
-            \ 1, !a:next, 1)
-
-        if a:next
-            let sep_before_moved = s:swap_safe_after_moved_sep(
-                \ target, moving, sep_before_moved)
+    let restore_cursor = 1
+    try
+        let moving = s:swap_current_unit(a:list)
+        if empty(moving)
+            " No swap target
+            throw 'sexp-done'
         endif
-        if a:next && s:swap_needs_trailing_sep(moving, second.end)
-            let sep_after_moved = "\n"
+
+        " Determine range of the swapee.
+        let target = s:swap_adjacent_unit(moving, a:next)
+        if empty(target)
+            throw 'sexp-done'
         endif
-    endif
-    let slide = !is_reversal
-        \ && s:swap_should_slide(
-            \ a:next, moving, win, sep_before_moved, sep_after_moved)
-    if slide
-        let stack[-1].slid = 1
-    endif
-    if is_reversal
-        let moving_off = restore_moving_off
-        let repl = restore_repl
-    elseif slide
-        let moving_off = a:next
-            \ ? strlen(sep_healed . target_text . sep_after_moved)
-            \ : strlen(' ')
-        let repl = a:next
-            \ ? sep_healed . target_text . sep_after_moved . moving_text . ' '
-            \ : ' ' . moving_text . sep_before_moved . target_text . sep_healed
-    else
-        let moving_off = a:next
-            \ ? strlen(sep_healed . target_text . sep_before_moved)
-            \ : strlen(sep_before_moved)
-        let repl = a:next
-            \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
-            \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
-    endif
 
-    let anchor = s:yankdel_range__preadjust_range_start(win.start, win.inc[0])
-    let anchor_byte = s:pos2byte(anchor)
-    let ps = s:concat_positions(a:state.cursor, a:state.vmarks, win.start, win.end)
-    call s:yankdel_range(win.start, win.end, repl, win.inc, ps, 1)
+        let [first, second] = a:next ? [moving, target] : [target, moving]
+        " Get surrounding context.
+        let win = s:swap_window(first, second)
+        let moving_text = s:extract_text_from_range(moving.start, moving.end)
+        let target_text = s:extract_text_from_range(target.start, target.end)
+        " Keep up with swap offset across multi-command swap sequence.
+        let next_offset = a:state.offset + (a:next ? 1 : -1)
+        " Manipulate a copy of the swap stack; ultimately, the copy will be persisted
+        " within swap_element__final().
+        " TODO_61: Look at what happens in off-nominal paths...
+        let stack = copy(a:state.swap_stack)
+        " Are we reversing direction?
+        let is_reversal = s:swap_is_reversal(a:state, a:next)
+        if !is_reversal
+            " Outbound swap
+            let base = s:swap_window_baselines(a:state, a:next, win)
+            call add(stack, {
+                \ 'next': a:next,
+                \ 'actual_prefix_sep': win.prefix_sep,
+                \ 'actual_between_sep': win.between_sep,
+                \ 'actual_suffix_sep': win.suffix_sep,
+                \ 'base_prefix_sep': base.prefix_sep,
+                \ 'base_between_sep': base.between_sep,
+                \ 'base_suffix_sep': base.suffix_sep,
+                \ 'restore_text': a:next
+                    \ ? win.prefix_sep . moving_text . win.between_sep . target_text . win.suffix_sep
+                    \ : win.prefix_sep . target_text . win.between_sep . moving_text . win.suffix_sep,
+                \ 'restore_moving_off': a:next
+                    \ ? strlen(win.prefix_sep)
+                    \ : strlen(win.prefix_sep . target_text . win.between_sep),
+            \ })
 
-    let s = s:byte2pos(anchor_byte + moving_off)
-    let e = s:byte2pos(anchor_byte + moving_off + strlen(moving_text) - 1)
+            let sep_healed = a:next ? base.prefix_sep : base.suffix_sep
+            " Calculate separator before moved unit.
+            let sep_before_moved = s:swap_edge_sep(a:state,
+                \ a:next ? target : win.prev,
+                \ moving,
+                \ a:next ? base.between_sep : base.prefix_sep,
+                \ a:next, 1,
+                \ !s:swap_target_pulled_inline(target, sep_healed))
+            " Calculate separator after moved unit.
+            let sep_after_moved = s:swap_edge_sep(a:state,
+                \ moving,
+                \ a:next ? win.next : target,
+                \ a:next ? base.suffix_sep : base.between_sep,
+                \ 1, !a:next, 1)
 
-    call s:set_visual_marks([s, e])
-    call s:setcursor(s)
+            if a:next
+                let sep_before_moved = s:swap_safe_after_moved_sep(
+                    \ target, moving, sep_before_moved)
+            endif
+            if a:next && s:swap_needs_trailing_sep(moving, second.end)
+                let sep_after_moved = "\n"
+            endif
+        endif
+        let slide = !is_reversal
+            \ && s:swap_should_slide(
+                \ a:next, moving, win, sep_before_moved, sep_after_moved)
+        if slide
+            let stack[-1].slid = 1
+        endif
+        if is_reversal
+            let frame = remove(stack, -1)
+            let moving_off = frame.restore_moving_off
+            let repl = frame.restore_text
+        elseif slide
+            let moving_off = a:next
+                \ ? strlen(sep_healed . target_text . sep_after_moved)
+                \ : strlen(' ')
+            let repl = a:next
+                \ ? sep_healed . target_text . sep_after_moved . moving_text . ' '
+                \ : ' ' . moving_text . sep_before_moved . target_text . sep_healed
+        else
+            let moving_off = a:next
+                \ ? strlen(sep_healed . target_text . sep_before_moved)
+                \ : strlen(sep_before_moved)
+            let repl = a:next
+                \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
+                \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
+        endif
 
-    return {
-        \ 'swapped': 1,
-        \ 'affected_range': [win.start, win.end],
-        \ 'cursor': s,
-        \ 'vmarks': [s, e],
-        \ 'offset': next_offset,
-        \ 'swap_stack': stack,
-    \ }
+        let anchor = s:yankdel_range__preadjust_range_start(win.start, win.inc[0])
+        let anchor_byte = s:pos2byte(anchor)
+        let ps = s:concat_positions(a:state.cursor, a:state.vmarks, win.start, win.end)
+        call s:yankdel_range(win.start, win.end, repl, win.inc, ps, 1)
+
+        let s = s:byte2pos(anchor_byte + moving_off)
+        let e = s:byte2pos(anchor_byte + moving_off + strlen(moving_text) - 1)
+
+        call s:set_visual_marks([s, e])
+        call s:setcursor(s)
+        let restore_cursor = 0
+
+        return {
+            \ 'swapped': 1,
+            \ 'affected_range': [win.start, win.end],
+            \ 'cursor': s,
+            \ 'vmarks': [s, e],
+            \ 'offset': next_offset,
+            \ 'swap_stack': stack,
+        \ }
+    finally
+        if restore_cursor
+            call s:setcursor(cursor)
+        endif
+    endtry
 endfunction
 
 function! sexp#swap_element__update(state, ret, mode, next, list)
