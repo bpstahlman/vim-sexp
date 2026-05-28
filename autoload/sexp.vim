@@ -8323,69 +8323,73 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
     return empty(a:baseline) ? ' ' : a:baseline
 endfunction
 
-" Return baseline separators for the current outbound swap window.
+" Return separator hints for the current outbound swap window.
 "
-" "Actual" separators are the separators observed in the buffer before a swap is
-" emitted. They are saved on stack frames so reversal can restore the exact prior text.
-"
-" "Baseline" separators are the inner-swap separator model used for outbound swaps before
-" policy is applied. Policy may still force newline for comment or linewise safety.
+" Hints are the inner-swap separator model used for outbound swaps before policy is
+" applied. Policy may still force newline for comment or linewise safety. Reversal does
+" not use these hints; it restores the exact text saved on the frame.
 "
 " Forward window:
 "   before: L prefix A between B suffix R
 "   after:  L healed B before_A A after_A R
-"   healed   starts from base.prefix_sep
-"   before_A starts from base.between_sep
-"   after_A  starts from base.suffix_sep
+"   healed   starts from hint.healed_sep
+"   before_A starts from hint.before_moved_sep
+"   after_A  starts from hint.after_moved_sep
+"   hint.carry_sep = suffix
 "
 " Backward window:
 "   before: L prefix B between A suffix R
 "   after:  L before_A A after_A B healed R
-"   before_A starts from base.prefix_sep
-"   after_A  starts from base.between_sep
-"   healed   starts from base.suffix_sep
+"   before_A starts from hint.before_moved_sep
+"   after_A  starts from hint.after_moved_sep
+"   healed   starts from hint.healed_sep
+"   hint.carry_sep = prefix
 "
-" On continued outbound swaps, the previous frame's far-side baseline is reused for both
-" the healed boundary and the boundary between the target and moved unit. For forward
-" swaps, previous base_suffix_sep becomes both current base.prefix_sep and
-" base.between_sep. For backward swaps, previous base_prefix_sep becomes both current
-" base.between_sep and base.suffix_sep. This deliberately models the old inner-swap slot
-" behavior: the moving unit passes through the far edge of the previous target, and that
-" same baseline edge is used to heal behind it and to place it against the next target.
+" On continued outbound swaps, the previous frame's carry_sep is reused for both the
+" healed boundary and the boundary between the target and moved unit. This deliberately
+" models the old inner-swap slot behavior: the moving unit passes through the far edge of
+" the previous target, and that same hint is used to heal behind it and to place it
+" against the next target.
 "
-" The current window's far-side separator remains important: it becomes the baseline to
-" carry in the new frame for the next same-direction swap.
+" The current window's far-side separator remains important: it becomes carry_sep in the
+" new frame for the next same-direction swap.
 "
-" If the previous swap slid, do not duplicate the carried separator into base.between_sep;
+" If the previous swap slid, do not duplicate carry_sep into the target/moved boundary;
 " use the current between separator instead so the slide-created inline grouping can
 " continue.
-function! s:swap_window_baselines(state, next, win)
+function! s:swap_sep_hints(state, next, win)
     if empty(a:state.swap_stack)
-        return {
-            \ 'prefix_sep': a:win.prefix_sep,
-            \ 'between_sep': a:win.between_sep,
-            \ 'suffix_sep': a:win.suffix_sep,
-        \ }
+        return a:next
+            \ ? {
+                \ 'healed_sep': a:win.prefix_sep,
+                \ 'before_moved_sep': a:win.between_sep,
+                \ 'after_moved_sep': a:win.suffix_sep,
+                \ 'carry_sep': a:win.suffix_sep,
+            \ }
+            \ : {
+                \ 'healed_sep': a:win.suffix_sep,
+                \ 'before_moved_sep': a:win.prefix_sep,
+                \ 'after_moved_sep': a:win.between_sep,
+                \ 'carry_sep': a:win.prefix_sep,
+            \ }
     endif
     " There's a non-empty swap sequence.
     let frame = a:state.swap_stack[-1]
     if a:next
-        " base suffix from preceding frame used as current frame's prefix and between sep
-        " hints.
         return {
-            \ 'prefix_sep': frame.base_suffix_sep,
-            \ 'between_sep': get(frame, 'slid', 0)
-                \ ? a:win.between_sep : frame.base_suffix_sep,
-            \ 'suffix_sep': a:win.suffix_sep,
+            \ 'healed_sep': frame.carry_sep,
+            \ 'before_moved_sep': get(frame, 'slid', 0)
+                \ ? a:win.between_sep : frame.carry_sep,
+            \ 'after_moved_sep': a:win.suffix_sep,
+            \ 'carry_sep': a:win.suffix_sep,
         \ }
     else
-        " base prefix from preceding frame used as current frame's suffix and between sep
-        " hints.
         return {
-            \ 'prefix_sep': a:win.prefix_sep,
-            \ 'between_sep': get(frame, 'slid', 0)
-                \ ? a:win.between_sep : frame.base_prefix_sep,
-            \ 'suffix_sep': frame.base_prefix_sep,
+            \ 'healed_sep': frame.carry_sep,
+            \ 'before_moved_sep': a:win.prefix_sep,
+            \ 'after_moved_sep': get(frame, 'slid', 0)
+                \ ? a:win.between_sep : frame.carry_sep,
+            \ 'carry_sep': a:win.prefix_sep,
         \ }
     endif
 endfunction
@@ -8620,15 +8624,10 @@ function! sexp#swap_element(state, mode, next, list)
         let is_reversal = s:swap_is_reversal(a:state, a:next)
         if !is_reversal
             " Outbound swap
-            let base = s:swap_window_baselines(a:state, a:next, win)
+            let hint = s:swap_sep_hints(a:state, a:next, win)
             call add(stack, {
                 \ 'next': a:next,
-                \ 'actual_prefix_sep': win.prefix_sep,
-                \ 'actual_between_sep': win.between_sep,
-                \ 'actual_suffix_sep': win.suffix_sep,
-                \ 'base_prefix_sep': base.prefix_sep,
-                \ 'base_between_sep': base.between_sep,
-                \ 'base_suffix_sep': base.suffix_sep,
+                \ 'carry_sep': hint.carry_sep,
                 \ 'restore_text': a:next
                     \ ? win.prefix_sep . moving_text . win.between_sep . target_text . win.suffix_sep
                     \ : win.prefix_sep . target_text . win.between_sep . moving_text . win.suffix_sep,
@@ -8637,19 +8636,19 @@ function! sexp#swap_element(state, mode, next, list)
                     \ : strlen(win.prefix_sep . target_text . win.between_sep),
             \ })
 
-            let sep_healed = a:next ? base.prefix_sep : base.suffix_sep
+            let sep_healed = hint.healed_sep
             " Calculate separator before moved unit.
             let sep_before_moved = s:swap_edge_sep(a:state,
                 \ a:next ? target : win.prev,
                 \ moving,
-                \ a:next ? base.between_sep : base.prefix_sep,
+                \ hint.before_moved_sep,
                 \ a:next, 1,
                 \ !s:swap_target_pulled_inline(target, sep_healed))
             " Calculate separator after moved unit.
             let sep_after_moved = s:swap_edge_sep(a:state,
                 \ moving,
                 \ a:next ? win.next : target,
-                \ a:next ? base.suffix_sep : base.between_sep,
+                \ hint.after_moved_sep,
                 \ 1, !a:next, 1)
 
             if a:next
