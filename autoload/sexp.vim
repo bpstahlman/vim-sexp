@@ -8323,50 +8323,42 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
     return empty(a:baseline) ? ' ' : a:baseline
 endfunction
 
-" Baseline Description: "Actual" refers to the separators that actually exist when a frame
-" is pushed (including any forcibly-inserted newlines); "base" or "baseline" Implies a
-" slot preference, not necessarily what's currently in the buffer. Roughly-speaking, it's
-" what would exist in the absence of forcibly-inserted newlines. The "actual" separators
-" are needed to support swap reversal; the *baseline* separators are used to calculate new
-" separators for an outbound swap. Here's what the swap windows look like (swapping A over
-" B):
-" Forward:
-"    Before:
-" L prefix A between B suffix
-"    After:
-" L prefix B before_A A after_A
-" Backwards:
-"    Before:
-" L prefix B between A suffix
-"    After:
-" L before_A A after_A B suffix
+" Return baseline separators for the current outbound swap window.
 "
-" The {before,after}_A must be calculated on each outbound swap. On a reversal, we simply
-" restore the saved (actual) separators from the frame at the top of the stack. The
-" baseline swap is a simple "inner element swap" of A and B; however, there are scenarios
-" in which this simplistic swap would produce illegal/undesirable results. In such cases,
-" we use before_A and/or after_A to insert newlines as needed. These extra newlines will
-" be reflected in the "actual" separator keys, but not in "baseline". The reason this
-" function uses the latest stack frame to set 'prefix_sep' and 'between_sep' is that when
-" the outbound swap occurs, we want to allow forcibly-inserted newlines to be discarded if
-" the new configuration doesn't require them.
+" "Actual" separators are the separators observed in the buffer before a swap is
+" emitted. They are saved on stack frames so reversal can restore the exact prior text.
 "
-" The following shows how the base dict calculated below is used for healing and
-" calculation of separators around moved-unit on an outbound swap:
-"  forward:
-"    healed   = base.prefix
-"    before_A = policy_fn(base.between)
-"    after_A  = policy_fn(base.suffix)
+" "Baseline" separators are the inner-swap separator model used for outbound swaps before
+" policy is applied. Policy may still force newline for comment or linewise safety.
 "
-"  backward:
-"    before_A = policy_fn(base.prefix)
-"    after_A  = policy_fn(base.between)
-"    healed   = base.suffix
-" Note that the policy_fn(...) indicates that the input base values are used only as
-" hints, which may be overridden by policy/safety.
-" Between Sep Note: On a continued outbound swap, base.between_sep is set from the latest
-" frame's carried outbound separator unless the preceding outbound swap performed a
-" "slide", in which case the current window's between_sep is used.
+" Forward window:
+"   before: L prefix A between B suffix R
+"   after:  L healed B before_A A after_A R
+"   healed   starts from base.prefix_sep
+"   before_A starts from base.between_sep
+"   after_A  starts from base.suffix_sep
+"
+" Backward window:
+"   before: L prefix B between A suffix R
+"   after:  L before_A A after_A B healed R
+"   before_A starts from base.prefix_sep
+"   after_A  starts from base.between_sep
+"   healed   starts from base.suffix_sep
+"
+" On continued outbound swaps, the previous frame's far-side baseline is reused for both
+" the healed boundary and the boundary between the target and moved unit. For forward
+" swaps, previous base_suffix_sep becomes both current base.prefix_sep and
+" base.between_sep. For backward swaps, previous base_prefix_sep becomes both current
+" base.between_sep and base.suffix_sep. This deliberately models the old inner-swap slot
+" behavior: the moving unit passes through the far edge of the previous target, and that
+" same baseline edge is used to heal behind it and to place it against the next target.
+"
+" The current window's far-side separator remains important: it becomes the baseline to
+" carry in the new frame for the next same-direction swap.
+"
+" If the previous swap slid, do not duplicate the carried separator into base.between_sep;
+" use the current between separator instead so the slide-created inline grouping can
+" continue.
 function! s:swap_window_baselines(state, next, win)
     if empty(a:state.swap_stack)
         return {
@@ -8458,8 +8450,9 @@ function! s:swap_unit_side_seps(unit)
 endfunction
 
 " Given the provided pair of elements to be swapped, return a dict with information that
-" will be used to accomplish the swap: in particular, the elements on either side of the
-" swapped elements are used by whitespace separator calculation logic.
+" will be used to accomplish the swap: in particular, whitespace separator calculation
+" logic requires both the immediately adjacent elements on the outside of the swapped
+" elements and the whitespace separators surrounding the swapped elements.
 function! s:swap_window(first, second)
     let prev = s:swap_adjacent_range_or_empty(a:first, 0)
     let next = s:swap_adjacent_range_or_empty(a:second, 1)
@@ -8554,7 +8547,6 @@ function! s:swap_seq_state_from_state(state, list)
         \ 'origin_after_sep': a:state.origin_after_sep,
         \ 'trailing_comment_inline_before': a:state.trailing_comment_inline_before,
         \ 'swap_stack': copy(a:state.swap_stack),
-        \ 'offset': a:state.offset,
     \ }
 endfunction
 
@@ -8587,7 +8579,6 @@ function! sexp#swap_element__init(mode, next, list)
                 \ && s:swap_sep_is_inline(seps.before)
             \ : seq.trailing_comment_inline_before,
         \ 'swap_stack': empty(seq) ? [] : copy(seq.swap_stack),
-        \ 'offset': empty(seq) ? 0 : seq.offset,
         \ 'seq_continues': !empty(seq),
         \ 'bufnr': bufnr('%'),
         \ 'list': a:list,
@@ -8617,10 +8608,10 @@ function! sexp#swap_element(state, mode, next, list)
         let [first, second] = a:next ? [moving, target] : [target, moving]
         " Get surrounding context.
         let win = s:swap_window(first, second)
+        " Get the text of the units to be swapped.
+        " TODO: Any advantage to using s:yankdel_range() for this?
         let moving_text = s:extract_text_from_range(moving.start, moving.end)
         let target_text = s:extract_text_from_range(target.start, target.end)
-        " Keep up with swap offset across multi-command swap sequence.
-        let next_offset = a:state.offset + (a:next ? 1 : -1)
         " Manipulate a copy of the swap stack; ultimately, the copy will be persisted
         " within swap_element__final().
         " TODO_61: Look at what happens in off-nominal paths...
@@ -8712,7 +8703,6 @@ function! sexp#swap_element(state, mode, next, list)
             \ 'affected_range': [win.start, win.end],
             \ 'cursor': s,
             \ 'vmarks': [s, e],
-            \ 'offset': next_offset,
             \ 'swap_stack': stack,
         \ }
     finally
@@ -8728,7 +8718,6 @@ function! sexp#swap_element__update(state, ret, mode, next, list)
     endif
     let a:state.cursor = a:ret.cursor
     let a:state.vmarks = a:ret.vmarks
-    let a:state.offset = a:ret.offset
     let a:state.swap_stack = a:ret.swap_stack
     if empty(a:state.affected_range)
         let a:state.affected_range = a:ret.affected_range
