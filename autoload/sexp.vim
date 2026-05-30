@@ -8232,6 +8232,11 @@ function! s:swap_sep_is_inline(sep)
     return !empty(a:sep) && !s:swap_sep_has_newline(a:sep)
 endfunction
 
+" Return a separator hint preserving only the inline-vs-linewise class of a separator.
+function! s:swap_sep_class_hint(sep)
+    return s:swap_sep_has_newline(a:sep) ? "\n" : a:sep
+endfunction
+
 function! s:swap_slide_level()
     return get(g:, 'sexp_swap_slide', 0) + 0
 endfunction
@@ -8345,18 +8350,12 @@ endfunction
 "   healed   starts from hint.healed_sep
 "   hint.carry_sep = prefix
 "
-" On continued outbound swaps, the previous frame's carry_sep is reused for both the
-" healed boundary and the boundary between the target and moved unit. This deliberately
-" models the old inner-swap slot behavior: the moving unit passes through the far edge of
-" the previous target, and that same hint is used to heal behind it and to place it
-" against the next target.
-"
-" The current window's far-side separator remains important: it becomes carry_sep in the
-" new frame for the next same-direction swap.
-"
-" If the previous swap slid, do not duplicate carry_sep into the target/moved boundary;
-" use the current between separator instead so the slide-created inline grouping can
-" continue.
+" On continued outbound swaps, the previous frame's carry_sep is reused literally only for
+" the healed boundary. The separator between the target and moved unit is based on the
+" current target's outbound separator, reduced to an inline-vs-linewise class hint. This
+" preserves significant visual gaps once without duplicating blank lines around the moved
+" unit. The current window's far-side separator is then saved literally as carry_sep for
+" the next same-direction swap.
 function! s:swap_sep_hints(state, next, win)
     if empty(a:state.swap_stack)
         return a:next
@@ -8378,8 +8377,7 @@ function! s:swap_sep_hints(state, next, win)
     if a:next
         return {
             \ 'healed_sep': frame.carry_sep,
-            \ 'before_moved_sep': get(frame, 'slid', 0)
-                \ ? a:win.between_sep : frame.carry_sep,
+            \ 'before_moved_sep': s:swap_sep_class_hint(a:win.suffix_sep),
             \ 'after_moved_sep': a:win.suffix_sep,
             \ 'carry_sep': a:win.suffix_sep,
         \ }
@@ -8387,8 +8385,7 @@ function! s:swap_sep_hints(state, next, win)
         return {
             \ 'healed_sep': frame.carry_sep,
             \ 'before_moved_sep': a:win.prefix_sep,
-            \ 'after_moved_sep': get(frame, 'slid', 0)
-                \ ? a:win.between_sep : frame.carry_sep,
+            \ 'after_moved_sep': s:swap_sep_class_hint(a:win.prefix_sep),
             \ 'carry_sep': a:win.prefix_sep,
         \ }
     endif
