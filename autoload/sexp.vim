@@ -8411,6 +8411,52 @@ function! s:swap_needs_trailing_sep(unit, end)
         \ && !s:at_eol(a:end[1], a:end[2])
 endfunction
 
+function! s:swap_frame(next, win, moving_text, target_text, carry_sep)
+    return {
+        \ 'next': a:next,
+        \ 'carry_sep': a:carry_sep,
+        \ 'restore_text': a:next
+            \ ? a:win.prefix_sep . a:moving_text . a:win.between_sep
+                \ . a:target_text . a:win.suffix_sep
+            \ : a:win.prefix_sep . a:target_text . a:win.between_sep
+                \ . a:moving_text . a:win.suffix_sep,
+        \ 'restore_moving_off': a:next
+            \ ? strlen(a:win.prefix_sep)
+            \ : strlen(a:win.prefix_sep . a:target_text . a:win.between_sep),
+    \ }
+endfunction
+
+function! s:swap_outbound_seps(state, next, moving, target, win, second)
+    let hint = s:swap_sep_hints(a:state, a:next, a:win)
+
+    let sep_before_moved = s:swap_edge_sep(a:state,
+        \ a:next ? a:target : a:win.prev,
+        \ a:moving,
+        \ hint.before_moved_sep,
+        \ a:next, 1,
+        \ !s:swap_target_pulled_inline(a:target, hint.healed_sep))
+    let sep_after_moved = s:swap_edge_sep(a:state,
+        \ a:moving,
+        \ a:next ? a:win.next : a:target,
+        \ hint.after_moved_sep,
+        \ 1, !a:next, 1)
+
+    if a:next
+        let sep_before_moved = s:swap_safe_after_moved_sep(
+            \ a:target, a:moving, sep_before_moved)
+    endif
+    if a:next && s:swap_needs_trailing_sep(a:moving, a:second.end)
+        let sep_after_moved = "\n"
+    endif
+
+    return {
+        \ 'healed': hint.healed_sep,
+        \ 'before_moved': sep_before_moved,
+        \ 'after_moved': sep_after_moved,
+        \ 'carry': hint.carry_sep,
+    \ }
+endfunction
+
 " Return the raw range of element adjacent to 'unit' in direction indicated by 'next', else
 " [] if no such element.
 " TODO_61: Change empty [] to nullpos_pair for consistency.
@@ -8621,44 +8667,12 @@ function! sexp#swap_element(state, mode, next, list)
         let is_reversal = s:swap_is_reversal(a:state, a:next)
         if !is_reversal
             " Outbound swap
-            let hint = s:swap_sep_hints(a:state, a:next, win)
-            call add(stack, {
-                \ 'next': a:next,
-                \ 'carry_sep': hint.carry_sep,
-                \ 'restore_text': a:next
-                    \ ? win.prefix_sep . moving_text . win.between_sep . target_text . win.suffix_sep
-                    \ : win.prefix_sep . target_text . win.between_sep . moving_text . win.suffix_sep,
-                \ 'restore_moving_off': a:next
-                    \ ? strlen(win.prefix_sep)
-                    \ : strlen(win.prefix_sep . target_text . win.between_sep),
-            \ })
-
-            let sep_healed = hint.healed_sep
-            " Calculate separator before moved unit.
-            let sep_before_moved = s:swap_edge_sep(a:state,
-                \ a:next ? target : win.prev,
-                \ moving,
-                \ hint.before_moved_sep,
-                \ a:next, 1,
-                \ !s:swap_target_pulled_inline(target, sep_healed))
-            " Calculate separator after moved unit.
-            let sep_after_moved = s:swap_edge_sep(a:state,
-                \ moving,
-                \ a:next ? win.next : target,
-                \ hint.after_moved_sep,
-                \ 1, !a:next, 1)
-
-            if a:next
-                let sep_before_moved = s:swap_safe_after_moved_sep(
-                    \ target, moving, sep_before_moved)
-            endif
-            if a:next && s:swap_needs_trailing_sep(moving, second.end)
-                let sep_after_moved = "\n"
-            endif
+            let sep = s:swap_outbound_seps(a:state, a:next, moving, target, win, second)
+            call add(stack, s:swap_frame(a:next, win, moving_text, target_text, sep.carry))
         endif
         let slide = !is_reversal
             \ && s:swap_should_slide(
-                \ a:next, moving, win, sep_before_moved, sep_after_moved)
+                \ a:next, moving, win, sep.before_moved, sep.after_moved)
         if slide
             let stack[-1].slid = 1
         endif
@@ -8668,18 +8682,18 @@ function! sexp#swap_element(state, mode, next, list)
             let repl = frame.restore_text
         elseif slide
             let moving_off = a:next
-                \ ? strlen(sep_healed . target_text . sep_after_moved)
+                \ ? strlen(sep.healed . target_text . sep.after_moved)
                 \ : strlen(' ')
             let repl = a:next
-                \ ? sep_healed . target_text . sep_after_moved . moving_text . ' '
-                \ : ' ' . moving_text . sep_before_moved . target_text . sep_healed
+                \ ? sep.healed . target_text . sep.after_moved . moving_text . ' '
+                \ : ' ' . moving_text . sep.before_moved . target_text . sep.healed
         else
             let moving_off = a:next
-                \ ? strlen(sep_healed . target_text . sep_before_moved)
-                \ : strlen(sep_before_moved)
+                \ ? strlen(sep.healed . target_text . sep.before_moved)
+                \ : strlen(sep.before_moved)
             let repl = a:next
-                \ ? sep_healed . target_text . sep_before_moved . moving_text . sep_after_moved
-                \ : sep_before_moved . moving_text . sep_after_moved . target_text . sep_healed
+                \ ? sep.healed . target_text . sep.before_moved . moving_text . sep.after_moved
+                \ : sep.before_moved . moving_text . sep.after_moved . target_text . sep.healed
         endif
 
         let anchor = s:yankdel_range__preadjust_range_start(win.start, win.inc[0])
