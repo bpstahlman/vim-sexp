@@ -8428,13 +8428,23 @@ endfunction
 
 function! s:swap_outbound_seps(state, next, moving, target, win, second)
     let hint = s:swap_sep_hints(a:state, a:next, a:win)
+    let sep_healed = hint.healed_sep
+
+    if empty(a:state.swap_stack)
+        let sep_healed = s:swap_edge_sep(a:state,
+            \ a:next ? a:win.prev : a:target,
+            \ a:next ? a:target : a:win.next,
+            \ hint.healed_sep,
+            \ 0, a:next,
+            \ 1)
+    endif
 
     let sep_before_moved = s:swap_edge_sep(a:state,
         \ a:next ? a:target : a:win.prev,
         \ a:moving,
         \ hint.before_moved_sep,
         \ a:next, 1,
-        \ !s:swap_target_pulled_inline(a:target, hint.healed_sep))
+        \ !s:swap_target_pulled_inline(a:target, sep_healed))
     let sep_after_moved = s:swap_edge_sep(a:state,
         \ a:moving,
         \ a:next ? a:win.next : a:target,
@@ -8450,7 +8460,7 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
     endif
 
     return {
-        \ 'healed': hint.healed_sep,
+        \ 'healed': sep_healed,
         \ 'before_moved': sep_before_moved,
         \ 'after_moved': sep_after_moved,
         \ 'carry': hint.carry_sep,
