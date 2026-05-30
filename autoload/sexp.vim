@@ -8435,7 +8435,7 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
             \ a:next ? a:win.prev : a:target,
             \ a:next ? a:target : a:win.next,
             \ hint.healed_sep,
-            \ 0, a:next,
+            \ !a:next, a:next,
             \ 1)
     endif
 
