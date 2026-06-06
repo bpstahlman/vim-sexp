@@ -8237,6 +8237,14 @@ function! s:swap_sep_class_hint(sep)
     return s:swap_sep_has_newline(a:sep) ? "\n" : a:sep
 endfunction
 
+function! s:swap_placement_policy()
+    return get(g:, 'sexp_swap_placement_policy', 'target')
+endfunction
+
+function! s:swap_literal_sep_side()
+    return get(g:, 'sexp_swap__literal_sep_side', 'outbound')
+endfunction
+
 function! s:swap_slide_level()
     return get(g:, 'sexp_swap_slide', 0) + 0
 endfunction
@@ -8350,12 +8358,11 @@ endfunction
 "   healed   starts from hint.healed_sep
 "   hint.carry_sep = prefix
 "
-" On continued outbound swaps, the previous frame's carry_sep is reused literally only for
-" the healed boundary. The separator between the target and moved unit is based on the
-" current target's outbound separator, reduced to an inline-vs-linewise class hint. This
-" preserves significant visual gaps once without duplicating blank lines around the moved
-" unit. The current window's far-side separator is then saved literally as carry_sep for
-" the next same-direction swap.
+" On continued outbound swaps, the previous frame's carry_sep is reused literally for the
+" healed boundary. By default, the separator between the target and moved unit is based on
+" the current target's outbound separator, reduced to an inline-vs-linewise class hint.
+" This preserves significant visual gaps once without duplicating blank lines around the
+" moved unit.
 function! s:swap_sep_hints(state, next, win)
     if empty(a:state.swap_stack)
         return a:next
@@ -8374,19 +8381,31 @@ function! s:swap_sep_hints(state, next, win)
     endif
     " There's a non-empty swap sequence.
     let frame = a:state.swap_stack[-1]
+    let outbound_sep = a:next ? a:win.suffix_sep : a:win.prefix_sep
+    let continued_source = s:swap_placement_policy() ==# 'carry'
+        \ ? frame.carry_sep : outbound_sep
+    let literal_target = s:swap_literal_sep_side() ==# 'target'
     if a:next
+        let before_moved_sep = literal_target
+            \ ? continued_source : s:swap_sep_class_hint(continued_source)
+        let after_moved_sep = literal_target
+            \ ? s:swap_sep_class_hint(outbound_sep) : outbound_sep
         return {
             \ 'healed_sep': frame.carry_sep,
-            \ 'before_moved_sep': s:swap_sep_class_hint(a:win.suffix_sep),
-            \ 'after_moved_sep': a:win.suffix_sep,
-            \ 'carry_sep': a:win.suffix_sep,
+            \ 'before_moved_sep': before_moved_sep,
+            \ 'after_moved_sep': after_moved_sep,
+            \ 'carry_sep': after_moved_sep,
         \ }
     else
+        let before_moved_sep = literal_target
+            \ ? s:swap_sep_class_hint(outbound_sep) : outbound_sep
+        let after_moved_sep = literal_target
+            \ ? continued_source : s:swap_sep_class_hint(continued_source)
         return {
             \ 'healed_sep': frame.carry_sep,
-            \ 'before_moved_sep': a:win.prefix_sep,
-            \ 'after_moved_sep': s:swap_sep_class_hint(a:win.prefix_sep),
-            \ 'carry_sep': a:win.prefix_sep,
+            \ 'before_moved_sep': before_moved_sep,
+            \ 'after_moved_sep': after_moved_sep,
+            \ 'carry_sep': before_moved_sep,
         \ }
     endif
 endfunction

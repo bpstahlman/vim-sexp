@@ -107,6 +107,14 @@ if !exists('g:sexp_swap_slide')
     let g:sexp_swap_slide = 0
 endif
 
+if !exists('g:sexp_swap_placement_policy')
+    let g:sexp_swap_placement_policy = 'target'
+endif
+
+if !exists('g:sexp_swap__literal_sep_side')
+    let g:sexp_swap__literal_sep_side = 'outbound'
+endif
+
 if !exists('g:sexp_emitting_bracket_is_sticky')
     let g:sexp_emitting_bracket_is_sticky = 0
 endif
