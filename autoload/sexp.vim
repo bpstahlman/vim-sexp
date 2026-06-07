@@ -8336,6 +8336,34 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
     return empty(a:baseline) ? ' ' : a:baseline
 endfunction
 
+function! s:swap_healed_edge_sep(left, right, baseline, left_linewise, right_linewise, allow_inline_right)
+    if empty(a:left) || empty(a:right)
+        return ''
+    endif
+    if s:swap_sep_has_newline(a:baseline)
+        return a:baseline
+    endif
+
+    if s:swap_unit_has_trailing_eol_comment(a:left)
+        return "\n"
+    elseif s:swap_unit_is_full_line_comment(a:left)
+        \ || s:swap_unit_is_full_line_comment(a:right)
+        return "\n"
+    elseif a:left_linewise && s:swap_unit_forces_nl(a:left)
+        return "\n"
+    elseif a:right_linewise
+        if s:swap_unit_has_trailing_eol_comment(a:right)
+            if !a:allow_inline_right
+                return "\n"
+            endif
+        elseif s:swap_unit_forces_nl(a:right)
+            return "\n"
+        endif
+    endif
+
+    return empty(a:baseline) ? ' ' : a:baseline
+endfunction
+
 " Return separator hints for the current outbound swap window.
 "
 " Hints are the inner-swap separator model used for outbound swaps before policy is
@@ -8450,12 +8478,14 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
     let sep_healed = hint.healed_sep
 
     if empty(a:state.swap_stack)
-        let sep_healed = s:swap_edge_sep(a:state,
+        let healed_right_inline_before = s:swap_sep_is_inline(
+            \ a:next ? a:win.between_sep : a:win.suffix_sep)
+        let sep_healed = s:swap_healed_edge_sep(
             \ a:next ? a:win.prev : a:target,
             \ a:next ? a:target : a:win.next,
             \ hint.healed_sep,
             \ !a:next, a:next,
-            \ 1)
+            \ healed_right_inline_before)
     endif
 
     let sep_before_moved = s:swap_edge_sep(a:state,
