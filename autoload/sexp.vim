@@ -8362,7 +8362,9 @@ endfunction
 " healed boundary. By default, the separator between the target and moved unit is based on
 " the current target's outbound separator, reduced to an inline-vs-linewise class hint.
 " This preserves significant visual gaps once without duplicating blank lines around the
-" moved unit.
+" moved unit. In 'slot' placement, current slot separators are preserved instead: the
+" frame stores unspoiled crossed/outbound slot separators, and each outbound swap advances
+" that slot window.
 function! s:swap_sep_hints(state, next, win)
     if empty(a:state.swap_stack)
         return a:next
@@ -8371,17 +8373,40 @@ function! s:swap_sep_hints(state, next, win)
                 \ 'before_moved_sep': a:win.between_sep,
                 \ 'after_moved_sep': a:win.suffix_sep,
                 \ 'carry_sep': a:win.suffix_sep,
+                \ 'crossed_sep': a:win.between_sep,
+                \ 'outbound_sep': a:win.suffix_sep,
             \ }
             \ : {
                 \ 'healed_sep': a:win.suffix_sep,
                 \ 'before_moved_sep': a:win.prefix_sep,
                 \ 'after_moved_sep': a:win.between_sep,
                 \ 'carry_sep': a:win.prefix_sep,
+                \ 'crossed_sep': a:win.between_sep,
+                \ 'outbound_sep': a:win.prefix_sep,
             \ }
     endif
     " There's a non-empty swap sequence.
     let frame = a:state.swap_stack[-1]
     let outbound_sep = a:next ? a:win.suffix_sep : a:win.prefix_sep
+    if s:swap_placement_policy() ==# 'slot'
+        return a:next
+            \ ? {
+                \ 'healed_sep': frame.crossed_sep,
+                \ 'before_moved_sep': frame.outbound_sep,
+                \ 'after_moved_sep': a:win.suffix_sep,
+                \ 'carry_sep': a:win.suffix_sep,
+                \ 'crossed_sep': frame.outbound_sep,
+                \ 'outbound_sep': a:win.suffix_sep,
+            \ }
+            \ : {
+                \ 'healed_sep': frame.crossed_sep,
+                \ 'before_moved_sep': a:win.prefix_sep,
+                \ 'after_moved_sep': frame.outbound_sep,
+                \ 'carry_sep': a:win.prefix_sep,
+                \ 'crossed_sep': frame.outbound_sep,
+                \ 'outbound_sep': a:win.prefix_sep,
+            \ }
+    endif
     let continued_source = s:swap_placement_policy() ==# 'carry'
         \ ? frame.carry_sep : outbound_sep
     let literal_target = s:swap_literal_sep_side() ==# 'target'
@@ -8395,6 +8420,8 @@ function! s:swap_sep_hints(state, next, win)
             \ 'before_moved_sep': before_moved_sep,
             \ 'after_moved_sep': after_moved_sep,
             \ 'carry_sep': after_moved_sep,
+            \ 'crossed_sep': get(frame, 'outbound_sep', frame.carry_sep),
+            \ 'outbound_sep': outbound_sep,
         \ }
     else
         let before_moved_sep = literal_target
@@ -8406,6 +8433,8 @@ function! s:swap_sep_hints(state, next, win)
             \ 'before_moved_sep': before_moved_sep,
             \ 'after_moved_sep': after_moved_sep,
             \ 'carry_sep': before_moved_sep,
+            \ 'crossed_sep': get(frame, 'outbound_sep', frame.carry_sep),
+            \ 'outbound_sep': outbound_sep,
         \ }
     endif
 endfunction
@@ -8430,10 +8459,12 @@ function! s:swap_needs_trailing_sep(unit, end)
         \ && !s:at_eol(a:end[1], a:end[2])
 endfunction
 
-function! s:swap_frame(next, win, moving_text, target_text, carry_sep)
+function! s:swap_frame(next, win, moving_text, target_text, sep)
     return {
         \ 'next': a:next,
-        \ 'carry_sep': a:carry_sep,
+        \ 'carry_sep': a:sep.carry,
+        \ 'crossed_sep': a:sep.crossed,
+        \ 'outbound_sep': a:sep.outbound,
         \ 'restore_text': a:next
             \ ? a:win.prefix_sep . a:moving_text . a:win.between_sep
                 \ . a:target_text . a:win.suffix_sep
@@ -8449,7 +8480,7 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
     let hint = s:swap_sep_hints(a:state, a:next, a:win)
     let sep_healed = hint.healed_sep
 
-    if empty(a:state.swap_stack)
+    if empty(a:state.swap_stack) || s:swap_placement_policy() ==# 'slot'
         let sep_healed = s:swap_edge_sep(a:state,
             \ a:next ? a:win.prev : a:target,
             \ a:next ? a:target : a:win.next,
@@ -8483,6 +8514,8 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
         \ 'before_moved': sep_before_moved,
         \ 'after_moved': sep_after_moved,
         \ 'carry': hint.carry_sep,
+        \ 'crossed': hint.crossed_sep,
+        \ 'outbound': hint.outbound_sep,
     \ }
 endfunction
 
@@ -8697,9 +8730,10 @@ function! sexp#swap_element(state, mode, next, list)
         if !is_reversal
             " Outbound swap
             let sep = s:swap_outbound_seps(a:state, a:next, moving, target, win, second)
-            call add(stack, s:swap_frame(a:next, win, moving_text, target_text, sep.carry))
+            call add(stack, s:swap_frame(a:next, win, moving_text, target_text, sep))
         endif
         let slide = !is_reversal
+            \ && s:swap_placement_policy() !=# 'slot'
             \ && s:swap_should_slide(
                 \ a:next, moving, win, sep.before_moved, sep.after_moved)
         if slide
