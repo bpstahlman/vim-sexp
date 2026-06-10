@@ -8281,6 +8281,9 @@ function! s:swap_should_slide(next, moving, win, sep_before_moved, sep_after_mov
     if !s:swap_unit_is_inlineable(a:moving)
         return 0
     endif
+    if !s:swap_sep_is_inline(a:win.between_sep)
+        return 0
+    endif
     return a:next
         \ ? s:swap_sep_has_newline(a:sep_before_moved)
             \ && s:swap_sep_has_newline(a:sep_after_moved)
@@ -8362,6 +8365,42 @@ function! s:swap_healed_edge_sep(left, right, baseline, left_linewise, right_lin
     endif
 
     return empty(a:baseline) ? ' ' : a:baseline
+endfunction
+
+function! s:swap_preserve_forward_l_shape(moving, target, win)
+    return !empty(a:win.prev)
+        \ && s:swap_unit_is_inlineable(a:moving)
+        \ && s:swap_unit_is_inlineable(a:target)
+        \ && s:at_bol(a:moving.start[1], a:moving.start[2])
+        \ && s:swap_sep_has_newline(a:win.prefix_sep)
+        \ && s:swap_sep_is_inline(a:win.between_sep)
+endfunction
+
+function! s:swap_preserve_forward_row_tail(moving, target, win)
+    return !empty(a:win.prev)
+        \ && !empty(a:win.next)
+        \ && s:swap_unit_is_inlineable(a:moving)
+        \ && s:swap_unit_is_inlineable(a:target)
+        \ && s:swap_sep_is_inline(a:win.prefix_sep)
+        \ && s:swap_sep_is_inline(a:win.between_sep)
+        \ && s:swap_sep_has_newline(a:win.suffix_sep)
+endfunction
+
+function! s:swap_preserve_forward_blank_tail(moving, target, win)
+    return !empty(a:win.prev)
+        \ && s:swap_unit_is_inlineable(a:moving)
+        \ && s:swap_unit_is_inlineable(a:target)
+        \ && s:swap_sep_has_newline(a:win.prefix_sep)
+        \ && s:swap_sep_has_blankline(a:win.between_sep)
+endfunction
+
+function! s:swap_preserve_forward_line_prefix_tail(moving, target, win)
+    return !empty(a:win.prev)
+        \ && s:swap_unit_is_inlineable(a:moving)
+        \ && s:swap_unit_is_inlineable(a:target)
+        \ && s:swap_sep_has_newline(a:win.prefix_sep)
+        \ && s:swap_sep_has_newline(a:win.between_sep)
+        \ && !s:swap_sep_has_blankline(a:win.between_sep)
 endfunction
 
 " Return separator hints for the current outbound swap window.
@@ -8476,8 +8515,9 @@ endfunction
 function! s:swap_outbound_seps(state, next, moving, target, win, second)
     let hint = s:swap_sep_hints(a:state, a:next, a:win)
     let sep_healed = hint.healed_sep
+    let continued = !empty(a:state.swap_stack)
 
-    if empty(a:state.swap_stack)
+    if !continued
         let healed_right_inline_before = s:swap_sep_is_inline(
             \ a:next ? a:win.between_sep : a:win.suffix_sep)
         let sep_healed = s:swap_healed_edge_sep(
@@ -8486,6 +8526,12 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
             \ hint.healed_sep,
             \ !a:next, a:next,
             \ healed_right_inline_before)
+    elseif a:next && s:swap_preserve_forward_l_shape(a:moving, a:target, a:win)
+        let sep_healed = a:win.prefix_sep
+    elseif a:next && s:swap_preserve_forward_blank_tail(a:moving, a:target, a:win)
+        let sep_healed = s:swap_sep_class_hint(a:win.prefix_sep)
+    elseif a:next && s:swap_preserve_forward_line_prefix_tail(a:moving, a:target, a:win)
+        let sep_healed = a:win.prefix_sep
     endif
 
     let sep_before_moved = s:swap_edge_sep(a:state,
@@ -8503,6 +8549,17 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
     if a:next
         let sep_before_moved = s:swap_safe_after_moved_sep(
             \ a:target, a:moving, sep_before_moved)
+    endif
+    if continued && a:next
+        \ && sep_before_moved ==# "\n"
+        \ && s:swap_preserve_forward_row_tail(a:moving, a:target, a:win)
+        let sep_before_moved = ' '
+    endif
+    if continued && a:next && s:swap_preserve_forward_blank_tail(a:moving, a:target, a:win)
+        let sep_before_moved = a:win.between_sep
+    endif
+    if continued && a:next && s:swap_preserve_forward_line_prefix_tail(a:moving, a:target, a:win)
+        let sep_before_moved = a:win.between_sep
     endif
     if a:next && s:swap_needs_trailing_sep(a:moving, a:second.end)
         let sep_after_moved = "\n"
