@@ -8298,14 +8298,13 @@ endfunction
 
 " Calculate the whitespace separator for the specified edge.
 " -- Args --
-" state
 " left                swap unit on left side of calculated edge
 " right               swap unit on right side of calculated edge
 " baseline            baseline whitespace separator
 " left_linewise       can left unit impose linewise after itself?
 " right_linewise      can right unit impose linewise before itself?
 " allow_inline_right  set to 1 iff right-side trailing eol comment may remain inline
-function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_linewise, allow_inline_right)
+function! s:swap_edge_sep(left, right, baseline, left_linewise, right_linewise, allow_inline_right)
     if empty(a:left) || empty(a:right)
         return ''
     endif
@@ -8321,11 +8320,13 @@ function! s:swap_edge_sep(state, left, right, baseline, left_linewise, right_lin
         " Always force newline around full line comments.
         " TODO_61: Shouldn't the option come into play for the 'right' case?
         return "\n"
+    elseif s:swap_force_linewise('m') && s:swap_unit_is_multiline(a:left)
+        return "\n"
     elseif a:left_linewise && s:swap_unit_forces_nl(a:left)
         return "\n"
     elseif a:right_linewise
         if s:swap_unit_has_trailing_eol_comment(a:right)
-            if !a:state.trailing_comment_inline_before || !a:allow_inline_right
+            if !a:allow_inline_right
                 return "\n"
             endif
         elseif s:swap_unit_forces_nl(a:right)
@@ -8444,6 +8445,18 @@ function! s:swap_target_pulled_inline(target, healed_sep)
         \ && s:swap_sep_is_inline(a:healed_sep)
 endfunction
 
+function! s:swap_trailing_comment_inline_before(unit)
+    return s:swap_unit_has_trailing_eol_comment(a:unit)
+        \ && s:swap_sep_is_inline(s:swap_unit_side_seps(a:unit).before)
+endfunction
+
+function! s:swap_allow_inline_right(unit)
+    if empty(a:unit) || !s:swap_unit_has_trailing_eol_comment(a:unit)
+        return 1
+    endif
+    return s:swap_trailing_comment_inline_before(a:unit)
+endfunction
+
 function! s:swap_safe_after_moved_sep(moving, neighbor, sep)
     if !empty(a:moving)
         \ && s:swap_unit_has_trailing_eol_comment(a:moving)
@@ -8457,6 +8470,14 @@ endfunction
 function! s:swap_needs_trailing_sep(unit, end)
     return s:swap_unit_has_trailing_eol_comment(a:unit)
         \ && !s:at_eol(a:end[1], a:end[2])
+endfunction
+
+" Return 1 iff a multiline left unit already had inline suffix in this slot.
+function! s:swap_multiline_left_had_inline_suffix(left, after_sep)
+    return !empty(a:left)
+        \ && s:swap_force_linewise('m')
+        \ && s:swap_unit_is_multiline(a:left)
+        \ && s:swap_sep_is_inline(a:after_sep)
 endfunction
 
 function! s:swap_frame(next, win, moving_text, target_text, sep)
@@ -8481,29 +8502,43 @@ function! s:swap_outbound_seps(state, next, moving, target, win, second)
     let sep_healed = hint.healed_sep
 
     if empty(a:state.swap_stack) || s:swap_placement_policy() ==# 'slot'
-        let sep_healed = s:swap_edge_sep(a:state,
+        let healed_right = a:next ? a:target : a:win.next
+        let sep_healed = s:swap_edge_sep(
             \ a:next ? a:win.prev : a:target,
-            \ a:next ? a:target : a:win.next,
+            \ healed_right,
             \ hint.healed_sep,
             \ !a:next, a:next,
-            \ 1)
+            \ s:swap_allow_inline_right(healed_right))
+        if a:next
+            \ && s:swap_multiline_left_had_inline_suffix(a:win.prev, a:win.prefix_sep)
+            " Preserve an already-inline slot after a multiline unit when healing.
+            let sep_healed = hint.healed_sep
+        endif
     endif
 
-    let sep_before_moved = s:swap_edge_sep(a:state,
+    let sep_before_moved = s:swap_edge_sep(
         \ a:next ? a:target : a:win.prev,
         \ a:moving,
         \ hint.before_moved_sep,
         \ a:next, 1,
-        \ !s:swap_target_pulled_inline(a:target, sep_healed))
-    let sep_after_moved = s:swap_edge_sep(a:state,
+        \ get(a:state, 'moving_trailing_comment_inline_before', 0)
+            \ && !s:swap_target_pulled_inline(a:target, sep_healed))
+    let after_right = a:next ? a:win.next : a:target
+    let sep_after_moved = s:swap_edge_sep(
         \ a:moving,
-        \ a:next ? a:win.next : a:target,
+        \ after_right,
         \ hint.after_moved_sep,
-        \ 1, !a:next, 1)
+        \ 1, !a:next,
+        \ s:swap_allow_inline_right(after_right))
 
     if a:next
         let sep_before_moved = s:swap_safe_after_moved_sep(
             \ a:target, a:moving, sep_before_moved)
+    endif
+    if a:next
+        \ && s:swap_multiline_left_had_inline_suffix(a:target, a:win.suffix_sep)
+        " Preserve an already-inline slot after a multiline target.
+        let sep_before_moved = hint.before_moved_sep
     endif
     if a:next && s:swap_needs_trailing_sep(a:moving, a:second.end)
         let sep_after_moved = "\n"
@@ -8654,7 +8689,7 @@ function! s:swap_seq_state_from_state(state, list)
         \ 'vmarks': copy(a:state.vmarks),
         \ 'origin_before_sep': a:state.origin_before_sep,
         \ 'origin_after_sep': a:state.origin_after_sep,
-        \ 'trailing_comment_inline_before': a:state.trailing_comment_inline_before,
+        \ 'moving_trailing_comment_inline_before': a:state.moving_trailing_comment_inline_before,
         \ 'swap_stack': copy(a:state.swap_stack),
     \ }
 endfunction
@@ -8664,8 +8699,9 @@ endfunction
 " Return: state needed both to perform the counted swap operation *and* to initialize the
 " swap sequence state dict saved by the __final() callback.
 " -- Dict Key Descriptions --
-" trailing_comment_inline_before:   1 iff at start of swap sequence, the moved unit has
-"                                   eol comment and a preceding inline element
+" moving_trailing_comment_inline_before:
+"     1 iff at start of swap sequence, the moved unit has eol comment and a
+"     preceding inline element.
 function! sexp#swap_element__init(mode, next, list)
     let cursor = getpos('.')
     let vmarks = s:get_visual_marks()
@@ -8683,10 +8719,10 @@ function! sexp#swap_element__init(mode, next, list)
         \ 'affected_range': [],
         \ 'origin_before_sep': empty(seq) ? seps.before : seq.origin_before_sep,
         \ 'origin_after_sep': empty(seq) ? seps.after : seq.origin_after_sep,
-        \ 'trailing_comment_inline_before': empty(seq)
+        \ 'moving_trailing_comment_inline_before': empty(seq)
             \ ? !empty(moving) && s:swap_unit_has_trailing_eol_comment(moving)
                 \ && s:swap_sep_is_inline(seps.before)
-            \ : seq.trailing_comment_inline_before,
+            \ : seq.moving_trailing_comment_inline_before,
         \ 'swap_stack': empty(seq) ? [] : copy(seq.swap_stack),
         \ 'seq_continues': !empty(seq),
         \ 'bufnr': bufnr('%'),
@@ -8733,7 +8769,6 @@ function! sexp#swap_element(state, mode, next, list)
             call add(stack, s:swap_frame(a:next, win, moving_text, target_text, sep))
         endif
         let slide = !is_reversal
-            \ && s:swap_placement_policy() !=# 'slot'
             \ && s:swap_should_slide(
                 \ a:next, moving, win, sep.before_moved, sep.after_moved)
         if slide
@@ -8812,7 +8847,8 @@ function! sexp#swap_element__final(ex, state, mode, next, list)
             call s:post_op_reindent(
                 \ a:state.affected_range[0],
                 \ a:state.affected_range[1],
-                \ [a:state.cursor, a:state.vmarks])
+                \ [a:state.vmarks])
+            let a:state.cursor = a:state.vmarks[0]
         endif
         call s:set_visual_marks(a:state.vmarks)
         call s:setcursor(a:state.cursor)
