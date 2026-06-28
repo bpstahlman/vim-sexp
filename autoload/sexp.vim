@@ -8621,14 +8621,19 @@ endfunction
 " has_before/has_after distinguish a missing adjacent sibling from a real adjacent
 " sibling with zero-width separator.
 function! s:swap__unit_side_seps(unit)
-    let prev = s:swap__adjacent_range(a:unit, 0)
-    let next = s:swap__adjacent_range(a:unit, 1)
-    return {
-        \ 'has_before': !!prev[0][1],
-        \ 'has_after': !!next[0][1],
-        \ 'before': prev[0][1] ? s:swap__sep_between(prev, a:unit) : '',
-        \ 'after': next[0][1] ? s:swap__sep_between(a:unit, next) : '',
-    \ }
+    let cursor = getpos('.')
+    try
+        let prev = s:swap__adjacent_range(a:unit, 0)
+        let next = s:swap__adjacent_range(a:unit, 1)
+        return {
+            \ 'has_before': !!prev[0][1],
+            \ 'has_after': !!next[0][1],
+            \ 'before': prev[0][1] ? s:swap__sep_between(prev, a:unit) : '',
+            \ 'after': next[0][1] ? s:swap__sep_between(a:unit, next) : '',
+        \ }
+    finally
+        call s:setcursor(cursor)
+    endtry
 endfunction
 
 " Given the provided pair of elements to be swapped, return a dict with information that

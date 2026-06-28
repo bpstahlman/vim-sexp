@@ -250,10 +250,10 @@ call s:Assert('slot placement reforms outbound inline run',
         \ [{'next': 1, 'list': 0, 'count': 3}], 'mc', 0, 'slot'),
     \ ['B', 'C D A'])
 
-call s:Assert('slot placement ignores slide option',
+call s:Assert('slot placement supports slide option',
     \ s:RunSwap(['A (foo', '    bar)', 'C D'], [1, 1],
         \ [{'next': 1, 'list': 0}], 'mc', 2, 'slot'),
-    \ ['(foo', '    bar)', 'A', 'C D'])
+    \ ['(foo', '    bar)', 'A C D'])
 
 if empty(s:failures)
     call writefile(['PASS swap regression'], 'tmp/swap-regression.out')
