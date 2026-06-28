@@ -8199,14 +8199,14 @@ function! sexp#swap_element_legacy(mode, next, list)
 endfunction
 
 " Swap unit:
-"   Dict with 'start' and 'end' VimPos4 keys describing the text range moved as
-"   one sibling unit by normal-mode swap. Usually this is a single element, but
-"   an element with a same-line trailing end-of-line comment is widened to include
-"   that comment. A full-line comment remains its own unit.
+"   [start, end] VimPos4 pair describing the text range moved as one sibling unit by
+"   normal-mode swap. Usually this is a single element, but an element with a same-line
+"   trailing end-of-line comment is widened to include that comment. A full-line comment
+"   remains its own unit. s:nullpos_pair represents no unit.
 
 " Return text between two swap units.
 function! s:swap__sep_between(left, right)
-    return s:yankdel_range(a:left.end, a:right.start, 0, [0, 0])
+    return s:yankdel_range(a:left[1], a:right[0], 0, [0, 0])
 endfunction
 
 " Return 1 iff input flag is contained in the 'sexp_swap_force_linewise' option.
@@ -8216,18 +8216,18 @@ endfunction
 
 " Return 1 iff input swap unit is multiline.
 function! s:swap__unit_is_multiline(unit)
-    return a:unit.start[1] != a:unit.end[1]
+    return a:unit[0][1] != a:unit[1][1]
 endfunction
 
 " Return 1 iff input swap unit starts with comment syntax at BOL.
 function! s:swap__unit_has_bol_comment(unit)
-    return sexp#is_comment(a:unit.start[1], a:unit.start[2])
-        \ && s:at_bol(a:unit.start[1], a:unit.start[2])
+    return sexp#is_comment(a:unit[0][1], a:unit[0][2])
+        \ && s:at_bol(a:unit[0][1], a:unit[0][2])
 endfunction
 
 " Return 1 iff input swap unit ends with EOL comment syntax.
 function! s:swap__unit_has_eol_comment(unit)
-    return s:is_eol_comment(a:unit.end[1], a:unit.end[2])
+    return s:is_eol_comment(a:unit[1][1], a:unit[1][2])
 endfunction
 
 " Return 1 iff input swap unit is an element plus attached trailing EOL comment.
@@ -8271,7 +8271,7 @@ endfunction
 
 " Can input swap unit be made inline with a preceding element?
 function! s:swap__unit_allows_inline_before(unit)
-    if empty(a:unit)
+    if !a:unit[0][1]
         return 0
     elseif s:swap__unit_is_multiline(a:unit) || s:swap__unit_has_bol_comment(a:unit)
         return 0
@@ -8283,7 +8283,7 @@ endfunction
 
 " Can input swap unit be made inline with a subsequent element?
 function! s:swap__unit_allows_inline_after(unit)
-    return !empty(a:unit)
+    return a:unit[0][1]
         \ && !s:swap__unit_is_multiline(a:unit)
         \ && !s:swap__unit_has_bol_comment(a:unit)
         \ && !s:swap__unit_has_attached_eol_comment(a:unit)
@@ -8347,7 +8347,7 @@ endfunction
 " allow_eol_comment_inline_right
 "     set to 1 iff a right-side unit with trailing EOL comment may remain inline
 function! s:swap__edge_sep(left, right, baseline, left_linewise, right_linewise, allow_eol_comment_inline_right)
-    if empty(a:left) || empty(a:right)
+    if !a:left[0][1] || !a:right[0][1]
         return ''
     endif
     if s:swap__sep_has_newline(a:baseline)
@@ -8478,7 +8478,7 @@ function! s:swap__sep_hints(state, next, win)
 endfunction
 
 function! s:swap__target_pulled_inline(target, healed_sep)
-    return s:at_bol(a:target.start[1], a:target.start[2])
+    return s:at_bol(a:target[0][1], a:target[0][2])
         \ && s:swap__sep_is_inline(a:healed_sep)
 endfunction
 
@@ -8490,16 +8490,16 @@ function! s:swap__attached_eol_comment_inline_before(unit)
 endfunction
 
 function! s:swap__allow_eol_comment_inline_right(unit)
-    if empty(a:unit) || !s:swap__unit_has_attached_eol_comment(a:unit)
+    if !a:unit[0][1] || !s:swap__unit_has_attached_eol_comment(a:unit)
         return 1
     endif
     return s:swap__attached_eol_comment_inline_before(a:unit)
 endfunction
 
 function! s:swap__safe_after_moved_sep(moving, neighbor, sep)
-    if !empty(a:moving)
+    if a:moving[0][1]
         \ && s:swap__unit_has_attached_eol_comment(a:moving)
-        \ && !empty(a:neighbor)
+        \ && a:neighbor[0][1]
         \ && !s:swap__sep_has_newline(a:sep)
         return "\n"
     endif
@@ -8513,7 +8513,7 @@ endfunction
 
 " Return 1 iff a multiline left unit already had inline suffix in this slot.
 function! s:swap__multiline_left_had_inline_suffix(left, after_sep)
-    return !empty(a:left)
+    return a:left[0][1]
         \ && s:swap__force_linewise('m')
         \ && s:swap__unit_is_multiline(a:left)
         \ && s:swap__sep_is_inline(a:after_sep)
@@ -8579,7 +8579,7 @@ function! s:swap__outbound_seps(state, next, moving, target, win, second)
         " Preserve an already-inline slot after a multiline target.
         let sep_before_moved = hint.before_moved_sep
     endif
-    if a:next && s:swap__needs_trailing_sep(a:moving, a:second.end)
+    if a:next && s:swap__needs_trailing_sep(a:moving, a:second[1])
         let sep_after_moved = "\n"
     endif
 
@@ -8593,29 +8593,24 @@ function! s:swap__outbound_seps(state, next, moving, target, win, second)
     \ }
 endfunction
 
-" Return the raw range of element adjacent to 'unit' in direction indicated by 'next', else
-" [] if no such element.
-" TODO_61: Change empty [] to nullpos_pair for consistency.
-function! s:swap__adjacent_range_or_empty(unit, next)
+" Return the raw range of element adjacent to 'unit' in direction indicated by 'next',
+" else s:nullpos_pair.
+function! s:swap__adjacent_range(unit, next)
     let cursor = getpos('.')
     try
-        call s:setcursor(a:unit[a:next ? 'end' : 'start'])
-        let range = sexp#nearest_element_terminals(a:next)
-        if !range[0][1]
-            return []
-        endif
-        return range
+        call s:setcursor(a:unit[a:next ? 1 : 0])
+        return sexp#nearest_element_terminals(a:next)
     finally
         call s:setcursor(cursor)
     endtry
 endfunction
 
 " Return the range of swap unit adjacent to 'unit' in direction indicated by 'next',
-" else {} if no such swap unit.
+" else s:nullpos_pair.
 function! s:swap__adjacent_unit(unit, next)
-    let range = s:swap__adjacent_range_or_empty(a:unit, a:next)
-    if empty(range)
-        return {}
+    let range = s:swap__adjacent_range(a:unit, a:next)
+    if !range[0][1]
+        return s:nullpos_pair
     endif
     " If the found range represents either an element with an eol comment or the eol
     " comment of such an element, widen the range to include both.
@@ -8626,13 +8621,13 @@ endfunction
 " has_before/has_after distinguish a missing adjacent sibling from a real adjacent
 " sibling with zero-width separator.
 function! s:swap__unit_side_seps(unit)
-    let prev = s:swap__adjacent_range_or_empty(a:unit, 0)
-    let next = s:swap__adjacent_range_or_empty(a:unit, 1)
+    let prev = s:swap__adjacent_range(a:unit, 0)
+    let next = s:swap__adjacent_range(a:unit, 1)
     return {
-        \ 'has_before': !empty(prev),
-        \ 'has_after': !empty(next),
-        \ 'before': empty(prev) ? '' : s:swap__sep_between({'end': prev[1]}, a:unit),
-        \ 'after': empty(next) ? '' : s:swap__sep_between(a:unit, {'start': next[0]}),
+        \ 'has_before': !!prev[0][1],
+        \ 'has_after': !!next[0][1],
+        \ 'before': prev[0][1] ? s:swap__sep_between(prev, a:unit) : '',
+        \ 'after': next[0][1] ? s:swap__sep_between(a:unit, next) : '',
     \ }
 endfunction
 
@@ -8641,25 +8636,25 @@ endfunction
 " logic requires both the immediately adjacent elements on the outside of the swapped
 " elements and the whitespace separators surrounding the swapped elements.
 function! s:swap__window(first, second)
-    let prev = s:swap__adjacent_range_or_empty(a:first, 0)
-    let next = s:swap__adjacent_range_or_empty(a:second, 1)
+    let prev = s:swap__adjacent_range(a:first, 0)
+    let next = s:swap__adjacent_range(a:second, 1)
     return {
-        \ 'prev': empty(prev) ? {} : {'start': prev[0], 'end': prev[1]},
-        \ 'next': empty(next) ? {} : {'start': next[0], 'end': next[1]},
-        \ 'start': empty(prev) ? a:first.start : prev[1],
-        \ 'end': empty(next) ? a:second.end : next[0],
-        \ 'inc': [empty(prev) ? 1 : 0, empty(next) ? 1 : 0],
-        \ 'prefix_sep': empty(prev) ? '' : s:swap__sep_between({'end': prev[1]}, a:first),
+        \ 'prev': prev,
+        \ 'next': next,
+        \ 'start': prev[0][1] ? prev[1] : a:first[0],
+        \ 'end': next[0][1] ? next[0] : a:second[1],
+        \ 'inc': [prev[0][1] ? 0 : 1, next[0][1] ? 0 : 1],
+        \ 'prefix_sep': prev[0][1] ? s:swap__sep_between(prev, a:first) : '',
         \ 'between_sep': s:swap__sep_between(a:first, a:second),
-        \ 'suffix_sep': empty(next) ? '' : s:swap__sep_between(a:second, {'start': next[0]}),
+        \ 'suffix_sep': next[0][1] ? s:swap__sep_between(a:second, next) : '',
     \ }
 endfunction
 
 " Build a swap unit from an inner range, extending input range as necessary to ensure a
 " non-comment element and an adjacent end-of-line comment are treated as a single unit.
 " Note: Input range can correspond to either the eol-comment or the preceding element.
-" Return: {'start': <pos4>, 'end': <pos4>} representing the unit. If no eol-comment, the
-" return dict will simply contain the input range.
+" Return: [start, end] range representing the unit. If no EOL comment is found, return the
+" input range unchanged.
 function! s:swap__unit_from_range(range)
     let [s, e] = a:range
     " Is the input range the trailing comment in an element/eol-comment pair?
@@ -8675,7 +8670,7 @@ function! s:swap__unit_from_range(range)
                 let prange = sexp#current_element_terminals()
                 if prange[0][1]
                     " Widen the unit to include the element and attached eol comment.
-                    return {'start': prange[0], 'end': e}
+                    return [prange[0], e]
                 endif
             endif
         finally
@@ -8689,16 +8684,15 @@ function! s:swap__unit_from_range(range)
     if next[1] && next[1] == e[1] && s:is_eol_comment(next[1], next[2])
         let e = [0, next[1], col([next[1], '$']) - 1, 0]
     endif
-    return {'start': s, 'end': e}
+    return [s, e]
 endfunction
 
-" Return range of current list/element (as indicated by input flag), else {}.
-" TODO_61: Change {'start': <spos>, 'end': <epos>} to simple pos range.
+" Return range of current list/element (as indicated by input flag), else s:nullpos_pair.
 function! s:swap__current_unit(list)
     if a:list
         let ret = s:current_list_range('n', 0, 0)
         if !ret.ok
-            return {}
+            return s:nullpos_pair
         endif
         let range = ret.range
     else
@@ -8707,7 +8701,7 @@ function! s:swap__current_unit(list)
             let range = sexp#nearest_element_terminals(1)
         endif
     endif
-    return !range[0][1] ? {} : s:swap__unit_from_range(range)
+    return !range[0][1] ? s:nullpos_pair : s:swap__unit_from_range(range)
 endfunction
 
 " Return 1 iff it's safe to continue the current swap sequence.
@@ -8717,8 +8711,8 @@ function! s:swap__seq_can_continue(mode, list, moving)
         \ && get(s:swap_seq_state, 'bufnr', -1) == bufnr('%')
         \ && get(s:swap_seq_state, 'changedtick', -1) == b:changedtick
         \ && get(s:swap_seq_state, 'list', -1) == a:list
-        \ && !empty(a:moving)
-        \ && get(s:swap_seq_state, 'vmarks', []) == [a:moving.start, a:moving.end]
+        \ && a:moving[0][1]
+        \ && get(s:swap_seq_state, 'vmarks', []) == a:moving
 endfunction
 
 " Convert the input state dict (created by the docount_stateful() mechanism) into a state
@@ -8751,7 +8745,9 @@ function! sexp#swap_element__init(mode, next, list)
     try
         " Get range of the element to be moved (swapped element).
         let moving = s:swap__current_unit(a:list)
-        let seps = empty(moving) ? {'before': '', 'after': ''} : s:swap__unit_side_seps(moving)
+        let seps = !moving[0][1]
+            \ ? {'has_before': 0, 'has_after': 0, 'before': '', 'after': ''}
+            \ : s:swap__unit_side_seps(moving)
         let seq = s:swap__seq_can_continue(a:mode, a:list, moving) ? s:swap_seq_state : {}
     finally
         call s:setcursor(cursor)
@@ -8763,7 +8759,7 @@ function! sexp#swap_element__init(mode, next, list)
         \ 'origin_before_sep': empty(seq) ? seps.before : seq.origin_before_sep,
         \ 'origin_after_sep': empty(seq) ? seps.after : seq.origin_after_sep,
         \ 'moving_trailing_comment_inline_before': empty(seq)
-            \ ? !empty(moving) && s:swap__unit_has_attached_eol_comment(moving)
+            \ ? moving[0][1] && s:swap__unit_has_attached_eol_comment(moving)
                 \ && s:swap__attached_eol_comment_inline_before(moving)
             \ : seq.moving_trailing_comment_inline_before,
         \ 'swap_stack': empty(seq) ? [] : copy(seq.swap_stack),
@@ -8782,14 +8778,14 @@ function! sexp#swap_element(state, mode, next, list)
     let restore_cursor = 1
     try
         let moving = s:swap__current_unit(a:list)
-        if empty(moving)
+        if !moving[0][1]
             " No swap target
             throw 'sexp-done'
         endif
 
         " Determine range of the swapee.
         let target = s:swap__adjacent_unit(moving, a:next)
-        if empty(target)
+        if !target[0][1]
             throw 'sexp-done'
         endif
 
@@ -8798,8 +8794,8 @@ function! sexp#swap_element(state, mode, next, list)
         let win = s:swap__window(first, second)
         " Get the text of the units to be swapped.
         " TODO: Any advantage to using s:yankdel_range() for this?
-        let moving_text = s:extract_text_from_range(moving.start, moving.end)
-        let target_text = s:extract_text_from_range(target.start, target.end)
+        let moving_text = s:extract_text_from_range(moving[0], moving[1])
+        let target_text = s:extract_text_from_range(target[0], target[1])
         " Manipulate a copy of the swap stack; ultimately, the copy will be persisted
         " within swap_element__final().
         " TODO_61: Look at what happens in off-nominal paths...
